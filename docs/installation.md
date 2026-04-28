@@ -1,12 +1,13 @@
 # Installation
 
-gitcabin can be deployed three different ways. They differ only in *who can reach it* and *whether TLS is involved*. The application is identical across all three; the only thing that changes is the proxy in front of it and the hostname you give to `gh`.
+gitcabin can be deployed four different ways. They differ only in *who can reach it* and *whether TLS is involved*. The application is identical across all four; the only thing that changes is the proxy in front of it and the hostname you give to `gh`.
 
 ## Pick a mode
 
 | Mode | Audience | Hostname | TLS | Setup steps |
 |---|---|---|---|---|
 | [Local-only](#local-only) | the user, on this machine | `github.localhost` | none (gh's HTTP shortcut) | 1 |
+| [Local with TLS](#local-with-tls) | the user, on this machine | `*.gitcabin.localhost` | per-machine local CA | 2 (one-time admin prompt) |
 | [Tailnet-shared](#tailnet-shared) | anyone on your tailnet | `<machine>.<tailnet>.ts.net` | provisioned by Tailscale | 3 |
 | [Public/team](#publicteam) | anyone with DNS resolution | `<your domain>` | provisioned by Caddy via DNS-01 | 4 |
 
@@ -38,6 +39,62 @@ GH_HOST=github.localhost gh auth status
 - **No cert work, no DNS work, no third parties** — `github.localhost` resolves to `127.0.0.1` natively on macOS and Linux because RFC 6761 reserves `*.localhost`.
 - **Requires port 80 free on the loopback IP gh resolves to.** If `127.0.0.1:80` is taken, see the [README troubleshooting block](../README.md#port-80-is-already-in-use) for the loopback-alias workaround.
 - **Single user.** Nobody else on your network can reach this — it's bound to `127.0.0.1` on purpose.
+
+---
+
+## Local with TLS
+
+A Caddy sidecar terminates TLS on `127.0.0.1:443` using a **per-machine local CA**. The CA's root cert is generated on first start and never leaves the machine; one `bash scripts/trust.sh` invocation installs it into the OS keychain so `gh`, `curl`, and browsers all trust it cleanly. Every gh command then talks to gitcabin over real validated HTTPS.
+
+This is the right mode if you want a TLS-protected setup on your own machine without owning a public domain or relying on any third party for cert provisioning. The hostname is `*.gitcabin.localhost` — `.localhost` resolves to `127.0.0.1` natively on macOS, Linux, and Windows, so no `/etc/hosts` editing is needed.
+
+### Setup
+
+1. **Bring up the stack with the TLS overlay**:
+
+   ```sh
+   docker compose -f compose.yml -f compose.tls.yml up -d
+   ```
+
+   This adds a Caddy container alongside gitcabin. Caddy auto-generates its local CA on first run (a few seconds).
+
+2. **Install the CA into your OS trust store** (one-time, idempotent):
+
+   ```sh
+   bash scripts/trust.sh
+   ```
+
+   The script extracts the CA from the Caddy container, detects your platform, and runs the appropriate trust install:
+
+   | Platform | What it does |
+   |---|---|
+   | macOS | `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain` (Touch ID / password prompt) |
+   | Debian/Ubuntu | `/usr/local/share/ca-certificates/` + `update-ca-certificates` (sudo) |
+   | Fedora/RHEL/CentOS | `/etc/pki/ca-trust/source/anchors/` + `update-ca-trust` (sudo) |
+   | Arch | `/etc/ca-certificates/trust-source/anchors/` + `trust extract-compat` (sudo) |
+   | openSUSE | `/etc/pki/trust/anchors/` + `update-ca-certificates` (sudo) |
+   | Windows | Manual — see below. |
+
+   **Windows**: extract the cert with `docker exec gitcabin-caddy cat /data/caddy/pki/authorities/local/root.crt > gitcabin-ca.pem`, then `certutil.exe -addstore -user Root gitcabin-ca.pem` (no admin prompt) or `certutil.exe -addstore Root gitcabin-ca.pem` (UAC prompt, system-wide).
+
+### Point gh at it
+
+Pick any subdomain of `gitcabin.localhost` — the cert covers all of them.
+
+```sh
+echo "any-token" | gh auth login --hostname mycabin.gitcabin.localhost --with-token
+GH_HOST=mycabin.gitcabin.localhost gh auth status
+```
+
+The token is unverified — gitcabin trusts whoever can reach the port (the CA install only protects the *transport*, not authn). Constrain reach with the loopback binding (default) or with a reverse-proxy access rule in front if needed.
+
+### Trade-offs
+
+- **Real TLS, real cert chain.** Browsers, `gh`, `curl`, language HTTP libs all validate without warnings or `--insecure` flags after the one-time CA install.
+- **Trust anchor lives on your machine.** A DNS hijack of any public domain we control cannot produce a cert your install will accept — the CA's private key never left this machine.
+- **One-time admin prompt** (`bash scripts/trust.sh`). Touch ID on macOS, sudo password on Linux. Idempotent on re-runs.
+- **Requires port 443 free on `127.0.0.1`.** If something else is already there, edit `compose.tls.yml` to bind to a free loopback alias (the same trick as the port-80 workaround for the local-only mode).
+- **Per-machine CA, not portable.** If you want gitcabin reachable from another machine in the same shape, you'd need to copy the CA's root cert to that machine and trust it there too. For multi-machine reach, switch to the Tailnet-shared or Public/team mode below.
 
 ---
 

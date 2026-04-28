@@ -1,0 +1,26 @@
+# gitcabin TLS sidecar — terminates TLS for *.gitcabin.localhost using Caddy's
+# built-in local CA (`tls internal`), then proxies to the gitcabin API container
+# on its Docker network.
+#
+# `*.gitcabin.localhost` resolves to 127.0.0.1 natively on modern macOS, Linux,
+# and Windows (no /etc/hosts edits needed). The wildcard match means a user can
+# pick any subdomain — `mycabin.gitcabin.localhost`, `team.gitcabin.localhost` —
+# and gh will validate the TLS chain against the per-machine CA installed by
+# `scripts/trust.sh`.
+#
+# gh dials the GitHub Enterprise URL shape (`/api/v3/...`, `/api/graphql`) for
+# any non-github.localhost host, and gitcabin already serves both shapes, so no
+# path rewriting is needed here — Caddy is just TLS termination + proxy.
+
+*.gitcabin.localhost {
+	tls internal
+	encode gzip zstd
+	reverse_proxy gitcabin:8000 {
+		# Preserve the original host header so app-side logic that cares about
+		# the requested hostname (auth, redirects) sees gitcabin.localhost,
+		# not the internal Docker hostname.
+		header_up Host {host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+	}
+}
