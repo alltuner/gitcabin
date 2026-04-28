@@ -1,11 +1,13 @@
-# ABOUTME: Thin wrapper over a bare git repo directory; shells out to git plumbing.
-# ABOUTME: No pygit2/dulwich — git's CLI is the spec, and shelling out keeps deps minimal.
+# ABOUTME: Thin wrapper over a bare git repo directory.
+# ABOUTME: Reads go through GitPython's object graph; plumbing writes shell out via repo.git.
 
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from git import Repo
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,11 +16,14 @@ class BareRepo:
 
     The bare repo is the source of truth for everything — code refs
     (refs/heads/*, refs/tags/*) and metadata refs (refs/issues/*, refs/prs/*,
-    refs/meta/*). All git operations run with cwd=path so we never have to
-    worry about GIT_DIR.
+    refs/meta/*). Reads use the GitPython object graph (`self.repo.commit(...)`,
+    `commit.tree[...]`); plumbing-style writes (hash-object, mktree, commit-tree,
+    update-ref) go through `run_git` because GitPython doesn't add value over
+    shelling out for those.
     """
 
     path: Path
+    repo: Repo = field(compare=False, hash=False, repr=False)
 
     @classmethod
     def open_or_init(cls, path: Path) -> BareRepo:
@@ -32,30 +37,20 @@ class BareRepo:
         path = Path(path)
         if not path.exists():
             path.mkdir(parents=True)
-            subprocess.check_call(
-                ["git", "init", "--bare", "--quiet", "--initial-branch=main", str(path)]
-            )
-            return cls(path=path)
+            repo = Repo.init(path, bare=True, initial_branch="main")
+            return cls(path=path, repo=repo)
 
-        # Already exists — confirm it's a bare repo before trusting it.
-        result = subprocess.run(
-            ["git", "rev-parse", "--is-bare-repository"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
+        try:
+            repo = Repo(path)
+        except Exception:
             # Path exists but isn't a git repo at all — initialize it.
-            subprocess.check_call(
-                ["git", "init", "--bare", "--quiet", "--initial-branch=main", str(path)]
-            )
-            return cls(path=path)
+            repo = Repo.init(path, bare=True, initial_branch="main")
+            return cls(path=path, repo=repo)
 
-        if result.stdout.strip() != "true":
+        if not repo.bare:
             raise ValueError(f"{path} exists but is not a bare repo")
 
-        return cls(path=path)
+        return cls(path=path, repo=repo)
 
     @classmethod
     def open(cls, path: Path) -> BareRepo | None:
@@ -67,23 +62,23 @@ class BareRepo:
         path = Path(path)
         if not path.is_dir():
             return None
-        result = subprocess.run(
-            ["git", "rev-parse", "--is-bare-repository"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0 or result.stdout.strip() != "true":
+        try:
+            repo = Repo(path)
+        except Exception:
             return None
-        return cls(path=path)
+        if not repo.bare:
+            return None
+        return cls(path=path, repo=repo)
 
     def run_git(self, *args: str, input: str | None = None) -> str:
-        """Run a git command with cwd=self.path and return stdout (text).
+        """Run a git plumbing command and return stdout (text).
 
-        Raises CalledProcessError on non-zero exit so callers don't have to
-        check return codes manually. Pass `input` for stdin (used by
-        plumbing commands like `git hash-object -w --stdin`).
+        Used for plumbing writes that GitPython doesn't wrap usefully —
+        hash-object -w --stdin, mktree, commit-tree with parents, and CAS
+        update-ref REF NEW OLD all need raw stdin or precise exit-code
+        semantics that subprocess.run handles cleanly. Reads should go
+        through the object graph (`self.repo.commit(...)`, `commit.tree[...]`)
+        instead.
         """
         result = subprocess.run(
             ["git", *args],

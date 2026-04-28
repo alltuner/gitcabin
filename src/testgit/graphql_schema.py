@@ -366,9 +366,7 @@ class Issue:
             nodes = nodes[:first]
         elif last is not None:
             nodes = nodes[-last:] if last > 0 else []
-        return IssueCommentConnection(
-            nodes=nodes, total_count=len(stored), page_info=empty_page
-        )
+        return IssueCommentConnection(nodes=nodes, total_count=len(stored), page_info=empty_page)
 
     @strawberry.field
     def milestone(self) -> Milestone | None:

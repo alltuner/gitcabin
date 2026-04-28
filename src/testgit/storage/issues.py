@@ -7,6 +7,8 @@ import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
 
+from git import Blob, Commit, Tree
+from git.exc import BadName
 from pydantic import BaseModel, ConfigDict
 
 from testgit.storage.counter import Counter
@@ -138,39 +140,34 @@ def create_issue(repo: BareRepo, *, title: str, body: str, author: str) -> Issue
     # 5. Read back so callers get the full Issue record including timestamps,
     #    avoiding any drift between the synthesized record and what list_issues
     #    will return for the same ref.
-    return _read_issue(repo, ref, number)
+    return _read_issue_at(repo.repo.commit(ref), number)
 
 
 def list_issues(repo: BareRepo) -> list[Issue]:
     """Return every locally-numbered issue, sorted by number ascending.
 
-    Walks `refs/issues/local/*` via `git for-each-ref`. The ref's tip tree
-    holds `issue.json`, which deserializes back to an Issue record.
+    Walks GitPython's reference list, filtered to the local issue namespace.
+    Each ref's tip commit holds `issue.json`, which deserializes back to an
+    Issue record.
     """
-    output = repo.run_git(
-        "for-each-ref",
-        "--format=%(refname)",
-        f"{LOCAL_ISSUE_REF_PREFIX}/*",
-    )
-    refs = [line.strip() for line in output.splitlines() if line.strip()]
-
     issues: list[Issue] = []
-    for ref in refs:
-        # Last path component is the issue number; the ref's tip tree holds
-        # issue.json with the rest.
-        number = int(ref.rsplit("/", 1)[-1])
-        issues.append(_read_issue(repo, ref, number))
-
+    for ref in repo.repo.refs:
+        # Reference paths look like "refs/issues/local/<n>"; everything else
+        # (heads/, tags/, meta/) is unrelated.
+        if not ref.path.startswith(f"{LOCAL_ISSUE_REF_PREFIX}/"):
+            continue
+        number = int(ref.path.rsplit("/", 1)[-1])
+        issues.append(_read_issue_at(ref.commit, number))
     issues.sort(key=lambda i: i.number)
     return issues
 
 
 def get_issue(repo: BareRepo, number: int) -> Issue | None:
     """Return the issue at refs/issues/local/<number>, or None if absent."""
-    ref = f"{LOCAL_ISSUE_REF_PREFIX}/{number}"
-    if _rev_parse(repo, ref) is None:
+    commit = _load_commit(repo, _ref_for(number))
+    if commit is None:
         return None
-    return _read_issue(repo, ref, number)
+    return _read_issue_at(commit, number)
 
 
 def close_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
@@ -180,15 +177,14 @@ def close_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
     an already-closed issue is a no-op (no commit appended) so this is safe
     to call repeatedly without polluting the log.
     """
-    ref = f"{LOCAL_ISSUE_REF_PREFIX}/{number}"
-    current_tip = _rev_parse(repo, ref)
-    if current_tip is None:
+    ref = _ref_for(number)
+    current = _load_commit(repo, ref)
+    if current is None:
         return None
 
-    raw = repo.run_git("cat-file", "-p", f"{ref}:issue.json")
-    doc = IssueDocument.model_validate_json(raw)
+    doc = IssueDocument.model_validate_json(_read_blob(current.tree["issue.json"]))
     if doc.state is IssueState.CLOSED:
-        return _read_issue(repo, ref, number)
+        return _read_issue_at(current, number)
 
     closed_doc = doc.model_copy(update={"state": IssueState.CLOSED})
     new_payload = closed_doc.model_dump_json(indent=2)
@@ -196,12 +192,11 @@ def close_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
 
     # Replace just issue.json; preserve any other top-level entries (e.g.
     # the comments/ subtree) so closing an issue with comments doesn't drop them.
-    entries = _read_tree(repo, ref)
     new_entries = [
-        _TreeEntry(mode=e.mode, type=e.type, sha=new_blob_sha, name=e.name)
+        _TreeEntry(mode="100644", type="blob", sha=new_blob_sha, name=e.name)
         if e.name == "issue.json"
         else e
-        for e in entries
+        for e in _entries_of(current.tree)
     ]
     new_tree_sha = _write_tree(repo, new_entries)
 
@@ -211,15 +206,15 @@ def close_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
         message=f"close: {doc.title}",
         author_name=actor,
         author_email=f"{actor}@testgit.local",
-        parents=(current_tip,),
+        parents=(current.hexsha,),
     )
 
     # CAS: only advance if the tip hasn't moved underneath us. A racing close
     # would land here too and the loser gets CalledProcessError, which is the
     # right outcome — the close is the user's action and ambiguity is bug-shaped.
-    repo.run_git("update-ref", ref, commit_sha, current_tip)
+    repo.run_git("update-ref", ref, commit_sha, current.hexsha)
 
-    return _read_issue(repo, ref, number)
+    return _read_issue_at(repo.repo.commit(ref), number)
 
 
 def add_comment(repo: BareRepo, *, number: int, body: str, author: str) -> Comment | None:
@@ -228,12 +223,12 @@ def add_comment(repo: BareRepo, *, number: int, body: str, author: str) -> Comme
     Comments live at comments/<NNNN>.json with NNNN sequential within the issue.
     Returns the new Comment, or None if the issue doesn't exist.
     """
-    ref = f"{LOCAL_ISSUE_REF_PREFIX}/{number}"
-    current_tip = _rev_parse(repo, ref)
-    if current_tip is None:
+    ref = _ref_for(number)
+    current = _load_commit(repo, ref)
+    if current is None:
         return None
 
-    existing_subtree = _read_subtree(repo, ref, "comments")
+    existing_subtree = _entries_of(_subtree_or_none(current.tree, "comments"))
     existing_numbers = sorted(_comment_number_from_name(e.name) for e in existing_subtree)
     next_number = (existing_numbers[-1] + 1) if existing_numbers else 1
 
@@ -250,17 +245,17 @@ def add_comment(repo: BareRepo, *, number: int, body: str, author: str) -> Comme
 
     # Splice the new comments/ subtree into the top-level tree, preserving
     # the existing issue.json entry. If comments/ didn't exist before, append it.
-    top_entries = _read_tree(repo, ref)
+    top_entries = _entries_of(current.tree)
     new_top_entries: list[_TreeEntry] = []
     seen_comments = False
-    for e in top_entries:
-        if e.name == "comments":
+    for entry in top_entries:
+        if entry.name == "comments":
             new_top_entries.append(
                 _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
             )
             seen_comments = True
         else:
-            new_top_entries.append(e)
+            new_top_entries.append(entry)
     if not seen_comments:
         new_top_entries.append(
             _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
@@ -273,9 +268,9 @@ def add_comment(repo: BareRepo, *, number: int, body: str, author: str) -> Comme
         message=f"comment: by {author}",
         author_name=author,
         author_email=f"{author}@testgit.local",
-        parents=(current_tip,),
+        parents=(current.hexsha,),
     )
-    repo.run_git("update-ref", ref, commit_sha, current_tip)
+    repo.run_git("update-ref", ref, commit_sha, current.hexsha)
 
     created_at = _comment_created_at(repo, ref, comment_name) or ""
     return Comment(number=next_number, body=body, author=author, created_at=created_at)
@@ -286,27 +281,75 @@ def list_comments(repo: BareRepo, number: int) -> list[Comment]:
 
     Empty list if the issue doesn't exist or has no comments yet.
     """
-    ref = f"{LOCAL_ISSUE_REF_PREFIX}/{number}"
-    if _rev_parse(repo, ref) is None:
+    ref = _ref_for(number)
+    commit = _load_commit(repo, ref)
+    if commit is None:
         return []
-    entries = _read_subtree(repo, ref, "comments")
+    subtree = _subtree_or_none(commit.tree, "comments")
+    if subtree is None:
+        return []
     comments: list[Comment] = []
-    for entry in entries:
+    for entry in subtree:
         if entry.type != "blob" or not entry.name.endswith(".json"):
             continue
         n = _comment_number_from_name(entry.name)
-        raw = repo.run_git("cat-file", "-p", entry.sha)
-        doc = CommentDocument.model_validate_json(raw)
+        doc = CommentDocument.model_validate_json(_read_blob(entry))
         created_at = _comment_created_at(repo, ref, entry.name) or ""
         comments.append(Comment(number=n, body=doc.body, author=doc.author, created_at=created_at))
     comments.sort(key=lambda c: c.number)
     return comments
 
 
-def _read_issue(repo: BareRepo, ref: str, number: int) -> Issue:
-    raw = repo.run_git("cat-file", "-p", f"{ref}:issue.json")
-    doc = IssueDocument.model_validate_json(raw)
-    created_at, updated_at = _read_timestamps(repo, ref)
+# ---- read helpers (object graph) --------------------------------------- #
+
+
+def _ref_for(number: int) -> str:
+    return f"{LOCAL_ISSUE_REF_PREFIX}/{number}"
+
+
+def _load_commit(repo: BareRepo, ref: str) -> Commit | None:
+    """Resolve `ref` to a Commit, or None if the ref doesn't exist."""
+    try:
+        return repo.repo.commit(ref)
+    except BadName, ValueError:
+        return None
+
+
+def _read_blob(blob: Blob) -> str:
+    """Decode a GitPython blob's contents as UTF-8 text."""
+    return blob.data_stream.read().decode()
+
+
+def _subtree_or_none(tree: Tree, name: str) -> Tree | None:
+    """Return the named subtree under `tree`, or None if absent."""
+    try:
+        return tree[name]
+    except KeyError:
+        return None
+
+
+def _entries_of(tree: Tree | None) -> list[_TreeEntry]:
+    """Materialize a tree's direct entries into mktree-friendly tuples.
+
+    `tree=None` is treated as an empty tree — convenient for the "subtree
+    didn't exist yet" case in add_comment.
+    """
+    if tree is None:
+        return []
+    out: list[_TreeEntry] = []
+    for entry in tree:
+        # GitPython yields entry.mode as an int; mktree wants the 6-digit
+        # octal form ("100644", "040000").
+        out.append(
+            _TreeEntry(mode=f"{entry.mode:06o}", type=entry.type, sha=entry.hexsha, name=entry.name)
+        )
+    return out
+
+
+def _read_issue_at(commit: Commit, number: int) -> Issue:
+    """Build an Issue from a commit pointing at an issue ref tip."""
+    doc = IssueDocument.model_validate_json(_read_blob(commit.tree["issue.json"]))
+    created_at, updated_at = _read_timestamps(commit)
     # `number` comes from the ref name (the authoritative source), not from
     # the payload — older files may carry it but newer ones don't.
     return Issue(
@@ -320,22 +363,61 @@ def _read_issue(repo: BareRepo, ref: str, number: int) -> Issue:
     )
 
 
-def _read_timestamps(repo: BareRepo, ref: str) -> tuple[str, str]:
+def _read_timestamps(tip: Commit) -> tuple[str, str]:
     """Return (created_at, updated_at) as ISO-8601 strings.
 
     created_at is the root commit's author date (the create event); updated_at
     is the tip's. With one commit per issue today they're identical, but as
     soon as we append events they'll diverge.
     """
-    # `git log --reverse --format=%aI <ref>` lists every commit's author date
-    # from oldest to newest. First line is created_at, last is updated_at.
-    out = repo.run_git("log", "--reverse", "--format=%aI", ref).splitlines()
-    if not out:
-        # Defensive: a ref that exists but has no commits should be impossible,
-        # but if it ever happens, return a deterministic value rather than
-        # crashing.
-        return ("1970-01-01T00:00:00+00:00", "1970-01-01T00:00:00+00:00")
-    return (out[0], out[-1])
+    # Walk the parent chain to the root; that's the create event. The tip
+    # is the most recent event on the ref.
+    root = tip
+    while root.parents:
+        root = root.parents[0]
+    return (root.authored_datetime.isoformat(), tip.authored_datetime.isoformat())
+
+
+def _comment_number_from_name(name: str) -> int:
+    """`0001.json` -> 1. Caller should have already filtered to *.json entries."""
+    return int(name.removesuffix(".json"))
+
+
+def _comment_created_at(repo: BareRepo, ref: str, name: str) -> str | None:
+    """Return the ISO-8601 author date of the commit that first added `comments/<name>`.
+
+    Comments are append-only so there's exactly one commit that added each
+    comment file; --diff-filter=A picks it out without scanning history beyond
+    the first match. GitPython's iter_commits supports `paths=` but doesn't
+    expose --diff-filter, so we keep this as a shell-out.
+    """
+    out = repo.run_git(
+        "log",
+        "--diff-filter=A",
+        "--reverse",
+        "--format=%aI",
+        ref,
+        "--",
+        f"comments/{name}",
+    ).splitlines()
+    return out[0] if out else None
+
+
+# ---- write helpers (plumbing shell-outs) ------------------------------ #
+
+
+@dataclass(frozen=True, slots=True)
+class _TreeEntry:
+    mode: str
+    type: str
+    sha: str
+    name: str
+
+
+def _write_tree(repo: BareRepo, entries: list[_TreeEntry]) -> str:
+    """Materialize a tree object from `entries` via `git mktree`."""
+    body = "".join(f"{e.mode} {e.type} {e.sha}\t{e.name}\n" for e in entries)
+    return repo.run_git("mktree", input=body).strip()
 
 
 def _commit_with_identity(
@@ -373,89 +455,3 @@ def _commit_with_identity(
         check=True,
     )
     return result.stdout.strip()
-
-
-# ---- tree manipulation helpers ----------------------------------------- #
-
-
-@dataclass(frozen=True, slots=True)
-class _TreeEntry:
-    mode: str
-    type: str
-    sha: str
-    name: str
-
-
-def _rev_parse(repo: BareRepo, ref: str) -> str | None:
-    """Return the commit sha at `ref`, or None if `ref` doesn't exist."""
-    result = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", ref],
-        cwd=repo.path,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip()
-
-
-def _read_tree(repo: BareRepo, ref: str) -> list[_TreeEntry]:
-    """List the top-level entries of the tree at `ref`."""
-    return _parse_ls_tree(repo.run_git("ls-tree", ref))
-
-
-def _read_subtree(repo: BareRepo, ref: str, subtree_path: str) -> list[_TreeEntry]:
-    """List entries inside `<ref>:<subtree_path>`, or [] if the subtree is absent."""
-    result = subprocess.run(
-        ["git", "ls-tree", f"{ref}:{subtree_path}"],
-        cwd=repo.path,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        return []
-    return _parse_ls_tree(result.stdout)
-
-
-def _parse_ls_tree(output: str) -> list[_TreeEntry]:
-    entries: list[_TreeEntry] = []
-    for line in output.splitlines():
-        if not line:
-            continue
-        # ls-tree default format: "<mode> SP <type> SP <sha> TAB <name>"
-        meta, name = line.split("\t", 1)
-        mode, type_, sha = meta.split()
-        entries.append(_TreeEntry(mode=mode, type=type_, sha=sha, name=name))
-    return entries
-
-
-def _write_tree(repo: BareRepo, entries: list[_TreeEntry]) -> str:
-    """Materialize a tree object from `entries` via `git mktree`."""
-    body = "".join(f"{e.mode} {e.type} {e.sha}\t{e.name}\n" for e in entries)
-    return repo.run_git("mktree", input=body).strip()
-
-
-def _comment_number_from_name(name: str) -> int:
-    """`0001.json` -> 1. Caller should have already filtered to *.json entries."""
-    return int(name.removesuffix(".json"))
-
-
-def _comment_created_at(repo: BareRepo, ref: str, name: str) -> str | None:
-    """Return the ISO-8601 author date of the commit that first added `comments/<name>`.
-
-    Comments are append-only so there's exactly one commit that added each
-    comment file; --diff-filter=A picks it out without scanning history beyond
-    the first match.
-    """
-    out = repo.run_git(
-        "log",
-        "--diff-filter=A",
-        "--reverse",
-        "--format=%aI",
-        ref,
-        "--",
-        f"comments/{name}",
-    ).splitlines()
-    return out[0] if out else None
