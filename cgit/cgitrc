@@ -1,0 +1,20 @@
+# cgit configuration. The full reference is at /usr/share/doc/cgit/cgitrc.5.
+# We keep this minimal: scan-path lets cgit auto-discover any bare repo under
+# /repos at request time, so new <owner>/<name>.git directories show up
+# without restarting the container.
+
+# Page chrome.
+root-title=testgit
+root-desc=Browse the bare repos backing testgit (code refs and metadata refs).
+css=/cgit-css/cgit.css
+favicon=/cgit-css/favicon.ico
+
+# Strip the trailing ".git" from displayed repo names — purely cosmetic.
+remove-suffix=1
+
+# Display the side refs that hold issue/PR/counter data, not just heads/tags.
+# Without this, refs/issues/local/* would be invisible in the UI.
+enable-remote-branches=1
+
+# Auto-discover repos under this directory at request time.
+scan-path=/repos
