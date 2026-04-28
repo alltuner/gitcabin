@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import uvicorn
+from granian import Granian
+from granian.constants import Interfaces
 
 # gh sends to http://api.github.localhost/ — port 80, hardcoded — when GH_HOST
 # is github.localhost. Binding directly here would need root, so we listen on
@@ -17,18 +18,19 @@ PORT = 8000
 
 
 def main() -> None:
-    # Watch only the package source for reload. Without an explicit reload_dirs,
-    # uvicorn defaults to the current working directory, which is the uv
+    # Watch only the package source for reload. Without an explicit reload path,
+    # granian defaults to the current working directory, which is the uv
     # workspace root here and triggers reloads on unrelated edits.
-    src_dir = str(Path(__file__).resolve().parent)
-    uvicorn.run(
-        "testgit.app:create_app",
-        host=HOST,
-        port=PORT,
+    src_dir = Path(__file__).resolve().parent
+    Granian(
+        target="testgit.app:create_app",
         factory=True,
+        interface=Interfaces.ASGI,
+        address=HOST,
+        port=PORT,
         reload=True,
-        reload_dirs=[src_dir],
-    )
+        reload_paths=[src_dir],
+    ).serve()
 
 
 if __name__ == "__main__":

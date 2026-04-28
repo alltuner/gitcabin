@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from testgit import graphql_schema, rest
 from testgit.config import Settings
@@ -18,12 +19,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
 
     app = FastAPI(title="testgit", version="0.1.0", redoc_url=None, docs_url=None)
-    # Stash settings on app.state so the GraphQL context_getter can reach them
-    # without us having to thread Settings through every resolver signature.
     app.state.settings = settings
 
     app.include_router(rest.build_router(settings))
-    # Mount the GraphQL ASGI app at /graphql to match what gh sends for github.localhost.
-    app.mount("/graphql", graphql_schema.build_app(settings))
+
+    @app.post("/graphql")
+    async def graphql(request: Request) -> JSONResponse:
+        # We execute the schema directly rather than mounting Strawberry's ASGI
+        # app: mounted apps trigger a 307 redirect from /graphql to /graphql/,
+        # and gh sends to /graphql exactly. Doing it inline also keeps the
+        # request fully inside FastAPI's routing layer, avoiding the FastAPI
+        # 0.136 + Starlette 1.0 + Strawberry 0.315 introspection bug.
+        body = await request.json()
+        result = await graphql_schema.schema.execute(
+            body["query"],
+            variable_values=body.get("variables"),
+            operation_name=body.get("operationName"),
+            context_value={"settings": settings},
+        )
+        payload: dict[str, object] = {"data": result.data}
+        if result.errors:
+            payload["errors"] = [
+                {"message": err.message, "locations": err.locations, "path": err.path}
+                for err in result.errors
+            ]
+        return JSONResponse(payload)
 
     return app

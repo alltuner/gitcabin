@@ -39,6 +39,8 @@ EXPOSE 8000
 # Bind to all interfaces so the host can reach it via the published port.
 # --reload watches /app/src; with the compose bind mount, edits on the host
 # trigger restarts in the container.
-CMD ["uv", "run", "--no-dev", "uvicorn", "testgit.app:create_app", \
-     "--factory", "--host", "0.0.0.0", "--port", "8000", \
-     "--reload", "--reload-dir", "/app/src"]
+CMD ["uv", "run", "--no-dev", "granian", \
+     "--interface", "asgi", "--factory", \
+     "--host", "0.0.0.0", "--port", "8000", \
+     "--reload", "--reload-paths", "/app/src", \
+     "testgit.app:create_app"]

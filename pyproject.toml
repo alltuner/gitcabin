@@ -6,9 +6,9 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.115",
-    "strawberry-graphql[fastapi]>=0.250",
+    "strawberry-graphql>=0.250",
     "pydantic>=2.9",
-    "uvicorn[standard]>=0.32",
+    "granian[reload]>=2.0",
 ]
 
 [project.scripts]
