@@ -34,9 +34,50 @@ services:
         - action: rebuild
           path: ./Dockerfile
 
+  # The HTML dashboard runs as its own granian process so the API and the
+  # web UI keep separate routing concerns. Same image, same data volume,
+  # different ASGI factory + port. Once the dashboard reaches feature parity
+  # with cgit (slice 3), the cgit service goes away and the web UI inherits
+  # port 8080.
+  testgit-web:
+    build: .
+    container_name: testgit-web
+    command:
+      - "uv"
+      - "run"
+      - "--no-dev"
+      - "granian"
+      - "--interface"
+      - "asgi"
+      - "--factory"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "testgit.web.app:create_app"
+    ports:
+      # Browse at http://localhost:8081/ once the stack is up.
+      - "8081:8000"
+    volumes:
+      # Read-only mount: the dashboard never writes today. Slice 1 is a pure
+      # reader; future write-shaped UI (issue create form, comment box) will
+      # call into the API rather than touch the data dir directly.
+      - ./data:/app/data:ro
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./src
+          target: /app/src
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: rebuild
+          path: ./Dockerfile
+
   # cgit is a read-only browser for the bare repos under ./data/repos.
   # Useful for visually inspecting refs/issues/local/* (and later refs/prs/*)
-  # while building the rest of the system. Reads only — never writes.
+  # while building the rest of the system. Scheduled for removal once the
+  # web dashboard's code-browser slice lands.
   cgit:
     build: ./cgit
     container_name: testgit-cgit

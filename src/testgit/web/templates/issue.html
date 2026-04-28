@@ -1,0 +1,54 @@
+{# ABOUTME: Single-issue view — body + comments thread. #}
+{% extends "_base.html" %}
+{% block title %}#{{ issue.number }} {{ issue.title }} — testgit{% endblock %}
+{% block content %}
+<div class="crumbs">
+  <a href="/">owners</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}">{{ owner }}</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}/{{ name }}">{{ name }}</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}/{{ name }}/issues">issues</a>
+  <span class="sep">/</span>
+  <span class="here">#{{ issue.number }}</span>
+</div>
+
+<h1>
+  {{ issue.title }}
+  <span class="muted" style="font-weight:400">#{{ issue.number }}</span>
+</h1>
+<p>
+  <span class="pill {{ 'open' if issue.state.value == 'OPEN' else 'closed' }}">
+    {{ issue.state.value | lower }}
+  </span>
+  <span class="muted">
+    <strong>{{ issue.author }}</strong> opened this issue
+    on {{ issue.created_at[:10] }}
+  </span>
+</p>
+
+<div class="comment">
+  <div class="head"><strong>{{ issue.author }}</strong> commented on {{ issue.created_at[:10] }}</div>
+  <div class="body">
+    {% if issue.body %}
+    <div class="issue-body">{{ issue.body }}</div>
+    {% else %}
+    <p class="muted"><em>no description provided</em></p>
+    {% endif %}
+  </div>
+</div>
+
+{% for c in comments %}
+<div class="comment">
+  <div class="head">
+    <strong>{{ c.author }}</strong> commented on {{ c.created_at[:10] }}
+  </div>
+  <div class="body"><div class="comment-body">{{ c.body }}</div></div>
+</div>
+{% endfor %}
+
+{% if not comments %}
+<p class="muted">No comments yet.</p>
+{% endif %}
+{% endblock %}

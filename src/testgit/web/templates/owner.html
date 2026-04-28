@@ -1,0 +1,28 @@
+{# ABOUTME: Owner page — lists every repo belonging to a single login. #}
+{% extends "_base.html" %}
+{% block title %}{{ owner }} — testgit{% endblock %}
+{% block content %}
+<div class="crumbs">
+  <a href="/">owners</a>
+  <span class="sep">/</span>
+  <span class="here">{{ owner }}</span>
+</div>
+<h1>{{ owner }}</h1>
+{% if repos %}
+<ul class="list">
+  {% for repo in repos %}
+  <li>
+    <a class="title" href="/{{ owner }}/{{ repo.name }}">{{ repo.name }}</a>
+    {% if repo.description %}
+    <div class="meta">{{ repo.description }}</div>
+    {% endif %}
+    <div class="meta">
+      pushed {{ repo.pushed_at[:10] }}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty">No repositories under {{ owner }}.</div>
+{% endif %}
+{% endblock %}

@@ -11,10 +11,11 @@ from testgit.config import Settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """Build a FastAPI app instance.
+    """Build the API FastAPI app — REST + GraphQL for gh.
 
-    Tests call this with a fresh Settings to keep state fully isolated. Production
-    entry points read Settings from the environment via Settings.from_env().
+    The HTML dashboard lives in a separate process (testgit.web.app:create_app)
+    so each app has only one routing concern. Both processes read the same
+    bare repos through the storage layer.
     """
     settings = settings or Settings.from_env()
 

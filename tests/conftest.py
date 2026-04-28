@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from testgit.app import create_app
 from testgit.config import Settings
 from testgit.storage.repo import BareRepo
+from testgit.web.app import create_app as create_web_app
 
 
 @pytest.fixture
@@ -29,6 +30,22 @@ def app(settings: Settings) -> FastAPI:
 @pytest.fixture
 def client(app: FastAPI) -> Iterator[TestClient]:
     with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
+def web_app(settings: Settings) -> FastAPI:
+    """Separate FastAPI app for the HTML dashboard.
+
+    The web UI runs in its own process in production; tests build it the same
+    way so the API and dashboard test surfaces stay strictly separated.
+    """
+    return create_web_app(settings)
+
+
+@pytest.fixture
+def web_client(web_app: FastAPI) -> Iterator[TestClient]:
+    with TestClient(web_app) as c:
         yield c
 
 

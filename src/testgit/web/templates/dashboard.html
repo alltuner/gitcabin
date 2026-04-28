@@ -1,0 +1,23 @@
+{# ABOUTME: Landing page — lists every owner namespace under data/repos/. #}
+{% extends "_base.html" %}
+{% block title %}testgit — owners{% endblock %}
+{% block content %}
+<h1>Owners</h1>
+{% if owners %}
+<ul class="list">
+  {% for owner in owners %}
+  <li>
+    <a class="title" href="/{{ owner.login }}">{{ owner.login }}</a>
+    <div class="meta">
+      {{ owner.repo_count }} repositor{{ "y" if owner.repo_count == 1 else "ies" }}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty">
+  No owners yet. Create a bare repo at
+  <code>data/repos/&lt;owner&gt;/&lt;repo&gt;.git</code> to get started.
+</div>
+{% endif %}
+{% endblock %}

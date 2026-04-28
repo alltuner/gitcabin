@@ -1,0 +1,159 @@
+/* ABOUTME: Web UI stylesheet — single file, no build step, GitHub-ish look. */
+/* ABOUTME: Plain CSS with light- and dark-mode via prefers-color-scheme. */
+
+:root {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #59636e;
+  --accent: #0969da;
+  --accent-hover: #0550ae;
+  --border: #d1d9e0;
+  --surface: #f6f8fa;
+  --code-bg: #f6f8fa;
+  --open: #1a7f37;
+  --closed: #8250df;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --fg: #f0f6fc;
+    --muted: #9198a1;
+    --accent: #4493f8;
+    --accent-hover: #58a6ff;
+    --border: #3d444d;
+    --surface: #151b23;
+    --code-bg: #151b23;
+    --open: #3fb950;
+    --closed: #ab7df8;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+               Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+header.site {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  background: var(--surface);
+}
+header.site .brand {
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--fg);
+}
+header.site .brand:hover { text-decoration: none; }
+header.site nav { float: right; color: var(--muted); }
+
+main {
+  max-width: 1024px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+h1, h2, h3 { font-weight: 600; line-height: 1.25; }
+h1 { font-size: 22px; margin: 0 0 8px; }
+h2 { font-size: 18px; margin: 24px 0 12px; }
+h3 { font-size: 16px; margin: 16px 0 8px; }
+
+.muted { color: var(--muted); }
+.right { float: right; }
+
+.crumbs {
+  font-size: 16px;
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+.crumbs a { color: var(--fg); }
+.crumbs .sep { margin: 0 6px; color: var(--muted); }
+.crumbs .here { color: var(--fg); font-weight: 600; }
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.list li {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.list li:last-child { border-bottom: 0; }
+.list li:hover { background: var(--surface); }
+.list .title { font-weight: 600; font-size: 16px; }
+.list .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+.empty {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 32px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.pill {
+  display: inline-block;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.pill.open { background: var(--open); color: #fff; border-color: transparent; }
+.pill.closed { background: var(--closed); color: #fff; border-color: transparent; }
+
+.repo-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.repo-actions strong { color: var(--fg); }
+
+.issue-body, .comment-body {
+  margin-top: 8px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.comment {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 16px 0;
+}
+.comment .head {
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
+}
+.comment .head strong { color: var(--fg); }
+.comment .body { padding: 16px; }
+
+code, pre {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--code-bg);
+  border-radius: 4px;
+}
+code { padding: 1px 4px; font-size: 13px; }
+pre { padding: 12px; overflow-x: auto; }
+pre code { background: transparent; padding: 0; }

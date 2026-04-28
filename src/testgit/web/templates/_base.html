@@ -1,0 +1,21 @@
+{# ABOUTME: Base layout — header, main wrapper, stylesheet link. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}testgit{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="/">testgit</a>
+  <nav>
+    <span class="muted">signed in as</span> <strong>{{ viewer_login }}</strong>
+  </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>
