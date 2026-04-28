@@ -177,17 +177,40 @@ def close_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
     an already-closed issue is a no-op (no commit appended) so this is safe
     to call repeatedly without polluting the log.
     """
+    return _set_issue_state(repo, number, IssueState.CLOSED, actor=actor, verb="close")
+
+
+def reopen_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
+    """Append an OPEN-state event to refs/issues/local/<number>.
+
+    Symmetric counterpart to close_issue. Reopening an already-open issue is
+    a no-op (no commit appended) so the UI's reopen button is safe to spam.
+    """
+    return _set_issue_state(repo, number, IssueState.OPEN, actor=actor, verb="reopen")
+
+
+def _set_issue_state(
+    repo: BareRepo,
+    number: int,
+    new_state: IssueState,
+    *,
+    actor: str,
+    verb: str,
+) -> Issue | None:
+    """Shared body for close/reopen — append a state-flip commit if the
+    current state differs, otherwise no-op.
+    """
     ref = _ref_for(number)
     current = _load_commit(repo, ref)
     if current is None:
         return None
 
     doc = IssueDocument.model_validate_json(_read_blob(current.tree["issue.json"]))
-    if doc.state is IssueState.CLOSED:
+    if doc.state is new_state:
         return _read_issue_at(current, number)
 
-    closed_doc = doc.model_copy(update={"state": IssueState.CLOSED})
-    new_payload = closed_doc.model_dump_json(indent=2)
+    updated_doc = doc.model_copy(update={"state": new_state})
+    new_payload = updated_doc.model_dump_json(indent=2)
     new_blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=new_payload + "\n").strip()
 
     # Replace just issue.json; preserve any other top-level entries (e.g.
@@ -203,15 +226,15 @@ def close_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
     commit_sha = _commit_with_identity(
         repo,
         new_tree_sha,
-        message=f"close: {doc.title}",
+        message=f"{verb}: {doc.title}",
         author_name=actor,
         author_email=f"{actor}@testgit.local",
         parents=(current.hexsha,),
     )
 
-    # CAS: only advance if the tip hasn't moved underneath us. A racing close
+    # CAS: only advance if the tip hasn't moved underneath us. A racing writer
     # would land here too and the loser gets CalledProcessError, which is the
-    # right outcome — the close is the user's action and ambiguity is bug-shaped.
+    # right outcome — the state-flip is the user's action and ambiguity is bug-shaped.
     repo.run_git("update-ref", ref, commit_sha, current.hexsha)
 
     return _read_issue_at(repo.repo.commit(ref), number)

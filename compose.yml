@@ -57,10 +57,11 @@ services:
       # Browse at http://localhost:8080/ once the stack is up.
       - "8080:8000"
     volumes:
-      # Read-only mount: the dashboard never writes today. Future write-shaped
-      # UI (issue create form, comment box) will call into the API rather than
-      # touch the data dir directly.
-      - ./data:/app/data:ro
+      # The dashboard's POST handlers (comment / close / reopen) write to the
+      # same bare repos as the API; CAS via `git update-ref REF NEW OLD` is
+      # what keeps concurrent writers from clobbering each other, so two
+      # writer processes against the same volume is by-design safe.
+      - ./data:/app/data
     restart: unless-stopped
     develop:
       watch:

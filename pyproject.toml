@@ -13,6 +13,7 @@ dependencies = [
     "jinja2>=3.1.6",
     "markdown>=3.10.2",
     "pygments>=2.20.0",
+    "python-multipart>=0.0.27",
 ]
 
 [project.scripts]

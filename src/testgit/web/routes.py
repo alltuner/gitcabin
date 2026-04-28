@@ -6,17 +6,20 @@ from __future__ import annotations
 from html import escape as html_escape
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from testgit.config import Settings
 from testgit.storage.issues import (
     IssueState,
+    add_comment,
+    close_issue,
     get_issue,
     list_comments,
     list_issues,
+    reopen_issue,
 )
 from testgit.storage.repo import BareRepo
 from testgit.web import code
@@ -367,6 +370,34 @@ def build_router(settings: Settings) -> APIRouter:
             issue=issue,
             comments=comments,
         )
+
+    @router.post("/{owner}/{name}/issues/{number}/comments", include_in_schema=False)
+    def add_comment_action(
+        owner: str, name: str, number: int, body: str = Form(...)
+    ) -> RedirectResponse:
+        bare = _open_repo(settings, owner, name)
+        if body.strip():
+            # Empty bodies are silently ignored — the form's required attribute
+            # already covers the common case; this handles paste-and-trim.
+            if add_comment(bare, number=number, body=body, author=settings.viewer_login) is None:
+                raise HTTPException(status_code=404, detail="issue not found")
+        # POST/redirect/GET so a refresh doesn't re-submit. 303 ensures the
+        # follow-up request is a GET regardless of the original method.
+        return RedirectResponse(url=f"/{owner}/{name}/issues/{number}", status_code=303)
+
+    @router.post("/{owner}/{name}/issues/{number}/close", include_in_schema=False)
+    def close_action(owner: str, name: str, number: int) -> RedirectResponse:
+        bare = _open_repo(settings, owner, name)
+        if close_issue(bare, number=number, actor=settings.viewer_login) is None:
+            raise HTTPException(status_code=404, detail="issue not found")
+        return RedirectResponse(url=f"/{owner}/{name}/issues/{number}", status_code=303)
+
+    @router.post("/{owner}/{name}/issues/{number}/reopen", include_in_schema=False)
+    def reopen_action(owner: str, name: str, number: int) -> RedirectResponse:
+        bare = _open_repo(settings, owner, name)
+        if reopen_issue(bare, number=number, actor=settings.viewer_login) is None:
+            raise HTTPException(status_code=404, detail="issue not found")
+        return RedirectResponse(url=f"/{owner}/{name}/issues/{number}", status_code=303)
 
     return router
 
