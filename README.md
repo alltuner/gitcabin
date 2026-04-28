@@ -1,5 +1,9 @@
 # gitcabin
 
+> [!WARNING]
+> **Pre-alpha sketch — not functional software yet.**
+> This repo is a working sketch of what gitcabin *could* be, not a tool you can rely on. Most of what's here is design notes and structural code; deployment recipes work in narrow conditions but will break in real use. Read for the ideas; don't deploy for production. Feedback on the direction is very welcome — see [`docs/`](docs/) for what's been thought through and what's still open.
+
 A tiny self-hosted GitHub clone driven by the official `gh` CLI, with all metadata stored in git itself — no separate database.
 
 ## Concept
