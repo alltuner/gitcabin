@@ -1,259 +1,47 @@
-/* ABOUTME: Web UI stylesheet — single file, no build step, GitHub-ish look. */
-/* ABOUTME: Plain CSS with light- and dark-mode via prefers-color-scheme. */
+/* ABOUTME: Custom styles for what Tailwind utilities can't express directly. */
+/* ABOUTME: Pygments-rendered blocks, blame table, and markdown body typography. */
 
-:root {
-  --bg: #ffffff;
-  --fg: #1f2328;
-  --muted: #59636e;
-  --accent: #0969da;
-  --accent-hover: #0550ae;
-  --border: #d1d9e0;
-  --surface: #f6f8fa;
-  --code-bg: #f6f8fa;
-  --open: #1a7f37;
-  --closed: #8250df;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --fg: #f0f6fc;
-    --muted: #9198a1;
-    --accent: #4493f8;
-    --accent-hover: #58a6ff;
-    --border: #3d444d;
-    --surface: #151b23;
-    --code-bg: #151b23;
-    --open: #3fb950;
-    --closed: #ab7df8;
-  }
-}
-
-* { box-sizing: border-box; }
-
-html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
-               Arial, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-a { color: var(--accent); text-decoration: none; }
-a:hover { color: var(--accent-hover); text-decoration: underline; }
-
-header.site {
-  border-bottom: 1px solid var(--border);
-  padding: 12px 24px;
-  background: var(--surface);
-}
-header.site .brand {
-  font-weight: 600;
-  font-size: 16px;
-  color: var(--fg);
-}
-header.site .brand:hover { text-decoration: none; }
-header.site nav { float: right; color: var(--muted); }
-
-main {
-  max-width: 1024px;
-  margin: 0 auto;
-  padding: 24px;
-}
-
-h1, h2, h3 { font-weight: 600; line-height: 1.25; }
-h1 { font-size: 22px; margin: 0 0 8px; }
-h2 { font-size: 18px; margin: 24px 0 12px; }
-h3 { font-size: 16px; margin: 16px 0 8px; }
-
-.muted { color: var(--muted); }
-.right { float: right; }
-
-.crumbs {
-  font-size: 16px;
-  margin: 0 0 16px;
-  color: var(--muted);
-}
-.crumbs a { color: var(--fg); }
-.crumbs .sep { margin: 0 6px; color: var(--muted); }
-.crumbs .here { color: var(--fg); font-weight: 600; }
-
-.list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-.list li {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-}
-.list li:last-child { border-bottom: 0; }
-.list li:hover { background: var(--surface); }
-.list .title { font-weight: 600; font-size: 16px; }
-.list .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
-
-.empty {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 32px;
-  text-align: center;
-  color: var(--muted);
-}
-
-.pill {
-  display: inline-block;
-  padding: 0 8px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--muted);
-}
-.pill.open { background: var(--open); color: #fff; border-color: transparent; }
-.pill.closed { background: var(--closed); color: #fff; border-color: transparent; }
-
-.repo-actions {
-  margin-top: 12px;
-  display: flex;
-  gap: 16px;
-  color: var(--muted);
+/* Pygments blocks. The .hl class is what HtmlFormatter wraps tokens in. */
+.hl {
+  background: rgb(246 248 250);
   font-size: 13px;
-}
-.repo-actions strong { color: var(--fg); }
-
-.issue-body, .comment-body {
-  margin-top: 8px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-}
-
-.comment {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin: 16px 0;
-}
-.comment .head {
-  padding: 8px 16px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  color: var(--muted);
-}
-.comment .head strong { color: var(--fg); }
-.comment .body { padding: 16px; }
-
-code, pre {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  background: var(--code-bg);
-  border-radius: 4px;
 }
-code { padding: 1px 4px; font-size: 13px; }
-pre { padding: 12px; overflow-x: auto; }
-pre code { background: transparent; padding: 0; }
-
-/* File tree */
-table.tree {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-  margin-top: 16px;
-}
-table.tree th, table.tree td {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-  font-size: 13px;
-}
-table.tree th {
-  background: var(--surface);
-  color: var(--muted);
-  font-weight: 500;
-}
-table.tree tr:last-child td { border-bottom: 0; }
-table.tree tr:hover td { background: var(--surface); }
-
-/* Blob viewer (Pygments-rendered) */
-.blob {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-  margin-top: 16px;
-}
-.blob .hl {
-  background: var(--code-bg);
-  margin: 0;
-  padding: 0;
-  font-size: 13px;
-}
-.blob .hl table { width: 100%; border-collapse: collapse; }
-.blob .hl td.linenos {
-  border-right: 1px solid var(--border);
-  color: var(--muted);
+.hl table { width: 100%; border-collapse: collapse; }
+.hl td.linenos {
+  border-right: 1px solid rgb(208 215 222);
+  color: rgb(89 99 110);
   padding: 0 8px;
   text-align: right;
   user-select: none;
   width: 1%;
   vertical-align: top;
 }
-.blob .hl td.code { padding: 0 12px; vertical-align: top; }
-.blob .hl pre { margin: 0; padding: 0; background: transparent; }
+.hl td.code { padding: 0 12px; vertical-align: top; }
+.hl pre { margin: 0; padding: 0; background: transparent; }
 
-/* Markdown rendered README */
-.readme {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-top: 24px;
-  padding: 16px 24px;
-  background: var(--bg);
-}
-.readme h2:first-child { margin-top: 0; }
-.markdown-body p { margin: 8px 0; }
-.markdown-body pre { padding: 12px; overflow-x: auto; }
-.markdown-body code { font-size: 13px; }
-.markdown-body table { border-collapse: collapse; }
-.markdown-body th, .markdown-body td {
-  border: 1px solid var(--border);
-  padding: 4px 8px;
+@media (prefers-color-scheme: dark) {
+  .hl { background: rgb(13 17 23); }
+  .hl td.linenos { border-color: rgb(48 54 61); color: rgb(125 133 144); }
 }
 
-/* Commit body block */
-pre.commit-body {
-  background: var(--surface);
-  padding: 12px;
-  border-radius: 6px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-}
-
-/* Blame table */
+/* Blame table — needs a custom multi-column layout that Tailwind utility
+   classes alone don't make obvious. */
 table.blame {
   width: 100%;
   border-collapse: collapse;
-  border: 1px solid var(--border);
-  border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 13px;
-  margin-top: 16px;
-  overflow: hidden;
 }
 table.blame td {
   vertical-align: top;
   padding: 0 8px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgb(208 215 222);
 }
 table.blame td.commit {
   width: 280px;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+  background: rgb(246 248 250);
+  border-right: 1px solid rgb(208 215 222);
   font-size: 11px;
   padding: 4px 8px;
 }
@@ -266,11 +54,11 @@ table.blame td.commit .subject {
   max-width: 260px;
 }
 table.blame td.lineno {
-  color: var(--muted);
+  color: rgb(89 99 110);
   text-align: right;
   user-select: none;
   width: 1%;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid rgb(208 215 222);
 }
 table.blame td.content pre {
   margin: 0;
@@ -280,3 +68,52 @@ table.blame td.content pre {
   font-size: 13px;
 }
 table.blame tr:last-child td { border-bottom: 0; }
+
+@media (prefers-color-scheme: dark) {
+  table.blame td { border-color: rgb(48 54 61); }
+  table.blame td.commit { background: rgb(21 27 35); border-color: rgb(48 54 61); }
+  table.blame td.lineno { color: rgb(125 133 144); border-color: rgb(48 54 61); }
+}
+
+/* Markdown body — the rendered README sits here. */
+.markdown-body { line-height: 1.6; }
+.markdown-body h1, .markdown-body h2 {
+  border-bottom: 1px solid rgb(208 215 222);
+  padding-bottom: 6px;
+  margin: 24px 0 16px;
+}
+.markdown-body h1 { font-size: 24px; font-weight: 600; }
+.markdown-body h2 { font-size: 20px; font-weight: 600; }
+.markdown-body h3 { font-size: 16px; font-weight: 600; margin: 24px 0 8px; }
+.markdown-body p { margin: 8px 0; }
+.markdown-body code {
+  background: rgb(246 248 250);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+.markdown-body pre {
+  background: rgb(246 248 250);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.markdown-body pre code { background: transparent; padding: 0; }
+.markdown-body ul, .markdown-body ol { padding-left: 24px; margin: 8px 0; }
+.markdown-body table { border-collapse: collapse; margin: 12px 0; }
+.markdown-body th, .markdown-body td {
+  border: 1px solid rgb(208 215 222);
+  padding: 6px 12px;
+}
+.markdown-body th { background: rgb(246 248 250); }
+.markdown-body a { color: rgb(9 105 218); text-decoration: none; }
+.markdown-body a:hover { text-decoration: underline; }
+
+@media (prefers-color-scheme: dark) {
+  .markdown-body h1, .markdown-body h2 { border-color: rgb(48 54 61); }
+  .markdown-body code, .markdown-body pre { background: rgb(21 27 35); }
+  .markdown-body th, .markdown-body td { border-color: rgb(48 54 61); }
+  .markdown-body th { background: rgb(21 27 35); }
+  .markdown-body a { color: rgb(88 166 255); }
+}

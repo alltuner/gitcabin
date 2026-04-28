@@ -3,35 +3,32 @@
 {% block title %}{{ path }} — {{ owner }}/{{ name }}{% endblock %}
 {% block head_extra %}<link rel="stylesheet" href="/highlight.css">{% endblock %}
 {% block content %}
-<div class="crumbs">
-  <a href="/">owners</a>
-  <span class="sep">/</span>
-  <a href="/{{ owner }}">{{ owner }}</a>
-  <span class="sep">/</span>
-  <a href="/{{ owner }}/{{ name }}">{{ name }}</a>
-  <span class="sep">/</span>
-  <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}">tree</a>
+{% set active_tab = "code" %}
+{% include "_repo_header.html" %}
+
+<nav class="mb-4 text-sm font-mono">
+  <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
   {% for c in crumb_segments %}
-    <span class="sep">/</span>
+    <span class="mx-1 text-gray-400">/</span>
     {% if loop.last %}
-    <span class="here">{{ c.name }}</span>
+    <span class="text-gray-900 dark:text-gray-100">{{ c.name }}</span>
     {% else %}
-    <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ c.path }}">{{ c.name }}</a>
+    <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ c.path }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ c.name }}</a>
     {% endif %}
   {% endfor %}
+</nav>
+
+<div class="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+  <div class="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+    <span>{{ rendered.size }} bytes</span>
+    <a href="/{{ owner }}/{{ name }}/blame/{{ ref }}/{{ path }}" class="text-blue-600 hover:underline dark:text-blue-400">Blame</a>
+  </div>
+  {% if rendered.is_too_large %}
+  <div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">File too large to render inline.</div>
+  {% elif rendered.is_binary %}
+  <div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Binary file — preview not available.</div>
+  {% else %}
+  {{ rendered.highlighted_html | safe }}
+  {% endif %}
 </div>
-
-<h1>{{ rendered.name }}</h1>
-<p class="muted">
-  {{ rendered.size }} bytes &middot; on <code>{{ ref }}</code> &middot;
-  <a href="/{{ owner }}/{{ name }}/blame/{{ ref }}/{{ path }}">blame</a>
-</p>
-
-{% if rendered.is_too_large %}
-<div class="empty">File too large to render inline.</div>
-{% elif rendered.is_binary %}
-<div class="empty">Binary file — preview not available.</div>
-{% else %}
-<div class="blob">{{ rendered.highlighted_html | safe }}</div>
-{% endif %}
 {% endblock %}

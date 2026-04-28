@@ -2,31 +2,29 @@
 {% extends "_base.html" %}
 {% block title %}Commits on {{ ref }} — {{ owner }}/{{ name }}{% endblock %}
 {% block content %}
-<div class="crumbs">
-  <a href="/">owners</a>
-  <span class="sep">/</span>
-  <a href="/{{ owner }}">{{ owner }}</a>
-  <span class="sep">/</span>
-  <a href="/{{ owner }}/{{ name }}">{{ name }}</a>
-  <span class="sep">/</span>
-  <span class="here">commits / {{ ref }}</span>
+{% set active_tab = "commits" %}
+{% include "_repo_header.html" %}
+
+<div class="mb-4 flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+  Commits on <span class="rounded border border-gray-300 px-2 py-1 font-mono text-xs dark:border-gray-700">{{ ref }}</span>
 </div>
 
-<h1>Commits on <code>{{ ref }}</code></h1>
-
 {% if commits %}
-<ul class="list">
+<div class="divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
   {% for c in commits %}
-  <li>
-    <a class="title" href="/{{ owner }}/{{ name }}/commit/{{ c.sha }}">{{ c.subject }}</a>
-    <div class="meta">
-      <code>{{ c.short_sha }}</code> &middot;
-      <strong>{{ c.author_name }}</strong> on {{ c.authored_at[:19] }}
+  <div class="flex items-start gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
+    <div class="min-w-0 flex-1">
+      <a href="/{{ owner }}/{{ name }}/commit/{{ c.sha }}" class="font-semibold text-gray-900 hover:text-blue-600 dark:text-gray-100 dark:hover:text-blue-400">{{ c.subject }}</a>
+      <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        <strong class="text-gray-700 dark:text-gray-300">{{ c.author_name }}</strong>
+        committed on {{ c.authored_at[:10] }}
+      </div>
     </div>
-  </li>
+    <a href="/{{ owner }}/{{ name }}/commit/{{ c.sha }}" class="rounded border border-gray-300 px-2 py-1 font-mono text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{{ c.short_sha }}</a>
+  </div>
   {% endfor %}
-</ul>
+</div>
 {% else %}
-<div class="empty">No commits.</div>
+<div class="rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">No commits.</div>
 {% endif %}
 {% endblock %}

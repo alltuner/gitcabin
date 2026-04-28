@@ -104,7 +104,7 @@ def test_repo_overview_renders_readme_and_tree(
     body = response.text
     # Top-level entries: README.md (blob), src (tree).
     assert "README.md" in body
-    assert "src/" in body
+    assert "src" in body
     # README.md is rendered as Markdown (the **markdown** becomes <strong>).
     assert "<strong>markdown</strong>" in body
 

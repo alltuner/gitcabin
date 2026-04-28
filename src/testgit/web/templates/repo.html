@@ -3,40 +3,27 @@
 {% block title %}{{ owner }}/{{ name }} — testgit{% endblock %}
 {% block head_extra %}<link rel="stylesheet" href="/highlight.css">{% endblock %}
 {% block content %}
-<div class="crumbs">
-  <a href="/">owners</a>
-  <span class="sep">/</span>
-  <a href="/{{ owner }}">{{ owner }}</a>
-  <span class="sep">/</span>
-  <span class="here">{{ name }}</span>
-</div>
-
-<h1>{{ owner }}/{{ name }}</h1>
-{% if description %}
-<p class="muted">{{ description }}</p>
-{% endif %}
-
-<div class="repo-actions">
-  <span><strong>{{ open_issue_count }}</strong> open issues
-    (<a href="/{{ owner }}/{{ name }}/issues?state=all">{{ total_issue_count }} total</a>)</span>
-  {% if default_branch %}
-  <span>default branch: <code>{{ default_branch }}</code></span>
-  <span><a href="/{{ owner }}/{{ name }}/commits/{{ default_branch }}">commits</a></span>
-  <span><a href="/{{ owner }}/{{ name }}/branches">branches</a></span>
-  {% endif %}
-  <span><a href="/{{ owner }}/{{ name }}/issues">issues</a></span>
-</div>
+{% set active_tab = "code" %}
+{% include "_repo_header.html" %}
 
 {% if entries %}
+<div class="mb-6 flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+  <span class="rounded border border-gray-300 px-2 py-1 font-mono text-xs dark:border-gray-700">{{ default_branch }}</span>
+  {% if head_short_sha %}
+  <span class="font-mono text-xs">{{ head_short_sha }}</span>
+  {% endif %}
+</div>
 {% include "_tree_table.html" %}
 {% else %}
-<div class="empty" style="margin-top:24px">This repository has no commits yet.</div>
+<div class="rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
+  This repository has no commits yet.
+</div>
 {% endif %}
 
 {% if readme_html %}
-<div class="readme">
-  <h2>README</h2>
-  <div class="markdown-body">{{ readme_html | safe }}</div>
+<div class="mt-8 rounded-md border border-gray-200 dark:border-gray-800">
+  <div class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold dark:border-gray-800 dark:bg-gray-900">README</div>
+  <div class="markdown-body px-6 py-4">{{ readme_html | safe }}</div>
 </div>
 {% endif %}
 {% endblock %}

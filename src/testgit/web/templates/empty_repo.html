@@ -1,0 +1,15 @@
+{# ABOUTME: Shown when a repo exists on disk but has no commits yet. #}
+{% extends "_base.html" %}
+{% block title %}{{ owner }}/{{ name }} — empty{% endblock %}
+{% block content %}
+{% set active_tab = section %}
+{% include "_repo_header.html" %}
+
+<div class="rounded-md border border-gray-200 p-8 text-center dark:border-gray-800">
+  <h2 class="mb-2 text-lg font-semibold">This repository is empty</h2>
+  <p class="text-sm text-gray-500 dark:text-gray-400">
+    Push something and then come back. To create the bare repo locally:
+  </p>
+  <pre class="mx-auto mt-4 inline-block rounded bg-gray-50 px-4 py-2 text-left font-mono text-xs dark:bg-gray-900">git push http://github.localhost/{{ owner }}/{{ name }}.git main</pre>
+</div>
+{% endblock %}

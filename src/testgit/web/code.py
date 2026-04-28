@@ -122,6 +122,16 @@ def head_ref_name(bare: BareRepo) -> str | None:
         return None
 
 
+def is_empty_repo(bare: BareRepo) -> bool:
+    """True if the bare repo has no branches/tags — i.e. nothing to browse yet.
+
+    A fresh `git init --bare --initial-branch=main` produces a repo where HEAD
+    symref's to refs/heads/main but the ref itself doesn't exist; resolving
+    "main" raises BadName. The branches collection is the load-bearing signal.
+    """
+    return not list(bare.repo.branches) and not list(bare.repo.tags)
+
+
 def resolve_ref(bare: BareRepo, ref: str) -> Commit | None:
     """Resolve a ref string (branch / tag / sha) to a Commit, or None."""
     try:

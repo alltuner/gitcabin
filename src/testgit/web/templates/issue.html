@@ -2,53 +2,56 @@
 {% extends "_base.html" %}
 {% block title %}#{{ issue.number }} {{ issue.title }} — testgit{% endblock %}
 {% block content %}
-<div class="crumbs">
-  <a href="/">owners</a>
-  <span class="sep">/</span>
-  <a href="/{{ owner }}">{{ owner }}</a>
-  <span class="sep">/</span>
-  <a href="/{{ owner }}/{{ name }}">{{ name }}</a>
-  <span class="sep">/</span>
-  <a href="/{{ owner }}/{{ name }}/issues">issues</a>
-  <span class="sep">/</span>
-  <span class="here">#{{ issue.number }}</span>
+{% set active_tab = "issues" %}
+{% include "_repo_header.html" %}
+
+<div class="mb-2 flex items-baseline gap-2">
+  <h1 class="text-2xl font-semibold">{{ issue.title }}</h1>
+  <span class="text-2xl font-light text-gray-500 dark:text-gray-400">#{{ issue.number }}</span>
+</div>
+<div class="mb-6 flex items-center gap-3">
+  {% if issue.state.value == "OPEN" %}
+  <span class="inline-flex items-center gap-1.5 rounded-full bg-green-700 px-2.5 py-0.5 text-xs font-medium text-white">
+    <svg class="h-3 w-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill-rule="evenodd" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>
+    Open
+  </span>
+  {% else %}
+  <span class="inline-flex items-center gap-1.5 rounded-full bg-purple-700 px-2.5 py-0.5 text-xs font-medium text-white">
+    <svg class="h-3 w-3" viewBox="0 0 16 16" fill="currentColor"><path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/><path fill-rule="evenodd" d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z"/></svg>
+    Closed
+  </span>
+  {% endif %}
+  <span class="text-sm text-gray-500 dark:text-gray-400">
+    <strong class="text-gray-700 dark:text-gray-300">{{ issue.author }}</strong>
+    opened this issue on {{ issue.created_at[:10] }}
+  </span>
 </div>
 
-<h1>
-  {{ issue.title }}
-  <span class="muted" style="font-weight:400">#{{ issue.number }}</span>
-</h1>
-<p>
-  <span class="pill {{ 'open' if issue.state.value == 'OPEN' else 'closed' }}">
-    {{ issue.state.value | lower }}
-  </span>
-  <span class="muted">
-    <strong>{{ issue.author }}</strong> opened this issue
-    on {{ issue.created_at[:10] }}
-  </span>
-</p>
-
-<div class="comment">
-  <div class="head"><strong>{{ issue.author }}</strong> commented on {{ issue.created_at[:10] }}</div>
-  <div class="body">
+<div class="mb-4 overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+  <div class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+    <strong class="text-gray-900 dark:text-gray-100">{{ issue.author }}</strong>
+    commented on {{ issue.created_at[:10] }}
+  </div>
+  <div class="px-4 py-3">
     {% if issue.body %}
-    <div class="issue-body">{{ issue.body }}</div>
+    <div class="whitespace-pre-wrap break-words text-sm">{{ issue.body }}</div>
     {% else %}
-    <p class="muted"><em>no description provided</em></p>
+    <div class="text-sm italic text-gray-500 dark:text-gray-400">no description provided</div>
     {% endif %}
   </div>
 </div>
 
 {% for c in comments %}
-<div class="comment">
-  <div class="head">
-    <strong>{{ c.author }}</strong> commented on {{ c.created_at[:10] }}
+<div class="mb-4 overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+  <div class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+    <strong class="text-gray-900 dark:text-gray-100">{{ c.author }}</strong>
+    commented on {{ c.created_at[:10] }}
   </div>
-  <div class="body"><div class="comment-body">{{ c.body }}</div></div>
+  <div class="whitespace-pre-wrap break-words px-4 py-3 text-sm">{{ c.body }}</div>
 </div>
 {% endfor %}
 
 {% if not comments %}
-<p class="muted">No comments yet.</p>
+<p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No comments yet.</p>
 {% endif %}
 {% endblock %}

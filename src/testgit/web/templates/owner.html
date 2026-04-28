@@ -1,28 +1,28 @@
-{# ABOUTME: Owner page — lists every repo belonging to a single login. #}
+{# ABOUTME: Owner page — every repo belonging to a single login. #}
 {% extends "_base.html" %}
 {% block title %}{{ owner }} — testgit{% endblock %}
 {% block content %}
-<div class="crumbs">
-  <a href="/">owners</a>
-  <span class="sep">/</span>
-  <span class="here">{{ owner }}</span>
-</div>
-<h1>{{ owner }}</h1>
+<nav class="mb-3 text-sm text-gray-500 dark:text-gray-400">
+  <a href="/" class="hover:underline">owners</a>
+  <span class="mx-1">/</span>
+  <span class="text-gray-900 dark:text-gray-100">{{ owner }}</span>
+</nav>
+<h1 class="mb-6 text-2xl font-semibold">{{ owner }}</h1>
 {% if repos %}
-<ul class="list">
+<div class="divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
   {% for repo in repos %}
-  <li>
-    <a class="title" href="/{{ owner }}/{{ repo.name }}">{{ repo.name }}</a>
+  <a href="/{{ owner }}/{{ repo.name }}" class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
+    <div class="font-semibold text-blue-600 dark:text-blue-400">{{ repo.name }}</div>
     {% if repo.description %}
-    <div class="meta">{{ repo.description }}</div>
+    <div class="mt-1 text-sm text-gray-600 dark:text-gray-300">{{ repo.description }}</div>
     {% endif %}
-    <div class="meta">
-      pushed {{ repo.pushed_at[:10] }}
-    </div>
-  </li>
+    <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">pushed {{ repo.pushed_at[:10] }}</div>
+  </a>
   {% endfor %}
-</ul>
+</div>
 {% else %}
-<div class="empty">No repositories under {{ owner }}.</div>
+<div class="rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
+  No repositories under {{ owner }}.
+</div>
 {% endif %}
 {% endblock %}

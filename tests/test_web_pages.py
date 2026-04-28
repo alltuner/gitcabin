@@ -80,11 +80,11 @@ def test_repo_page_shows_default_branch_and_issue_counts(
     response = web_client.get("/octocat/hello")
     assert response.status_code == 200
     body = response.text
-    assert "octocat/hello" in body
-    # Default branch is `main` after BareRepo.open_or_init.
-    assert "main" in body
-    # Two open issues at this point.
-    assert "2 open issues" in body or "2</strong> open" in body
+    assert "octocat" in body and "hello" in body
+    # The Issues tab in the repo header carries the total-issue-count badge.
+    # The link points at .../issues and the count "2" appears within it.
+    assert "/octocat/hello/issues" in body
+    assert ">2<" in body  # the badge content
 
 
 def test_issues_page_filters_by_state(

@@ -1,32 +1,41 @@
 {# ABOUTME: Reusable file-listing table — used by the repo overview and tree pages. #}
-<table class="tree">
-  <thead>
-    <tr><th>Name</th><th>Size</th></tr>
-  </thead>
-  <tbody>
-    {% if path %}
-    <tr>
-      <td>
-        {% if crumb_segments | length > 1 %}
-        <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ crumb_segments[-2].path }}">..</a>
-        {% else %}
-        <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}">..</a>
-        {% endif %}
-      </td>
-      <td></td>
-    </tr>
-    {% endif %}
-    {% for entry in entries %}
-    <tr>
-      <td>
-        {% if entry.type == "tree" %}
-          📁 <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{% if path %}{{ path }}/{% endif %}{{ entry.name }}">{{ entry.name }}/</a>
-        {% else %}
-          📄 <a href="/{{ owner }}/{{ name }}/blob/{{ ref }}/{% if path %}{{ path }}/{% endif %}{{ entry.name }}">{{ entry.name }}</a>
-        {% endif %}
-      </td>
-      <td class="muted">{% if entry.size is not none %}{{ entry.size }} B{% endif %}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 dark:bg-gray-900">
+      <tr class="text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        <th class="px-4 py-2">Name</th>
+        <th class="px-4 py-2 text-right">Size</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
+      {% if path %}
+      <tr class="hover:bg-gray-50 dark:hover:bg-gray-900">
+        <td class="px-4 py-2 font-mono text-xs">
+          {% if crumb_segments | length > 1 %}
+          <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ crumb_segments[-2].path }}" class="text-blue-600 hover:underline dark:text-blue-400">..</a>
+          {% else %}
+          <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}" class="text-blue-600 hover:underline dark:text-blue-400">..</a>
+          {% endif %}
+        </td>
+        <td></td>
+      </tr>
+      {% endif %}
+      {% for entry in entries %}
+      <tr class="hover:bg-gray-50 dark:hover:bg-gray-900">
+        <td class="px-4 py-2">
+          {% if entry.type == "tree" %}
+          <span class="mr-2 text-gray-400">📁</span>
+          <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{% if path %}{{ path }}/{% endif %}{{ entry.name }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ entry.name }}</a>
+          {% else %}
+          <span class="mr-2 text-gray-400">📄</span>
+          <a href="/{{ owner }}/{{ name }}/blob/{{ ref }}/{% if path %}{{ path }}/{% endif %}{{ entry.name }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ entry.name }}</a>
+          {% endif %}
+        </td>
+        <td class="px-4 py-2 text-right text-xs text-gray-500 dark:text-gray-400">
+          {% if entry.size is not none %}{{ entry.size }} B{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

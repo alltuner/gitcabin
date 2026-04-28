@@ -199,6 +199,17 @@ def build_router(settings: Settings) -> APIRouter:
         bare = _open_repo(settings, owner, name)
         commit = code.resolve_ref(bare, ref)
         if commit is None:
+            # Empty repo (no commits at all) — render the empty overview
+            # rather than a hard 404, so users land somewhere useful.
+            if code.is_empty_repo(bare):
+                return _render(
+                    request,
+                    settings,
+                    "empty_repo.html",
+                    owner=owner,
+                    name=name,
+                    section="tree",
+                )
             raise HTTPException(status_code=404, detail="ref not found")
         node = code.walk_tree_at_path(commit, path)
         if node is None:
@@ -245,6 +256,15 @@ def build_router(settings: Settings) -> APIRouter:
         bare = _open_repo(settings, owner, name)
         commit = code.resolve_ref(bare, ref)
         if commit is None:
+            if code.is_empty_repo(bare):
+                return _render(
+                    request,
+                    settings,
+                    "empty_repo.html",
+                    owner=owner,
+                    name=name,
+                    section="commits",
+                )
             raise HTTPException(status_code=404, detail="ref not found")
         return _render(
             request,
