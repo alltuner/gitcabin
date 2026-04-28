@@ -106,6 +106,56 @@ def test_repository_owner_respects_per_page(client: TestClient, init_repo) -> No
     assert repos["pageInfo"]["hasNextPage"] is True
 
 
+VIEWER_REPO_LIST_QUERY = """
+query RepositoryListViewer($perPage: Int!, $endCursor: String) {
+  repositoryOwner: viewer {
+    login
+    repositories(
+      first: $perPage,
+      after: $endCursor,
+      ownerAffiliations: OWNER,
+      orderBy: { field: PUSHED_AT, direction: DESC }
+    ) {
+      nodes { nameWithOwner }
+      totalCount
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+"""
+
+
+def test_viewer_repositories_lists_repos_under_viewer_login(client: TestClient, init_repo) -> None:
+    # gh repo list (no owner arg) rewrites the query to `repositoryOwner: viewer`,
+    # so User must expose a `repositories` connection of the same shape as
+    # RepositoryOwner.repositories. This is the path that lights up `gh repo list`
+    # without arguments.
+    init_repo("david", "scratch")
+    init_repo("david", "notes")
+    init_repo("octocat", "hello")  # different owner — should not appear
+
+    payload = _post(client, VIEWER_REPO_LIST_QUERY, {"perPage": 30})
+    assert "errors" not in payload, payload
+    owner = payload["data"]["repositoryOwner"]
+    assert owner["login"] == "david"
+    repos = owner["repositories"]
+    assert repos["totalCount"] == 2
+    assert {n["nameWithOwner"] for n in repos["nodes"]} == {
+        "david/scratch",
+        "david/notes",
+    }
+
+
+def test_viewer_repositories_empty_when_viewer_dir_absent(client: TestClient) -> None:
+    # No data_dir/repos/david/ — viewer still resolves (it's the configured
+    # login), the connection is just empty.
+    payload = _post(client, VIEWER_REPO_LIST_QUERY, {"perPage": 30})
+    assert "errors" not in payload, payload
+    repos = payload["data"]["repositoryOwner"]["repositories"]
+    assert repos["totalCount"] == 0
+    assert repos["nodes"] == []
+
+
 def test_repository_owner_ignores_non_bare_directories(
     client: TestClient, init_repo, settings
 ) -> None:

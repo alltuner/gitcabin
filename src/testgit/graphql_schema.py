@@ -135,6 +135,29 @@ class User:
     name: str | None = None
     database_id: int | None = None
 
+    @strawberry.field
+    def repositories(
+        self,
+        info: strawberry.Info,
+        first: int | None = None,
+        after: str | None = None,
+        privacy: RepositoryPrivacy | None = None,
+        is_fork: bool | None = None,
+        owner_affiliations: list[RepositoryAffiliation] | None = None,
+        order_by: RepositoryOrder | None = None,
+    ) -> RepositoryConnection:
+        # gh repo list with no owner arg rewrites to `repositoryOwner: viewer`,
+        # i.e. it queries User.repositories instead of RepositoryOwner.repositories.
+        # Same shape, same arg names — both lookups walk the user's owner dir.
+        _ = (after, owner_affiliations, order_by)
+        return _build_repo_connection(
+            info.context["settings"],
+            self.login,
+            first=first,
+            privacy=privacy,
+            is_fork=is_fork,
+        )
+
 
 @strawberry.type
 class Label:
@@ -727,6 +750,52 @@ def _to_gql_repository(bare: BareRepo, owner: str, name: str) -> Repository:
     )
 
 
+def _build_repo_connection(
+    settings: Settings,
+    login: str,
+    *,
+    first: int | None,
+    privacy: RepositoryPrivacy | None,
+    is_fork: bool | None,
+) -> RepositoryConnection:
+    """Walk data_dir/repos/<login>/*.git and build a RepositoryConnection.
+
+    Shared between Query.repositoryOwner.repositories and Viewer.repositories
+    (gh repo list with and without an owner arg). We're always PUBLIC and
+    never a fork, so privacy=PRIVATE / isFork=true legitimately yields empty.
+    """
+    empty = RepositoryConnection(
+        nodes=[], total_count=0, page_info=PageInfo(has_next_page=False, end_cursor=None)
+    )
+    if privacy is not None and privacy is not RepositoryPrivacy.PUBLIC:
+        return empty
+    if is_fork is True:
+        return empty
+
+    owner_dir = settings.data_dir / "repos" / login
+    repos: list[Repository] = []
+    if owner_dir.is_dir():
+        for entry in sorted(owner_dir.iterdir()):
+            if not entry.name.endswith(".git"):
+                continue
+            bare = BareRepo.open(entry)
+            if bare is None:
+                continue
+            repos.append(_to_gql_repository(bare, login, entry.name[:-4]))
+
+    # Sort newest-pushed-first to match gh's default `orderBy: PUSHED_AT DESC`.
+    repos.sort(key=lambda r: r.pushed_at, reverse=True)
+
+    total = len(repos)
+    limit = first if first is not None else total
+    page = repos[:limit]
+    return RepositoryConnection(
+        nodes=page,
+        total_count=total,
+        page_info=PageInfo(has_next_page=limit < total, end_cursor=None),
+    )
+
+
 def _repo_timestamps(bare: BareRepo) -> tuple[str, str]:
     """Return (created_at, pushed_at) as ISO-8601 strings.
 
@@ -765,42 +834,16 @@ class RepositoryOwner:
         owner_affiliations: list[RepositoryAffiliation] | None = None,
         order_by: RepositoryOrder | None = None,
     ) -> RepositoryConnection:
-        # privacy/isFork/ownerAffiliations/orderBy are part of gh's query
-        # template — accept them so the schema validates, then apply only the
-        # filters that make sense locally. We're always PUBLIC and never a fork,
-        # so privacy=PRIVATE / isFork=true legitimately yields an empty list.
+        # ownerAffiliations/orderBy are part of gh's query template; we accept
+        # them for validation but local repos have no notion of affiliation
+        # and the connection is always pre-sorted by pushed_at desc.
         _ = (after, owner_affiliations, order_by)
-        if privacy is not None and privacy is not RepositoryPrivacy.PUBLIC:
-            return RepositoryConnection(
-                nodes=[], total_count=0, page_info=PageInfo(has_next_page=False, end_cursor=None)
-            )
-        if is_fork is True:
-            return RepositoryConnection(
-                nodes=[], total_count=0, page_info=PageInfo(has_next_page=False, end_cursor=None)
-            )
-
-        settings: Settings = info.context["settings"]
-        owner_dir = settings.data_dir / "repos" / self.login
-        repos: list[Repository] = []
-        if owner_dir.is_dir():
-            for entry in sorted(owner_dir.iterdir()):
-                if not entry.name.endswith(".git"):
-                    continue
-                bare = BareRepo.open(entry)
-                if bare is None:
-                    continue
-                repos.append(_to_gql_repository(bare, self.login, entry.name[:-4]))
-
-        # Sort newest-pushed-first to match gh's default `orderBy: PUSHED_AT DESC`.
-        repos.sort(key=lambda r: r.pushed_at, reverse=True)
-
-        total = len(repos)
-        limit = first if first is not None else total
-        page = repos[:limit]
-        return RepositoryConnection(
-            nodes=page,
-            total_count=total,
-            page_info=PageInfo(has_next_page=limit < total, end_cursor=None),
+        return _build_repo_connection(
+            info.context["settings"],
+            self.login,
+            first=first,
+            privacy=privacy,
+            is_fork=is_fork,
         )
 
 
