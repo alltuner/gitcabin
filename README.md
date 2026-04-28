@@ -8,15 +8,14 @@ A tiny self-hosted GitHub clone driven by the official `gh` CLI, with all metada
 - Issues, PRs, and counters live in side refs of the bare git repo (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`). Code lives in normal `refs/heads/*` and `refs/tags/*`. The two namespaces never collide.
 - The HTTP API server is the only writer of metadata refs. Plain `git clone`/`git push` only see code.
 
-## Running
+## Running with Docker (recommended)
 
-Bind to `api.github.localhost` (the hostname gh resolves for `github.localhost`):
+The container runs uvicorn unprivileged on port 8000 and Compose publishes that on host port 80 — which is the port gh expects for `github.localhost`. Source is bind-mounted, so edits on the host trigger autoreload inside the container.
 
 ```sh
-uv run testgit
+docker compose up --build      # first time
+docker compose up              # subsequent runs
 ```
-
-Defaults to port 80, which requires root on Unix. Override with `TESTGIT_PORT` and front it with a port-forwarder if you'd rather not run as root.
 
 Then point gh at it:
 
@@ -25,10 +24,20 @@ echo "any-token" | gh auth login --hostname github.localhost --with-token
 GH_HOST=github.localhost gh auth status
 ```
 
+Stop with `docker compose down` (or Ctrl-C if running in the foreground).
+
+## Running natively (no gh)
+
+```sh
+uv run testgit
+```
+
+Listens on `127.0.0.1:8000`. This bypasses Docker and is useful for direct probing with curl / httpie, but gh won't reach it — gh dials port 80, not 8000, when `GH_HOST=github.localhost`.
+
 ## Development
 
 ```sh
-uv sync           # install deps + editable testgit
-uv run pytest     # tests
+uv sync                                    # install deps + editable testgit
+uv run pytest                              # tests
 uv run ruff check . && uv run ruff format --check .
 ```
