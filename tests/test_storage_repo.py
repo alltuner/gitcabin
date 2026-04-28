@@ -12,9 +12,7 @@ from testgit.storage.repo import BareRepo
 
 
 def _is_bare(path: Path) -> bool:
-    out = subprocess.check_output(
-        ["git", "rev-parse", "--is-bare-repository"], cwd=path, text=True
-    )
+    out = subprocess.check_output(["git", "rev-parse", "--is-bare-repository"], cwd=path, text=True)
     return out.strip() == "true"
 
 
