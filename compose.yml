@@ -36,9 +36,7 @@ services:
 
   # The HTML dashboard runs as its own granian process so the API and the
   # web UI keep separate routing concerns. Same image, same data volume,
-  # different ASGI factory + port. Once the dashboard reaches feature parity
-  # with cgit (slice 3), the cgit service goes away and the web UI inherits
-  # port 8080.
+  # different ASGI factory + port.
   testgit-web:
     build: .
     container_name: testgit-web
@@ -56,12 +54,12 @@ services:
       - "8000"
       - "testgit.web.app:create_app"
     ports:
-      # Browse at http://localhost:8081/ once the stack is up.
-      - "8081:8000"
+      # Browse at http://localhost:8080/ once the stack is up.
+      - "8080:8000"
     volumes:
-      # Read-only mount: the dashboard never writes today. Slice 1 is a pure
-      # reader; future write-shaped UI (issue create form, comment box) will
-      # call into the API rather than touch the data dir directly.
+      # Read-only mount: the dashboard never writes today. Future write-shaped
+      # UI (issue create form, comment box) will call into the API rather than
+      # touch the data dir directly.
       - ./data:/app/data:ro
     restart: unless-stopped
     develop:
@@ -73,18 +71,3 @@ services:
           path: ./pyproject.toml
         - action: rebuild
           path: ./Dockerfile
-
-  # cgit is a read-only browser for the bare repos under ./data/repos.
-  # Useful for visually inspecting refs/issues/local/* (and later refs/prs/*)
-  # while building the rest of the system. Scheduled for removal once the
-  # web dashboard's code-browser slice lands.
-  cgit:
-    build: ./cgit
-    container_name: testgit-cgit
-    ports:
-      # Browse at http://localhost:8080/cgit/ once the stack is up.
-      - "8080:80"
-    volumes:
-      # Read-only mount: cgit is a viewer, not a writer.
-      - ./data/repos:/repos:ro
-    restart: unless-stopped
