@@ -1,0 +1,49 @@
+{# ABOUTME: Blame view — per-line attribution with run-collapsing on the left margin. #}
+{% extends "_base.html" %}
+{% block title %}Blame: {{ path }} — {{ owner }}/{{ name }}{% endblock %}
+{% block content %}
+<div class="crumbs">
+  <a href="/">owners</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}">{{ owner }}</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}/{{ name }}">{{ name }}</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}">tree</a>
+  {% for c in crumb_segments %}
+    <span class="sep">/</span>
+    {% if loop.last %}
+    <span class="here">{{ c.name }}</span>
+    {% else %}
+    <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ c.path }}">{{ c.name }}</a>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<h1>Blame: {{ path }}</h1>
+<p class="muted">on <code>{{ ref }}</code> &middot;
+  <a href="/{{ owner }}/{{ name }}/blob/{{ ref }}/{{ path }}">view raw</a>
+</p>
+
+<table class="blame">
+  <tbody>
+    {% for line in lines %}
+    <tr>
+      {% if line.is_run_start %}
+      <td class="commit">
+        <a href="/{{ owner }}/{{ name }}/commit/{{ line.commit_sha }}">
+          <code>{{ line.short_sha }}</code>
+        </a>
+        <span class="muted">{{ line.author_name }} &middot; {{ line.authored_at[:10] }}</span>
+        <div class="muted subject">{{ line.subject }}</div>
+      </td>
+      {% else %}
+      <td class="commit empty"></td>
+      {% endif %}
+      <td class="lineno">{{ line.line_number }}</td>
+      <td class="content"><pre>{{ line.text }}</pre></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -22,7 +22,10 @@
 </div>
 
 <h1>{{ rendered.name }}</h1>
-<p class="muted">{{ rendered.size }} bytes &middot; on <code>{{ ref }}</code></p>
+<p class="muted">
+  {{ rendered.size }} bytes &middot; on <code>{{ ref }}</code> &middot;
+  <a href="/{{ owner }}/{{ name }}/blame/{{ ref }}/{{ path }}">blame</a>
+</p>
 
 {% if rendered.is_too_large %}
 <div class="empty">File too large to render inline.</div>

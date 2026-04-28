@@ -1,7 +1,7 @@
-{# ABOUTME: Single-commit view — metadata + list of changed paths. #}
-{# ABOUTME: Slice 3 will fold in unified diff rendering. #}
+{# ABOUTME: Single-commit view — metadata + changed paths + unified diff. #}
 {% extends "_base.html" %}
 {% block title %}{{ detail.short_sha }} — {{ owner }}/{{ name }}{% endblock %}
+{% block head_extra %}<link rel="stylesheet" href="/highlight.css">{% endblock %}
 {% block content %}
 <div class="crumbs">
   <a href="/">owners</a>
@@ -43,4 +43,13 @@
   </li>
   {% endfor %}
 </ul>
+
+{% if detail.diff_html %}
+<h2>Diff</h2>
+<div class="blob">{{ detail.diff_html | safe }}</div>
+{% elif detail.diff_truncated %}
+<div class="empty">Diff too large to render inline.</div>
+{% elif detail.parents %}
+<div class="empty">No textual diff (binary changes only).</div>
+{% endif %}
 {% endblock %}

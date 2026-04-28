@@ -271,6 +271,38 @@ def build_router(settings: Settings) -> APIRouter:
             detail=code.commit_detail(commit),
         )
 
+    @router.get("/{owner}/{name}/branches", include_in_schema=False)
+    def branches_page(request: Request, owner: str, name: str) -> HTMLResponse:
+        bare = _open_repo(settings, owner, name)
+        return _render(
+            request,
+            settings,
+            "branches.html",
+            owner=owner,
+            name=name,
+            branches=code.list_branches(bare),
+            tags=code.list_tags(bare),
+            default_branch=code.head_ref_name(bare),
+        )
+
+    @router.get("/{owner}/{name}/blame/{ref}/{path:path}", include_in_schema=False)
+    def blame_page(request: Request, owner: str, name: str, ref: str, path: str) -> HTMLResponse:
+        bare = _open_repo(settings, owner, name)
+        lines = code.blame_blob(bare, ref, path)
+        if lines is None:
+            raise HTTPException(status_code=404, detail="blob not found")
+        return _render(
+            request,
+            settings,
+            "blame.html",
+            owner=owner,
+            name=name,
+            ref=ref,
+            path=path,
+            lines=lines,
+            crumb_segments=_path_crumbs(path),
+        )
+
     @router.get("/{owner}/{name}/issues", include_in_schema=False)
     def issues_page(request: Request, owner: str, name: str, state: str = "open") -> HTMLResponse:
         bare = _open_repo(settings, owner, name)

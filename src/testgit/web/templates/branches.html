@@ -1,0 +1,51 @@
+{# ABOUTME: Branches and tags listing — every refs/heads/* and refs/tags/*. #}
+{% extends "_base.html" %}
+{% block title %}Branches — {{ owner }}/{{ name }}{% endblock %}
+{% block content %}
+<div class="crumbs">
+  <a href="/">owners</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}">{{ owner }}</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}/{{ name }}">{{ name }}</a>
+  <span class="sep">/</span>
+  <span class="here">branches</span>
+</div>
+
+<h1>Branches</h1>
+{% if branches %}
+<ul class="list">
+  {% for ref in branches %}
+  <li>
+    <a class="title" href="/{{ owner }}/{{ name }}/tree/{{ ref.name }}">{{ ref.name }}</a>
+    {% if ref.name == default_branch %}
+    <span class="pill">default</span>
+    {% endif %}
+    <div class="meta">
+      <code>{{ ref.target_short_sha }}</code> {{ ref.target_subject }}
+      &middot; {{ ref.target_authored_at[:10] }}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty">No branches.</div>
+{% endif %}
+
+<h1 style="margin-top:32px">Tags</h1>
+{% if tags %}
+<ul class="list">
+  {% for ref in tags %}
+  <li>
+    <a class="title" href="/{{ owner }}/{{ name }}/tree/{{ ref.name }}">{{ ref.name }}</a>
+    <div class="meta">
+      <code>{{ ref.target_short_sha }}</code> {{ ref.target_subject }}
+      &middot; {{ ref.target_authored_at[:10] }}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty">No tags.</div>
+{% endif %}
+{% endblock %}

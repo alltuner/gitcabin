@@ -83,6 +83,35 @@ class CommitDetail:
     authored_at: str
     parents: tuple[str, ...]
     changed_paths: tuple[tuple[str, str], ...]  # (change_type, path) pairs
+    diff_html: str | None = None
+    diff_truncated: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class RefSummary:
+    """A branch or tag with the commit it points at."""
+
+    name: str
+    full_path: str
+    target_sha: str
+    target_short_sha: str
+    target_subject: str
+    target_authored_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class BlameLine:
+    """One line of blame output. The first line of any run-of-same-commit lines
+    keeps the commit metadata; subsequent contiguous lines reuse it."""
+
+    line_number: int
+    text: str
+    commit_sha: str
+    short_sha: str
+    author_name: str
+    authored_at: str
+    subject: str
+    is_run_start: bool
 
 
 def head_ref_name(bare: BareRepo) -> str | None:
@@ -211,14 +240,20 @@ def list_commits(commit: Commit, *, max_count: int = 50) -> list[CommitSummary]:
     return out
 
 
+MAX_DIFF_RENDER_BYTES = 1_000_000
+
+
 def commit_detail(commit: Commit) -> CommitDetail:
-    """Metadata + changed-files for a single commit."""
+    """Metadata + changed-files + rendered unified diff for a single commit."""
     msg = commit.message if isinstance(commit.message, str) else commit.message.decode()
     subject, _, body = msg.partition("\n")
 
     changed: list[tuple[str, str]] = []
+    diff_html: str | None = None
+    diff_truncated = False
+
     if commit.parents:
-        diffs = commit.parents[0].diff(commit)
+        diffs = commit.parents[0].diff(commit, create_patch=True)
         for d in diffs:
             change_type = (
                 "added"
@@ -231,11 +266,30 @@ def commit_detail(commit: Commit) -> CommitDetail:
             )
             path = d.b_path or d.a_path or ""
             changed.append((change_type, path))
+        # Stitch every per-file patch together for a single highlighted block.
+        # Cap total size; oversized diffs (e.g. lockfile bumps) just print the
+        # changed-files list with a "diff omitted" notice.
+        chunks: list[bytes] = []
+        running = 0
+        for d in diffs:
+            patch = d.diff if isinstance(d.diff, bytes) else (d.diff or b"")
+            running += len(patch)
+            if running > MAX_DIFF_RENDER_BYTES:
+                diff_truncated = True
+                break
+            if patch:
+                chunks.append(patch)
+        if chunks and not diff_truncated:
+            diff_html = _render_diff_html(b"\n".join(chunks).decode(errors="replace"))
+        elif diff_truncated:
+            diff_html = None
     else:
-        # Initial commit: every file in the tree was "added".
+        # Initial commit: every file in the tree was "added". No parent to
+        # diff against, so we don't render a unified diff body.
         for blob in commit.tree.traverse():
             if blob.type == "blob":
                 changed.append(("added", blob.path))
+
     return CommitDetail(
         sha=commit.hexsha,
         short_sha=commit.hexsha[:7],
@@ -246,7 +300,87 @@ def commit_detail(commit: Commit) -> CommitDetail:
         authored_at=commit.authored_datetime.isoformat(),
         parents=tuple(p.hexsha for p in commit.parents),
         changed_paths=tuple(changed),
+        diff_html=diff_html,
+        diff_truncated=diff_truncated,
     )
+
+
+def _render_diff_html(patch: str) -> str:
+    """Highlight a unified diff with Pygments' diff lexer."""
+    lexer = get_lexer_by_name("diff")
+    formatter = HtmlFormatter(cssclass="hl", wrapcode=True)
+    return highlight(patch, lexer, formatter)
+
+
+def list_branches(bare: BareRepo) -> list[RefSummary]:
+    """Every refs/heads/* with the commit it points at."""
+    return _summarize_refs(bare, bare.repo.branches)
+
+
+def list_tags(bare: BareRepo) -> list[RefSummary]:
+    """Every refs/tags/* with the (resolved-through-tag-object) commit."""
+    return _summarize_refs(bare, bare.repo.tags)
+
+
+def _summarize_refs(bare: BareRepo, refs) -> list[RefSummary]:  # type: ignore[no-untyped-def]
+    out: list[RefSummary] = []
+    for ref in refs:
+        target = ref.commit
+        msg = target.message if isinstance(target.message, str) else target.message.decode()
+        subject = msg.split("\n", 1)[0].strip()
+        out.append(
+            RefSummary(
+                name=ref.name,
+                full_path=ref.path,
+                target_sha=target.hexsha,
+                target_short_sha=target.hexsha[:7],
+                target_subject=subject,
+                target_authored_at=target.authored_datetime.isoformat(),
+            )
+        )
+    out.sort(key=lambda r: r.target_authored_at, reverse=True)
+    return out
+
+
+def blame_blob(bare: BareRepo, ref: str, path: str) -> list[BlameLine] | None:
+    """Run `git blame` and return per-line attribution. None if path absent."""
+    commit = resolve_ref(bare, ref)
+    if commit is None:
+        return None
+    node = walk_tree_at_path(commit, path)
+    if node is None or node.type != "blob":
+        return None
+    blame = bare.repo.blame(ref, path)
+    if blame is None:
+        return []
+    out: list[BlameLine] = []
+    last_sha: str | None = None
+    line_no = 0
+    for blame_commit, lines in blame:
+        msg = (
+            blame_commit.message
+            if isinstance(blame_commit.message, str)
+            else blame_commit.message.decode()
+        )
+        subject = msg.split("\n", 1)[0].strip()
+        for content in lines:
+            line_no += 1
+            text = content if isinstance(content, str) else content.decode(errors="replace")
+            is_run_start = blame_commit.hexsha != last_sha
+            out.append(
+                BlameLine(
+                    line_number=line_no,
+                    text=text.rstrip("\n"),
+                    commit_sha=blame_commit.hexsha,
+                    short_sha=blame_commit.hexsha[:7],
+                    author_name=blame_commit.author.name or "",
+                    authored_at=blame_commit.authored_datetime.isoformat(),
+                    subject=subject,
+                    is_run_start=is_run_start,
+                )
+            )
+            last_sha = blame_commit.hexsha
+    return out
 
 
 def _summarize(c: Commit) -> CommitSummary:

@@ -233,3 +233,50 @@ pre.commit-body {
   white-space: pre-wrap;
   word-wrap: break-word;
 }
+
+/* Blame table */
+table.blame {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  margin-top: 16px;
+  overflow: hidden;
+}
+table.blame td {
+  vertical-align: top;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+table.blame td.commit {
+  width: 280px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  font-size: 11px;
+  padding: 4px 8px;
+}
+table.blame td.commit.empty { background: transparent; }
+table.blame td.commit .subject {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+table.blame td.lineno {
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+  width: 1%;
+  border-right: 1px solid var(--border);
+}
+table.blame td.content pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+  font-size: 13px;
+}
+table.blame tr:last-child td { border-bottom: 0; }
