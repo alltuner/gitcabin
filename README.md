@@ -4,28 +4,19 @@ A tiny self-hosted GitHub clone driven by the official `gh` CLI, with all metada
 
 ## Concept
 
-- gh has built-in support for arbitrary hosts via `GH_HOST`. The hostname `github.localhost` is special: gh sends to `http://api.github.localhost/` (REST) and `http://api.github.localhost/graphql` (GraphQL), so HTTPS is not required for local dev.
+- gh has built-in support for arbitrary hosts via `GH_HOST`. The hostname `github.localhost` is special: gh sends to `http://api.github.localhost/` (REST) and `http://api.github.localhost/graphql` (GraphQL), so HTTPS is not required for local dev. For any other hostname gh forces HTTPS and uses the GitHub Enterprise URL shape (`https://<host>/api/v3/...` and `https://<host>/api/graphql`). gitcabin serves both shapes, so the same image works behind either path.
 - Issues, PRs, and counters live in side refs of the bare git repo (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`). Code lives in normal `refs/heads/*` and `refs/tags/*`. The two namespaces never collide.
 - The HTTP API server is the only writer of metadata refs. Plain `git clone`/`git push` only see code.
 
-## Running with Docker (recommended)
+## Quickstart
 
-The container runs granian unprivileged on port 8000 and Compose publishes that on host port 80 — which is the port gh expects for `github.localhost`.
-
-For the dev loop with autoreload, use Compose Watch:
+The default deploy is local-only over HTTP via `github.localhost`. One command brings it up:
 
 ```sh
-docker compose watch           # builds, runs, and reloads on source edits
+docker compose watch
 ```
 
-Watch syncs `./src` into the container and restarts the service on each save. A change to `pyproject.toml` or `Dockerfile` triggers a full rebuild.
-
-For a one-shot run without reload:
-
-```sh
-docker compose up --build      # first time
-docker compose up              # subsequent runs
-```
+Compose builds the image, runs the API container on `127.0.0.1:80` and the HTML dashboard on `127.0.0.1:8080`, and reloads on every source edit. Plain `docker compose up --build` works too if you don't want autoreload.
 
 Then point gh at it:
 
@@ -34,25 +25,58 @@ echo "any-token" | gh auth login --hostname github.localhost --with-token
 GH_HOST=github.localhost gh auth status
 ```
 
-Stop with `docker compose down` (or Ctrl-C if running in the foreground).
+That's it. The token is unverified — gitcabin trusts whoever can reach the port.
 
-## Browsing the data with cgit
+Stop with `docker compose down`.
 
-The compose stack also runs a read-only `cgit` web UI (lighttpd-backed, ~80 MB image) on port 8080 that scans `./data/repos/` for bare repos:
+### Port 80 is already in use
+
+gh hardcodes port 80 for `github.localhost`, so the proxy needs *some* port-80 binding to exist. If you already have something on `127.0.0.1:80`, give gitcabin a dedicated loopback IP:
+
+```sh
+# /etc/hosts (sudo required)
+127.42.0.1   github.localhost api.github.localhost
+```
+
+```yaml
+# compose.override.yml
+services:
+  gitcabin:
+    ports:
+      - "127.42.0.1:80:8000"
+```
+
+`127/8` is all loopback on Linux and macOS, so `127.42.0.1` is essentially free real estate. Run `docker compose up -d` and gh will dial port 80 on `127.42.0.1` instead of `127.0.0.1`.
+
+## Browsing the data
+
+The compose stack runs an HTML dashboard alongside the API on `127.0.0.1:8080`:
 
 ```sh
 open http://localhost:8080/
 ```
 
-Drill into a repo to see refs and commits. Because we don't write to `refs/heads/main`, the default summary page is empty — to inspect issue history, point at the side ref directly: `http://localhost:8080/octocat/hello/log/?h=refs/issues/local/1`.
+The dashboard reads the same bare repos as the API and lets you browse issues, refs, commits, blames, and tree views. Code refs (`refs/heads/*`) and metadata refs (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`) are presented separately.
 
-## Running natively (no gh)
+## Other deployment modes
+
+The local-only quickstart is one of three documented setups:
+
+| Mode | Audience | Cert work | Domain needed |
+|---|---|---|---|
+| Local-only (default) | the user, on this machine | none | `github.localhost` (built in) |
+| Tailnet-shared | anyone on your tailnet | none (Tailscale provisions) | tailnet hostname (built in) |
+| Public/team | anyone with DNS resolution | DNS-01 via Caddy | one you own |
+
+See [`docs/installation.md`](docs/installation.md) for the Tailscale and Caddy recipes, the exact `gh auth login` invocation each one pairs with, and trade-offs.
+
+## Running natively (no Docker, no gh)
 
 ```sh
 uv run gitcabin
 ```
 
-Listens on `127.0.0.1:8000`. This bypasses Docker and is useful for direct probing with curl / httpie, but gh won't reach it — gh dials port 80, not 8000, when `GH_HOST=github.localhost`.
+Listens on `127.0.0.1:8000`. Useful for direct probing with curl / httpie, but gh won't reach it — gh dials port 80 (`github.localhost`) or 443 (anything else), never 8000.
 
 ## Development
 
