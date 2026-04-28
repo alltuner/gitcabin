@@ -1,0 +1,32 @@
+{# ABOUTME: Commit log — newest-first, capped at 100 commits per page. #}
+{% extends "_base.html" %}
+{% block title %}Commits on {{ ref }} — {{ owner }}/{{ name }}{% endblock %}
+{% block content %}
+<div class="crumbs">
+  <a href="/">owners</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}">{{ owner }}</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}/{{ name }}">{{ name }}</a>
+  <span class="sep">/</span>
+  <span class="here">commits / {{ ref }}</span>
+</div>
+
+<h1>Commits on <code>{{ ref }}</code></h1>
+
+{% if commits %}
+<ul class="list">
+  {% for c in commits %}
+  <li>
+    <a class="title" href="/{{ owner }}/{{ name }}/commit/{{ c.sha }}">{{ c.subject }}</a>
+    <div class="meta">
+      <code>{{ c.short_sha }}</code> &middot;
+      <strong>{{ c.author_name }}</strong> on {{ c.authored_at[:19] }}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty">No commits.</div>
+{% endif %}
+{% endblock %}

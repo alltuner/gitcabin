@@ -1,0 +1,32 @@
+{# ABOUTME: Reusable file-listing table — used by the repo overview and tree pages. #}
+<table class="tree">
+  <thead>
+    <tr><th>Name</th><th>Size</th></tr>
+  </thead>
+  <tbody>
+    {% if path %}
+    <tr>
+      <td>
+        {% if crumb_segments | length > 1 %}
+        <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ crumb_segments[-2].path }}">..</a>
+        {% else %}
+        <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}">..</a>
+        {% endif %}
+      </td>
+      <td></td>
+    </tr>
+    {% endif %}
+    {% for entry in entries %}
+    <tr>
+      <td>
+        {% if entry.type == "tree" %}
+          📁 <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{% if path %}{{ path }}/{% endif %}{{ entry.name }}">{{ entry.name }}/</a>
+        {% else %}
+          📄 <a href="/{{ owner }}/{{ name }}/blob/{{ ref }}/{% if path %}{{ path }}/{% endif %}{{ entry.name }}">{{ entry.name }}</a>
+        {% endif %}
+      </td>
+      <td class="muted">{% if entry.size is not none %}{{ entry.size }} B{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

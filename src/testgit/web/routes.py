@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
+from html import escape as html_escape
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -18,6 +19,7 @@ from testgit.storage.issues import (
     list_issues,
 )
 from testgit.storage.repo import BareRepo
+from testgit.web import code
 
 _WEB_DIR = Path(__file__).parent
 _templates = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
@@ -91,6 +93,24 @@ def _open_repo(settings: Settings, owner: str, name: str) -> BareRepo:
     return bare
 
 
+def _path_crumbs(path: str) -> list[dict[str, str]]:
+    """Build breadcrumb segments for a slash-separated path.
+
+    Each entry is {"name": "src", "path": "src"} so the template can build
+    `/{owner}/{name}/tree/{ref}/{path}` links incrementally.
+    """
+    crumbs: list[dict[str, str]] = []
+    if not path:
+        return crumbs
+    accumulated = ""
+    for segment in path.split("/"):
+        if not segment:
+            continue
+        accumulated = f"{accumulated}/{segment}" if accumulated else segment
+        crumbs.append({"name": segment, "path": accumulated})
+    return crumbs
+
+
 def build_router(settings: Settings) -> APIRouter:
     router = APIRouter()
 
@@ -104,6 +124,13 @@ def build_router(settings: Settings) -> APIRouter:
             "dashboard.html",
             owners=_list_owners(settings),
         )
+
+    @router.get("/highlight.css", include_in_schema=False)
+    def pygments_css() -> Response:
+        # Registered before `/{owner}` so the catch-all doesn't swallow it
+        # (FastAPI matches in declaration order). Single shared stylesheet for
+        # syntax-highlighted blob views; cached cheaply by the browser.
+        return Response(content=code.pygments_stylesheet(), media_type="text/css")
 
     @router.get("/{owner}", include_in_schema=False)
     def owner_page(request: Request, owner: str) -> HTMLResponse:
@@ -123,10 +150,29 @@ def build_router(settings: Settings) -> APIRouter:
         bare = _open_repo(settings, owner, name)
         all_issues = list_issues(bare)
         open_count = sum(1 for i in all_issues if i.state is IssueState.OPEN)
-        try:
-            default_branch = bare.repo.head.reference.name
-        except TypeError, ValueError:
-            default_branch = None
+        default_branch = code.head_ref_name(bare)
+
+        # Repo overview shows the file tree at HEAD plus a rendered README
+        # (when one exists). With no commits yet, both are absent.
+        head_commit = code.resolve_ref(bare, "HEAD") if default_branch else None
+        entries: list[code.TreeEntry] = []
+        readme_html: str | None = None
+        head_short_sha: str | None = None
+        if head_commit is not None:
+            entries = code.list_tree_entries(head_commit.tree)
+            readme_blob = code.find_readme(head_commit.tree)
+            if readme_blob is not None:
+                raw = readme_blob.data_stream.read()
+                try:
+                    text = raw.decode()
+                except UnicodeDecodeError:
+                    text = ""
+                if readme_blob.name.lower().endswith((".md", ".markdown")):
+                    readme_html = code.render_markdown(text)
+                else:
+                    readme_html = f"<pre>{html_escape(text)}</pre>"
+            head_short_sha = head_commit.hexsha[:7]
+
         return _render(
             request,
             settings,
@@ -137,6 +183,92 @@ def build_router(settings: Settings) -> APIRouter:
             open_issue_count=open_count,
             total_issue_count=len(all_issues),
             default_branch=default_branch,
+            entries=entries,
+            readme_html=readme_html,
+            head_short_sha=head_short_sha,
+            ref=default_branch or "HEAD",
+            crumb_segments=[],
+            path="",
+        )
+
+    @router.get("/{owner}/{name}/tree/{ref}", include_in_schema=False)
+    @router.get("/{owner}/{name}/tree/{ref}/{path:path}", include_in_schema=False)
+    def tree_page(
+        request: Request, owner: str, name: str, ref: str, path: str = ""
+    ) -> HTMLResponse:
+        bare = _open_repo(settings, owner, name)
+        commit = code.resolve_ref(bare, ref)
+        if commit is None:
+            raise HTTPException(status_code=404, detail="ref not found")
+        node = code.walk_tree_at_path(commit, path)
+        if node is None:
+            raise HTTPException(status_code=404, detail="path not found")
+        # Hitting /tree/ on a blob path is a 404; gh.com mirrors this.
+        if node.type != "tree":
+            raise HTTPException(status_code=404, detail="not a tree")
+        return _render(
+            request,
+            settings,
+            "tree.html",
+            owner=owner,
+            name=name,
+            ref=ref,
+            path=path,
+            entries=code.list_tree_entries(node),
+            crumb_segments=_path_crumbs(path),
+        )
+
+    @router.get("/{owner}/{name}/blob/{ref}/{path:path}", include_in_schema=False)
+    def blob_page(request: Request, owner: str, name: str, ref: str, path: str) -> HTMLResponse:
+        bare = _open_repo(settings, owner, name)
+        commit = code.resolve_ref(bare, ref)
+        if commit is None:
+            raise HTTPException(status_code=404, detail="ref not found")
+        node = code.walk_tree_at_path(commit, path)
+        if node is None or node.type != "blob":
+            raise HTTPException(status_code=404, detail="blob not found")
+        rendered = code.render_blob(node)
+        return _render(
+            request,
+            settings,
+            "blob.html",
+            owner=owner,
+            name=name,
+            ref=ref,
+            path=path,
+            rendered=rendered,
+            crumb_segments=_path_crumbs(path),
+        )
+
+    @router.get("/{owner}/{name}/commits/{ref}", include_in_schema=False)
+    def commits_page(request: Request, owner: str, name: str, ref: str) -> HTMLResponse:
+        bare = _open_repo(settings, owner, name)
+        commit = code.resolve_ref(bare, ref)
+        if commit is None:
+            raise HTTPException(status_code=404, detail="ref not found")
+        return _render(
+            request,
+            settings,
+            "commits.html",
+            owner=owner,
+            name=name,
+            ref=ref,
+            commits=code.list_commits(commit, max_count=100),
+        )
+
+    @router.get("/{owner}/{name}/commit/{sha}", include_in_schema=False)
+    def commit_page(request: Request, owner: str, name: str, sha: str) -> HTMLResponse:
+        bare = _open_repo(settings, owner, name)
+        commit = code.resolve_ref(bare, sha)
+        if commit is None:
+            raise HTTPException(status_code=404, detail="commit not found")
+        return _render(
+            request,
+            settings,
+            "commit.html",
+            owner=owner,
+            name=name,
+            detail=code.commit_detail(commit),
         )
 
     @router.get("/{owner}/{name}/issues", include_in_schema=False)

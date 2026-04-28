@@ -1,0 +1,27 @@
+{# ABOUTME: Subdirectory listing — file tree under a non-root path. #}
+{% extends "_base.html" %}
+{% block title %}{{ owner }}/{{ name }}: {{ path or ref }}{% endblock %}
+{% block content %}
+<div class="crumbs">
+  <a href="/">owners</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}">{{ owner }}</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}/{{ name }}">{{ name }}</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}">tree</a>
+  {% for c in crumb_segments %}
+    <span class="sep">/</span>
+    {% if loop.last %}
+    <span class="here">{{ c.name }}</span>
+    {% else %}
+    <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ c.path }}">{{ c.name }}</a>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<h1>{{ path or "/" }}</h1>
+<p class="muted">on <code>{{ ref }}</code></p>
+
+{% include "_tree_table.html" %}
+{% endblock %}

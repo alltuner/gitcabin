@@ -157,3 +157,79 @@ code, pre {
 code { padding: 1px 4px; font-size: 13px; }
 pre { padding: 12px; overflow-x: auto; }
 pre code { background: transparent; padding: 0; }
+
+/* File tree */
+table.tree {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 16px;
+}
+table.tree th, table.tree td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 13px;
+}
+table.tree th {
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 500;
+}
+table.tree tr:last-child td { border-bottom: 0; }
+table.tree tr:hover td { background: var(--surface); }
+
+/* Blob viewer (Pygments-rendered) */
+.blob {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 16px;
+}
+.blob .hl {
+  background: var(--code-bg);
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+}
+.blob .hl table { width: 100%; border-collapse: collapse; }
+.blob .hl td.linenos {
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0 8px;
+  text-align: right;
+  user-select: none;
+  width: 1%;
+  vertical-align: top;
+}
+.blob .hl td.code { padding: 0 12px; vertical-align: top; }
+.blob .hl pre { margin: 0; padding: 0; background: transparent; }
+
+/* Markdown rendered README */
+.readme {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-top: 24px;
+  padding: 16px 24px;
+  background: var(--bg);
+}
+.readme h2:first-child { margin-top: 0; }
+.markdown-body p { margin: 8px 0; }
+.markdown-body pre { padding: 12px; overflow-x: auto; }
+.markdown-body code { font-size: 13px; }
+.markdown-body table { border-collapse: collapse; }
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+}
+
+/* Commit body block */
+pre.commit-body {
+  background: var(--surface);
+  padding: 12px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}

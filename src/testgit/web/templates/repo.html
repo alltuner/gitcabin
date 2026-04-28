@@ -1,7 +1,7 @@
-{# ABOUTME: Repo overview — minimal landing for now (description, default branch, issue count). #}
-{# ABOUTME: Slice 2 will replace the body with README + file tree at HEAD. #}
+{# ABOUTME: Repo overview — file tree at HEAD plus a rendered README. #}
 {% extends "_base.html" %}
 {% block title %}{{ owner }}/{{ name }} — testgit{% endblock %}
+{% block head_extra %}<link rel="stylesheet" href="/highlight.css">{% endblock %}
 {% block content %}
 <div class="crumbs">
   <a href="/">owners</a>
@@ -21,14 +21,21 @@
     (<a href="/{{ owner }}/{{ name }}/issues?state=all">{{ total_issue_count }} total</a>)</span>
   {% if default_branch %}
   <span>default branch: <code>{{ default_branch }}</code></span>
+  <span><a href="/{{ owner }}/{{ name }}/commits/{{ default_branch }}">commits</a></span>
   {% endif %}
-  <span><a href="/{{ owner }}/{{ name }}/issues">Issues</a></span>
+  <span><a href="/{{ owner }}/{{ name }}/issues">issues</a></span>
 </div>
 
-<h2>Quick links</h2>
-<ul class="list">
-  <li><a class="title" href="/{{ owner }}/{{ name }}/issues">Issues</a>
-    <div class="meta">{{ open_issue_count }} open / {{ total_issue_count }} total</div>
-  </li>
-</ul>
+{% if entries %}
+{% include "_tree_table.html" %}
+{% else %}
+<div class="empty" style="margin-top:24px">This repository has no commits yet.</div>
+{% endif %}
+
+{% if readme_html %}
+<div class="readme">
+  <h2>README</h2>
+  <div class="markdown-body">{{ readme_html | safe }}</div>
+</div>
+{% endif %}
 {% endblock %}

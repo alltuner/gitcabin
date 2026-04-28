@@ -1,0 +1,34 @@
+{# ABOUTME: File viewer — Pygments-highlighted source, with binary/too-large fallbacks. #}
+{% extends "_base.html" %}
+{% block title %}{{ path }} — {{ owner }}/{{ name }}{% endblock %}
+{% block head_extra %}<link rel="stylesheet" href="/highlight.css">{% endblock %}
+{% block content %}
+<div class="crumbs">
+  <a href="/">owners</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}">{{ owner }}</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}/{{ name }}">{{ name }}</a>
+  <span class="sep">/</span>
+  <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}">tree</a>
+  {% for c in crumb_segments %}
+    <span class="sep">/</span>
+    {% if loop.last %}
+    <span class="here">{{ c.name }}</span>
+    {% else %}
+    <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ c.path }}">{{ c.name }}</a>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<h1>{{ rendered.name }}</h1>
+<p class="muted">{{ rendered.size }} bytes &middot; on <code>{{ ref }}</code></p>
+
+{% if rendered.is_too_large %}
+<div class="empty">File too large to render inline.</div>
+{% elif rendered.is_binary %}
+<div class="empty">Binary file — preview not available.</div>
+{% else %}
+<div class="blob">{{ rendered.highlighted_html | safe }}</div>
+{% endif %}
+{% endblock %}
