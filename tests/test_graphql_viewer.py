@@ -1,11 +1,17 @@
 # ABOUTME: Tests for the GraphQL `viewer` query.
 # ABOUTME: gh auth status sends `{ viewer { login } }` to confirm a token resolves to a user.
 
+import pytest
 from fastapi.testclient import TestClient
 
+# gh dials `/graphql` for github.localhost and `/api/graphql` for any other host.
+# The app exposes both so sidecar TLS deploys behave identically to the local one.
+GRAPHQL_PATHS = ("/graphql", "/api/graphql")
 
-def test_viewer_returns_login(client: TestClient) -> None:
-    response = client.post("/graphql", json={"query": "query { viewer { login } }"})
+
+@pytest.mark.parametrize("path", GRAPHQL_PATHS)
+def test_viewer_returns_login(client: TestClient, path: str) -> None:
+    response = client.post(path, json={"query": "query { viewer { login } }"})
 
     assert response.status_code == 200
     payload = response.json()
@@ -13,12 +19,13 @@ def test_viewer_returns_login(client: TestClient) -> None:
     assert payload["data"]["viewer"]["login"] == "david"
 
 
-def test_graphql_error_envelope_matches_github_shape(client: TestClient) -> None:
+@pytest.mark.parametrize("path", GRAPHQL_PATHS)
+def test_graphql_error_envelope_matches_github_shape(client: TestClient, path: str) -> None:
     # gh's Go client unmarshals errors[].locations as [{line, column}].
     # graphql-core's SourceLocation is a namedtuple that JSON-serializes as
     # [line, column], which would make every error response unparseable to gh.
     # This test pins our explicit dict shape so that regression can't slip back.
-    response = client.post("/graphql", json={"query": "{ nonexistent }"})
+    response = client.post(path, json={"query": "{ nonexistent }"})
 
     assert response.status_code == 200
     payload = response.json()

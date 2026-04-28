@@ -1,5 +1,5 @@
 # ABOUTME: REST API routes mirroring the subset of GitHub's REST surface that gh needs.
-# ABOUTME: For github.localhost gh hits these without an /api/v3 prefix, so they live at the root.
+# ABOUTME: Mounted twice in app.py: at / for github.localhost, at /api/v3 for the GHES URL shape.
 
 from __future__ import annotations
 

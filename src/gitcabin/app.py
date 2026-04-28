@@ -1,5 +1,5 @@
-# ABOUTME: FastAPI application factory wiring REST routes and the GraphQL endpoint together.
-# ABOUTME: For github.localhost gh expects REST at / and GraphQL at /graphql with no /api prefix.
+# ABOUTME: FastAPI application factory wiring REST + GraphQL routes for gh.
+# ABOUTME: Serves bare paths (github.localhost) and /api/v3 + /api/graphql (GHES shape).
 
 from __future__ import annotations
 
@@ -22,9 +22,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="gitcabin", version="0.1.0", redoc_url=None, docs_url=None)
     app.state.settings = settings
 
-    app.include_router(rest.build_router(settings))
+    # gh dials a different URL shape depending on the hostname: bare `/` and
+    # `/graphql` for github.localhost (the special HTTP path baked into gh),
+    # `/api/v3/...` and `/api/graphql` for every other host (the GHES shape).
+    # We expose both so a sidecar TLS deploy under a real hostname works the
+    # same as the local-only github.localhost path.
+    rest_router = rest.build_router(settings)
+    app.include_router(rest_router)
+    app.include_router(rest_router, prefix="/api/v3")
 
-    @app.post("/graphql")
     async def graphql(request: Request) -> JSONResponse:
         # We execute the schema directly rather than mounting Strawberry's ASGI
         # app: mounted apps trigger a 307 redirect from /graphql to /graphql/,
@@ -55,5 +61,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 for err in result.errors
             ]
         return JSONResponse(payload)
+
+    app.post("/graphql")(graphql)
+    app.post("/api/graphql")(graphql)
 
     return app
