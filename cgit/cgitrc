@@ -8,6 +8,9 @@ root-title=testgit
 root-desc=Browse the bare repos backing testgit (code refs and metadata refs).
 css=/cgit-css/cgit.css
 favicon=/cgit-css/favicon.ico
+# Point logo at the asset cgit ships alongside the css instead of the default
+# /cgit.png, which 404s under the Apache config we use here.
+logo=/cgit-css/cgit.png
 
 # Strip the trailing ".git" from displayed repo names — purely cosmetic.
 remove-suffix=1
