@@ -106,3 +106,16 @@ def test_get_issue_returns_none_for_unknown_number(repo: BareRepo) -> None:
 
 def test_get_issue_returns_none_when_repo_has_no_issues(repo: BareRepo) -> None:
     assert get_issue(repo, 1) is None
+
+
+def test_issue_carries_iso_timestamps(repo: BareRepo) -> None:
+    # gh's IssueList query selects updatedAt; gh issue view also wants
+    # createdAt. Both come from git commit metadata as ISO-8601 strings,
+    # which need to round-trip through GraphQL untouched.
+    issue = create_issue(repo, title="t", body="", author="david")
+    assert issue.created_at
+    assert issue.updated_at
+    # ISO-8601 always starts with 4-digit year and a dash.
+    assert issue.created_at[:5].endswith("-")
+    # Today's create has only one event, so created_at == updated_at.
+    assert issue.created_at == issue.updated_at

@@ -27,13 +27,20 @@ class IssueState(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Issue:
-    """A persisted issue, returned from the writer for use by GraphQL resolvers."""
+    """A persisted issue, returned from the writer for use by GraphQL resolvers.
+
+    Timestamps are kept as ISO-8601 strings (with timezone offset) rather than
+    datetime objects so they pass through GraphQL serialization unchanged. They
+    come straight from `git log --format=%aI` against the issue's ref.
+    """
 
     number: int
     title: str
     body: str
     author: str
     state: IssueState
+    created_at: str
+    updated_at: str
 
 
 def create_issue(repo: BareRepo, *, title: str, body: str, author: str) -> Issue:
@@ -44,16 +51,15 @@ def create_issue(repo: BareRepo, *, title: str, body: str, author: str) -> Issue
     additional commits to the same ref.
     """
     number = Counter(repo, "issues").next()
-    issue = Issue(number=number, title=title, body=body, author=author, state=IssueState.OPEN)
 
     # 1. Hash the issue.json blob into the object database.
     payload = json.dumps(
         {
-            "number": issue.number,
-            "title": issue.title,
-            "body": issue.body,
-            "author": issue.author,
-            "state": issue.state.value,
+            "number": number,
+            "title": title,
+            "body": body,
+            "author": author,
+            "state": IssueState.OPEN.value,
         },
         indent=2,
     )
@@ -71,7 +77,7 @@ def create_issue(repo: BareRepo, *, title: str, body: str, author: str) -> Issue
     commit_sha = _commit_with_identity(
         repo,
         tree_sha,
-        message=f"create: {issue.title}",
+        message=f"create: {title}",
         author_name=author,
         author_email=f"{author}@testgit.local",
     )
@@ -79,13 +85,18 @@ def create_issue(repo: BareRepo, *, title: str, body: str, author: str) -> Issue
     # 4. Create the ref. We use update-ref with the zero-OID sentinel so two
     #    racing creates can't both claim the same number — though Counter's
     #    own CAS already prevents that, this is defense in depth.
+    ref = f"{LOCAL_ISSUE_REF_PREFIX}/{number}"
     repo.run_git(
         "update-ref",
-        f"{LOCAL_ISSUE_REF_PREFIX}/{number}",
+        ref,
         commit_sha,
         "0000000000000000000000000000000000000000",
     )
-    return issue
+
+    # 5. Read back so callers get the full Issue record including timestamps,
+    #    avoiding any drift between the synthesized record and what list_issues
+    #    will return for the same ref.
+    return _read_issue(repo, ref, number)
 
 
 def list_issues(repo: BareRepo) -> list[Issue]:
@@ -132,6 +143,7 @@ def get_issue(repo: BareRepo, number: int) -> Issue | None:
 def _read_issue(repo: BareRepo, ref: str, number: int) -> Issue:
     raw = repo.run_git("cat-file", "-p", f"{ref}:issue.json")
     payload = json.loads(raw)
+    created_at, updated_at = _read_timestamps(repo, ref)
     # The number in the file should match the ref name; we trust the ref name
     # as authoritative and pass `number` in so renumbering on sync is just a
     # ref move (no payload rewrite needed).
@@ -141,7 +153,27 @@ def _read_issue(repo: BareRepo, ref: str, number: int) -> Issue:
         body=payload["body"],
         author=payload["author"],
         state=IssueState(payload["state"]),
+        created_at=created_at,
+        updated_at=updated_at,
     )
+
+
+def _read_timestamps(repo: BareRepo, ref: str) -> tuple[str, str]:
+    """Return (created_at, updated_at) as ISO-8601 strings.
+
+    created_at is the root commit's author date (the create event); updated_at
+    is the tip's. With one commit per issue today they're identical, but as
+    soon as we append events they'll diverge.
+    """
+    # `git log --reverse --format=%aI <ref>` lists every commit's author date
+    # from oldest to newest. First line is created_at, last is updated_at.
+    out = repo.run_git("log", "--reverse", "--format=%aI", ref).splitlines()
+    if not out:
+        # Defensive: a ref that exists but has no commits should be impossible,
+        # but if it ever happens, return a deterministic value rather than
+        # crashing.
+        return ("1970-01-01T00:00:00+00:00", "1970-01-01T00:00:00+00:00")
+    return (out[0], out[-1])
 
 
 def _commit_with_identity(
