@@ -52,3 +52,9 @@ select = [
     "UP",  # pyupgrade
     "RUF", # ruff-specific
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Demo content in seed_demo.py contains intentional unicode glyphs (smart
+# quotes in markdown samples, the ❯ prompt in .zshrc) that the
+# ambiguous-character lint flags as confusables. They're the right glyphs.
+"scripts/seed_demo.py" = ["RUF001"]
