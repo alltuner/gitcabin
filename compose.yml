@@ -6,6 +6,8 @@
 # the container and restarts granian on every edit. Plain `docker compose up`
 # is fine for "I just want to run it" without live reload.
 
+name: gitcabin
+
 services:
   gitcabin:
     build: .
