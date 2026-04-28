@@ -1,7 +1,10 @@
-# Local-dev compose: container runs uvicorn unprivileged on port 8000;
+# Local-dev compose: container runs granian unprivileged on port 8000;
 # Docker Desktop publishes that to the host on port 80 (which is what gh
-# expects for github.localhost). Source is bind-mounted so uvicorn --reload
-# inside the container picks up edits made on the host.
+# expects for github.localhost).
+#
+# Use `docker compose watch` for the dev loop — Compose syncs source into
+# the container and restarts granian on every edit. Plain `docker compose up`
+# is fine for "I just want to run it" without live reload.
 
 services:
   testgit:
@@ -11,13 +14,17 @@ services:
       # host:container. Port 80 on the host needs Docker to grant it; on
       # macOS Docker Desktop's vmnetd handles that without `sudo docker`.
       - "80:8000"
-    volumes:
-      # Bind only src/. The image already has the venv + installed package
-      # at /app/.venv; we don't want the host overlaying those.
-      - ./src:/app/src
-    environment:
-      # macOS bind mounts go through Docker Desktop's VirtioFS, which mostly
-      # propagates inotify events but isn't perfect. Polling adds CPU but is
-      # the simplest way to guarantee reload works for the dev loop.
-      WATCHFILES_FORCE_POLLING: "true"
     restart: unless-stopped
+    develop:
+      watch:
+        # Source edits sync into /app/src and restart the service. Cheaper
+        # than a rebuild and matches granian's restart-on-import-change story.
+        - action: sync+restart
+          path: ./src
+          target: /app/src
+        # Anything that changes the dependency graph or the image itself
+        # forces a full rebuild — uv sync runs as part of the image build.
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: rebuild
+          path: ./Dockerfile

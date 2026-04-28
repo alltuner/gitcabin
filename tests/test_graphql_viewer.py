@@ -13,6 +13,22 @@ def test_viewer_returns_login(client: TestClient) -> None:
     assert payload["data"]["viewer"]["login"] == "david"
 
 
+def test_graphql_error_envelope_matches_github_shape(client: TestClient) -> None:
+    # gh's Go client unmarshals errors[].locations as [{line, column}].
+    # graphql-core's SourceLocation is a namedtuple that JSON-serializes as
+    # [line, column], which would make every error response unparseable to gh.
+    # This test pins our explicit dict shape so that regression can't slip back.
+    response = client.post("/graphql", json={"query": "{ nonexistent }"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["errors"], payload
+    locs = payload["errors"][0]["locations"]
+    assert isinstance(locs, list)
+    assert all(isinstance(loc, dict) for loc in locs)
+    assert all(set(loc.keys()) == {"line", "column"} for loc in locs)
+
+
 def test_viewer_login_is_configurable() -> None:
     # Recreate the app with a custom login to confirm the value flows from
     # Settings into the resolver, rather than being a hardcoded literal.

@@ -39,8 +39,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         payload: dict[str, object] = {"data": result.data}
         if result.errors:
+            # graphql-core returns SourceLocation namedtuples for `locations`,
+            # which serialize as JSON arrays — but gh's Go decoder expects each
+            # location to be {"line": int, "column": int}. Without this mapping
+            # any error masks the real message with a Go unmarshalling failure.
             payload["errors"] = [
-                {"message": err.message, "locations": err.locations, "path": err.path}
+                {
+                    "message": err.message,
+                    "locations": [
+                        {"line": loc.line, "column": loc.column} for loc in (err.locations or [])
+                    ],
+                    "path": err.path,
+                }
                 for err in result.errors
             ]
         return JSONResponse(payload)

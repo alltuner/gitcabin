@@ -36,11 +36,10 @@ RUN uv sync --no-dev
 
 EXPOSE 8000
 
-# Bind to all interfaces so the host can reach it via the published port.
-# --reload watches /app/src; with the compose bind mount, edits on the host
-# trigger restarts in the container.
+# Production-shaped CMD: no --reload. For dev autoreload, use
+# `docker compose watch` — Compose syncs source into the container and
+# restarts the service on each change without rebuilding.
 CMD ["uv", "run", "--no-dev", "granian", \
      "--interface", "asgi", "--factory", \
      "--host", "0.0.0.0", "--port", "8000", \
-     "--reload", "--reload-paths", "/app/src", \
      "testgit.app:create_app"]

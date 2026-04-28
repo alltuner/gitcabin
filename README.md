@@ -10,7 +10,17 @@ A tiny self-hosted GitHub clone driven by the official `gh` CLI, with all metada
 
 ## Running with Docker (recommended)
 
-The container runs uvicorn unprivileged on port 8000 and Compose publishes that on host port 80 — which is the port gh expects for `github.localhost`. Source is bind-mounted, so edits on the host trigger autoreload inside the container.
+The container runs granian unprivileged on port 8000 and Compose publishes that on host port 80 — which is the port gh expects for `github.localhost`.
+
+For the dev loop with autoreload, use Compose Watch:
+
+```sh
+docker compose watch           # builds, runs, and reloads on source edits
+```
+
+Watch syncs `./src` into the container and restarts the service on each save. A change to `pyproject.toml` or `Dockerfile` triggers a full rebuild.
+
+For a one-shot run without reload:
 
 ```sh
 docker compose up --build      # first time
