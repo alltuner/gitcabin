@@ -8,7 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from testgit.storage.issues import Issue, IssueState, create_issue, get_issue, list_issues
+from testgit.storage.issues import (
+    Comment,
+    Issue,
+    IssueState,
+    add_comment,
+    close_issue,
+    create_issue,
+    get_issue,
+    list_comments,
+    list_issues,
+)
 from testgit.storage.repo import BareRepo
 
 
@@ -154,3 +164,127 @@ def test_issue_carries_iso_timestamps(repo: BareRepo) -> None:
     assert issue.created_at[:5].endswith("-")
     # Today's create has only one event, so created_at == updated_at.
     assert issue.created_at == issue.updated_at
+
+
+# ---- close_issue -------------------------------------------------------- #
+
+
+def test_close_issue_flips_state_to_closed(repo: BareRepo) -> None:
+    create_issue(repo, title="t", body="b", author="alice")
+    closed = close_issue(repo, number=1, actor="alice")
+    assert closed.state is IssueState.CLOSED
+    assert get_issue(repo, 1).state is IssueState.CLOSED
+
+
+def test_close_issue_appends_a_commit_to_the_ref(repo: BareRepo) -> None:
+    # The whole point of one-commit-per-event is that closing leaves a
+    # second commit on refs/issues/local/<n>. `git log --count` confirms it.
+    create_issue(repo, title="t", body="", author="alice")
+    before = repo.run_git("rev-list", "--count", "refs/issues/local/1").strip()
+    close_issue(repo, number=1, actor="alice")
+    after = repo.run_git("rev-list", "--count", "refs/issues/local/1").strip()
+    assert int(before) == 1
+    assert int(after) == 2
+
+
+def test_close_issue_advances_updated_at_but_not_created_at(repo: BareRepo) -> None:
+    issue = create_issue(repo, title="t", body="", author="alice")
+    closed = close_issue(repo, number=1, actor="alice")
+    # created_at points at the create commit, updated_at at the close commit.
+    assert closed.created_at == issue.created_at
+    # We can't assert strict inequality (commits can land in the same second),
+    # but updated_at must be ≥ the original updated_at.
+    assert closed.updated_at >= issue.updated_at
+
+
+def test_close_issue_returns_none_for_unknown_number(repo: BareRepo) -> None:
+    assert close_issue(repo, number=999, actor="alice") is None
+
+
+def test_close_issue_close_commit_carries_actor(repo: BareRepo) -> None:
+    # The actor is whoever ran the close — independent of the original
+    # author. The commit's author identity records that.
+    create_issue(repo, title="t", body="", author="alice")
+    close_issue(repo, number=1, actor="bob")
+    author_line = repo.run_git("log", "-1", "--format=%an <%ae>", "refs/issues/local/1").strip()
+    assert author_line.startswith("bob <")
+
+
+# ---- add_comment / list_comments ---------------------------------------- #
+
+
+def test_list_comments_is_empty_for_new_issue(repo: BareRepo) -> None:
+    create_issue(repo, title="t", body="", author="alice")
+    assert list_comments(repo, 1) == []
+
+
+def test_add_comment_returns_comment_with_metadata(repo: BareRepo) -> None:
+    create_issue(repo, title="t", body="", author="alice")
+    comment = add_comment(repo, number=1, body="first reply", author="bob")
+    assert isinstance(comment, Comment)
+    assert comment.body == "first reply"
+    assert comment.author == "bob"
+    assert comment.created_at  # ISO-8601 from git
+
+
+def test_add_comment_assigns_sequential_numbers(repo: BareRepo) -> None:
+    create_issue(repo, title="t", body="", author="alice")
+    a = add_comment(repo, number=1, body="one", author="bob")
+    b = add_comment(repo, number=1, body="two", author="bob")
+    c = add_comment(repo, number=1, body="three", author="bob")
+    assert [a.number, b.number, c.number] == [1, 2, 3]
+
+
+def test_list_comments_returns_all_comments_in_order(repo: BareRepo) -> None:
+    create_issue(repo, title="t", body="", author="alice")
+    add_comment(repo, number=1, body="one", author="bob")
+    add_comment(repo, number=1, body="two", author="bob")
+    add_comment(repo, number=1, body="three", author="bob")
+
+    comments = list_comments(repo, 1)
+    assert [c.number for c in comments] == [1, 2, 3]
+    assert [c.body for c in comments] == ["one", "two", "three"]
+
+
+def test_add_comment_writes_blob_under_comments_subtree(repo: BareRepo) -> None:
+    # Comments live at comments/<NNNN>.json inside the issue's tree. A future
+    # reader (e.g. cgit, or a tree-walking sync) can discover them by listing
+    # the comments/ subdir without needing the API.
+    create_issue(repo, title="t", body="", author="alice")
+    add_comment(repo, number=1, body="hello", author="bob")
+    raw = repo.run_git("cat-file", "-p", "refs/issues/local/1:comments/0001.json")
+    payload = json.loads(raw)
+    assert payload == {"body": "hello", "author": "bob"}
+
+
+def test_add_comment_advances_issue_updated_at(repo: BareRepo) -> None:
+    issue = create_issue(repo, title="t", body="", author="alice")
+    add_comment(repo, number=1, body="hi", author="bob")
+    refreshed = get_issue(repo, 1)
+    assert refreshed.updated_at >= issue.updated_at
+    assert refreshed.created_at == issue.created_at
+
+
+def test_add_comment_returns_none_for_unknown_issue(repo: BareRepo) -> None:
+    assert add_comment(repo, number=999, body="x", author="bob") is None
+
+
+def test_add_comment_preserves_issue_state_and_payload(repo: BareRepo) -> None:
+    # Adding a comment must not stomp on issue.json — title/body/state stay put.
+    create_issue(repo, title="my title", body="my body", author="alice")
+    add_comment(repo, number=1, body="comment", author="bob")
+    refreshed = get_issue(repo, 1)
+    assert refreshed.title == "my title"
+    assert refreshed.body == "my body"
+    assert refreshed.state is IssueState.OPEN
+
+
+def test_add_comment_after_close_still_works(repo: BareRepo) -> None:
+    # gh allows commenting on a closed issue. The state should remain CLOSED
+    # but the comment still appends.
+    create_issue(repo, title="t", body="", author="alice")
+    close_issue(repo, number=1, actor="alice")
+    add_comment(repo, number=1, body="post-close", author="bob")
+    refreshed = get_issue(repo, 1)
+    assert refreshed.state is IssueState.CLOSED
+    assert [c.body for c in list_comments(repo, 1)] == ["post-close"]
