@@ -657,8 +657,7 @@ def _all_repos() -> list[Repo]:
                 Issue(
                     title="ESM import error on Node 18",
                     body=(
-                        "`Cannot use import statement outside a module` — needs "
-                        '`"type": "module"`.'
+                        '`Cannot use import statement outside a module` — needs `"type": "module"`.'
                     ),
                     author="alice",
                     closed=True,
