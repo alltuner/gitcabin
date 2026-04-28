@@ -57,6 +57,27 @@ class BareRepo:
 
         return cls(path=path)
 
+    @classmethod
+    def open(cls, path: Path) -> BareRepo | None:
+        """Return a handle if `path` is an existing bare repo, else None.
+
+        Strictly read-only: never initializes. Use `open_or_init` when the
+        caller is allowed to create the repo.
+        """
+        path = Path(path)
+        if not path.is_dir():
+            return None
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-bare-repository"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0 or result.stdout.strip() != "true":
+            return None
+        return cls(path=path)
+
     def run_git(self, *args: str, input: str | None = None) -> str:
         """Run a git command with cwd=self.path and return stdout (text).
 

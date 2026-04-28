@@ -529,11 +529,19 @@ class Query:
         return _user_for(settings.viewer_login)
 
     @strawberry.field
-    def repository(self, owner: str, name: str) -> Repository | None:
-        # Fixture phase: every (owner, name) resolves to an "exists, you can
-        # write to it" repo. The git-backed implementation will replace this
-        # with a real lookup against data_dir/repos/<owner>/<name>.git, returning
-        # None when the bare repo is absent.
+    def repository(self, info: strawberry.Info, owner: str, name: str) -> Repository | None:
+        # Strict lookup: returns None unless data_dir/repos/<owner>/<name>.git
+        # is an actual bare repo. gh repo view of a nonexistent repo correctly
+        # surfaces NOT_FOUND instead of silently inventing a fixture.
+        #
+        # Note: this means `gh issue create -R new/repo` against a fresh repo
+        # name now fails — gh's IssueRepoInfo lookup returns null, so gh aborts
+        # before sending the createIssue mutation. To bring a new repo into
+        # existence today, mkdir the bare dir on the host (or wait for a
+        # createRepository mutation in a follow-up).
+        settings: Settings = info.context["settings"]
+        if BareRepo.open(_repo_path(settings, owner, name)) is None:
+            return None
         return Repository(
             id=ids.repo_id(owner, name),
             name=name,

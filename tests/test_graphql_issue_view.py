@@ -78,7 +78,8 @@ def test_issue_view_returns_existing_issue(client: TestClient) -> None:
     assert issue["createdAt"]
 
 
-def test_issue_view_returns_null_for_unknown_number(client: TestClient) -> None:
+def test_issue_view_returns_null_for_unknown_number(client: TestClient, init_repo) -> None:
+    init_repo("octocat", "hello")
     payload = _post(client, ISSUE_VIEW_QUERY, {"owner": "octocat", "repo": "hello", "number": 99})
     assert "errors" not in payload, payload
     assert payload["data"]["repository"]["issue"] is None

@@ -25,7 +25,8 @@ def post_graphql(client: TestClient, query: str, variables: dict) -> dict:
     return response.json()
 
 
-def test_repository_resolver_returns_owner_and_name(client: TestClient) -> None:
+def test_repository_resolver_returns_owner_and_name(client: TestClient, init_repo) -> None:
+    init_repo("octocat", "hello")
     payload = post_graphql(client, ISSUE_REPO_INFO_QUERY, {"owner": "octocat", "name": "hello"})
 
     assert "errors" not in payload, payload
@@ -35,18 +36,29 @@ def test_repository_resolver_returns_owner_and_name(client: TestClient) -> None:
     assert repo["owner"]["login"] == "octocat"
 
 
-def test_repository_resolver_exposes_issue_capability_flags(client: TestClient) -> None:
+def test_repository_resolver_returns_null_for_absent_repo(client: TestClient) -> None:
+    # No init_repo call: data_dir/repos/octocat/hello.git doesn't exist on
+    # disk. Strict mode means Repository.repository must return null, not
+    # invent a fixture. gh's IssueRepoInfo treats null as NOT_FOUND.
+    payload = post_graphql(client, ISSUE_REPO_INFO_QUERY, {"owner": "octocat", "name": "hello"})
+    assert "errors" not in payload, payload
+    assert payload["data"]["repository"] is None
+
+
+def test_repository_resolver_exposes_issue_capability_flags(client: TestClient, init_repo) -> None:
     # gh's IssueRepoInfo selects hasIssuesEnabled (bool) and viewerPermission
     # (a string-shaped enum). gh treats viewerPermission == "READ" as
     # "you can't write" — for a self-hosted clone the owner is always full
     # admin, so we lock the value here to keep that contract obvious.
+    init_repo("octocat", "hello")
     payload = post_graphql(client, ISSUE_REPO_INFO_QUERY, {"owner": "octocat", "name": "hello"})
     repo = payload["data"]["repository"]
     assert repo["hasIssuesEnabled"] is True
     assert repo["viewerPermission"] == "ADMIN"
 
 
-def test_repository_view_query(client: TestClient) -> None:
+def test_repository_view_query(client: TestClient, init_repo) -> None:
+    init_repo("octocat", "hello")
     # Mirrors what `gh repo view octocat/hello` actually sends. gh's RepositoryGraphQL
     # builder rewrites the "owner" field selector into `owner{id,login}`, so
     # User must expose an id alongside login. description must exist on Repository.
@@ -70,9 +82,10 @@ def test_repository_view_query(client: TestClient) -> None:
     assert "description" in repo
 
 
-def test_repository_id_is_stable_across_calls(client: TestClient) -> None:
+def test_repository_id_is_stable_across_calls(client: TestClient, init_repo) -> None:
     # The id is opaque to gh but must be stable for the same (owner, name)
     # pair so it can be used as a foreign key on issues/PRs across requests.
+    init_repo("octocat", "hello")
     a = post_graphql(client, ISSUE_REPO_INFO_QUERY, {"owner": "octocat", "name": "hello"})
     b = post_graphql(client, ISSUE_REPO_INFO_QUERY, {"owner": "octocat", "name": "hello"})
     assert a["data"]["repository"]["id"] == b["data"]["repository"]["id"]

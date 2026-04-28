@@ -66,7 +66,8 @@ def _create(client: TestClient, owner: str, name: str, title: str) -> None:
     assert "errors" not in payload, payload
 
 
-def test_issue_list_on_empty_repo(client: TestClient) -> None:
+def test_issue_list_on_empty_repo(client: TestClient, init_repo) -> None:
+    init_repo("octocat", "hello")
     payload = _post(client, ISSUE_LIST_QUERY, {"owner": "octocat", "repo": "hello", "limit": 30})
 
     assert "errors" not in payload, payload
@@ -74,6 +75,14 @@ def test_issue_list_on_empty_repo(client: TestClient) -> None:
     assert issues["totalCount"] == 0
     assert issues["nodes"] == []
     assert issues["pageInfo"]["hasNextPage"] is False
+
+
+def test_issue_list_returns_null_repository_when_repo_absent(client: TestClient) -> None:
+    # Strict Query.repository: a missing bare repo means the whole repository
+    # field is null, and the issues connection isn't reachable.
+    payload = _post(client, ISSUE_LIST_QUERY, {"owner": "nope", "repo": "absent", "limit": 30})
+    assert "errors" not in payload, payload
+    assert payload["data"]["repository"] is None
 
 
 def test_issue_list_returns_created_issues(client: TestClient) -> None:
