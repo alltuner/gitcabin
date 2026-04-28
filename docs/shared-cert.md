@@ -124,7 +124,21 @@ A `compose.shared-tls.yml` overlay (TBD, separate from `compose.yml`):
 
 The user picks any subdomain they want — there's no allocation, no central registry. `alice.local.gitcabin.com` and `bob.local.gitcabin.com` both work because they're both wildcard matches and they both resolve to `127.0.0.1`.
 
-For users whose `127.0.0.1:443` is already taken, we ship a second SAN on the same cert — e.g. `*.lo2.local.gitcabin.com` pinned to `127.42.0.1` — and they edit a single env var in their `.env` to flip between loopback IPs. (Cheap, and addresses the same class of conflict the README's port-80 troubleshooting block does.)
+For users whose `127.0.0.1:443` is already taken, the cert carries five wildcard SANs — each pinned to a different loopback IP via its own DNS record:
+
+| Hostname pattern | Resolves to |
+|---|---|
+| `*.local.gitcabin.com` | `127.0.0.1` (default) |
+| `*.lo2.gitcabin.com`   | `127.42.0.1` |
+| `*.lo3.gitcabin.com`   | `127.43.0.1` |
+| `*.lo4.gitcabin.com`   | `127.44.0.1` |
+| `*.lo5.gitcabin.com`   | `127.45.0.1` |
+
+A user with a port-443 conflict on `127.0.0.1` flips a single env var in their `.env` (`GITCABIN_LOOPBACK=127.43.0.1`, `GITCABIN_HOST_BASE=lo3`); compose substitutes it into the port binding and the README's `gh auth login` invocation. Caddy serves the same cert in every variant — the cert's SAN list covers all five hostname patterns, so no per-variant cert work.
+
+The probability that *all* of `127.0.0.1:443`, `127.42.0.1:443`, ... `127.45.0.1:443` are simultaneously taken on a normal dev machine is effectively zero, so this converts the escape-hatch from "may need it" to "will always have one available."
+
+Platform notes: Linux routes the entire `127.0.0.0/8` block through the loopback interface by default — every alias just works. macOS does the same on Big Sur and later (verified path; older macOS may need `sudo ifconfig lo0 alias 127.42.0.1 up` per IP, which is a one-time setup we should test before claiming support). Windows-host gh users connecting to a WSL2-hosted gitcabin: untested, worth verifying loopback-alias forwarding works there before we promise it.
 
 ## What's locked, what's open
 
@@ -134,13 +148,13 @@ For users whose `127.0.0.1:443` is already taken, we ship a second SAN on the sa
 - Architecture B (Caddy + R2 sync) over Architecture A (Worker + R2).
 - Bundle hosted under `cert.gitcabin.com` (or whichever final domain we pick), distributed separately from the main project repo.
 - Detached signature on the bundle, verified by the user-side init container.
-- Two SAN variants on the wildcard cert to cover the loopback-conflict escape hatch.
+- Five SAN variants on the wildcard cert, each pinned to a distinct loopback IP, so any user can always find a free `:443` to bind to.
 
 ### Open questions
 
 - **Domain.** Is it `gitcabin.com` (preferred — self-documenting, doubles as project branding), `cabin.alltuner.com` (cheapest — already owned), or something else? Pending domain availability check.
-- **Number of loopback variants.** `*.local.<domain>` pinned to 127.0.0.1 plus `*.lo2.<domain>` to 127.42.0.1 covers most cases; do we want a third (lo3, lo4) for users with deeper port stacking? Probably not, but the wildcard cert can include up to 100 SANs at no marginal cost.
 - **Rotation cadence.** 60 vs. 75 vs. 90 days. LE max is 90; tighter rotation is more security but more chances for the renewal job to fail at a bad moment. 60 feels right.
+- **Older-macOS / Windows-host loopback support.** The five-SAN scheme assumes loopback aliases work without per-IP `ifconfig` plumbing. True on modern Linux and recent macOS; needs verification on macOS pre-Big Sur and on Windows hosts talking to WSL2.
 - **Hosting choice for the Caddy renewal box.** Fly.io free tier, an existing alltuner-internal Tailscale node, a Cloudflare Tunnel + Container — all viable. Pick whichever has the lowest cognitive overhead for whoever ends up maintaining it.
 - **"What if Let's Encrypt revokes" runbook.** We need a documented fallback (ZeroSSL, Buypass) and an alert path so we notice within hours, not days. Architecture B makes this trivial — flip a Caddy directive — but we should write the runbook before the first revocation, not after.
 - **Stale-cert UX on the user side.** If a user runs an install for the first time during the ~minute the bundle is being swapped, they see a TLS handshake fail. The init container should retry on 404/checksum-mismatch with backoff. Define the exact behavior before shipping.
