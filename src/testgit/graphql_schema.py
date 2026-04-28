@@ -12,11 +12,21 @@ import strawberry
 from testgit import ids
 from testgit.config import Settings
 from testgit.storage.issues import (
+    Comment as StorageComment,
+)
+from testgit.storage.issues import (
     Issue as StorageIssue,
+)
+from testgit.storage.issues import (
+    add_comment as storage_add_comment,
+)
+from testgit.storage.issues import (
+    close_issue as storage_close_issue,
 )
 from testgit.storage.issues import (
     create_issue,
     get_issue,
+    list_comments,
     list_issues,
 )
 from testgit.storage.repo import BareRepo
@@ -117,11 +127,11 @@ class Milestone:
 
 @strawberry.type
 class IssueComment:
-    """A comment on an issue. Stub for now — we don't write comments yet.
+    """A comment on an issue.
 
     Field set is the union of what gh's `comments` and `lastComment` fragments
-    request (api/query_builder.go::issueComments and issueCommentLast). Most
-    fields return defaulted values since we don't track comments at all yet.
+    request (api/query_builder.go::issueComments and issueCommentLast). Fields
+    we don't track yet (edits, minimization, reactions) return defaulted values.
     """
 
     id: str
@@ -231,6 +241,16 @@ class UserConnection:
 class IssueCommentConnection:
     nodes: list[IssueComment]
     total_count: int
+    # gh issue view --comments selects pageInfo to know whether to paginate.
+    # We always return everything in one page today, so hasNextPage is False.
+    page_info: PageInfo
+
+
+@strawberry.type
+class IssueCommentEdge:
+    """Edge wrapper for AddCommentPayload. gh selects `commentEdge { node { url } }`."""
+
+    node: IssueComment
 
 
 # ---- Issue & PullRequest ------------------------------------------------- #
@@ -241,6 +261,12 @@ def _issue_url(owner: str, name: str, number: int) -> str:
     # don't actually serve HTML at the parent host yet; the string is what
     # the user copy-pastes into a browser later.
     return f"http://github.localhost/{owner}/{name}/issues/{number}"
+
+
+def _comment_url(owner: str, name: str, issue_number: int, comment_number: int) -> str:
+    # Mirrors gh.com's anchor scheme so users see something familiar after
+    # `gh issue comment` even though we don't host an HTML view yet.
+    return f"{_issue_url(owner, name, issue_number)}#issuecomment-{comment_number}"
 
 
 def _user_for(login: str) -> User:
@@ -259,6 +285,25 @@ def _to_gql_issue(stored: StorageIssue, owner: str, name: str) -> Issue:
         created_at=stored.created_at,
         updated_at=stored.updated_at,
         state_reason=None,
+    )
+
+
+def _to_gql_comment(
+    stored: StorageComment, owner: str, name: str, issue_number: int
+) -> IssueComment:
+    return IssueComment(
+        id=ids.comment_id(owner, name, issue_number, stored.number),
+        author=_user_for(stored.author),
+        # OWNER means the commenter has admin rights — true for any local
+        # actor on a self-hosted clone, same logic as viewerPermission=ADMIN.
+        author_association="OWNER",
+        body=stored.body,
+        created_at=stored.created_at,
+        includes_created_edit=False,
+        is_minimized=False,
+        minimized_reason=None,
+        url=_comment_url(owner, name, issue_number, stored.number),
+        viewer_did_author=False,
     )
 
 
@@ -297,6 +342,7 @@ class Issue:
     @strawberry.field
     def comments(
         self,
+        info: strawberry.Info,
         first: int | None = None,
         last: int | None = None,
         after: str | None = None,
@@ -305,8 +351,24 @@ class Issue:
         # Single field for both `comments(first:100)` and `comments(last:1)`
         # selections. gh's `lastComment` pseudo-field is just `comments(last:1)`,
         # which lands here too.
-        _ = (first, last, after, before)
-        return IssueCommentConnection(nodes=[], total_count=0)
+        _ = (after, before)
+        empty_page = PageInfo(has_next_page=False, end_cursor=None)
+        coords = ids.decode_issue_id(self.id)
+        if coords is None:
+            return IssueCommentConnection(nodes=[], total_count=0, page_info=empty_page)
+        settings: Settings = info.context["settings"]
+        bare = _open_bare_or_none(settings, coords.owner, coords.name)
+        if bare is None:
+            return IssueCommentConnection(nodes=[], total_count=0, page_info=empty_page)
+        stored = list_comments(bare, coords.number)
+        nodes = [_to_gql_comment(c, coords.owner, coords.name, coords.number) for c in stored]
+        if first is not None:
+            nodes = nodes[:first]
+        elif last is not None:
+            nodes = nodes[-last:] if last > 0 else []
+        return IssueCommentConnection(
+            nodes=nodes, total_count=len(stored), page_info=empty_page
+        )
 
     @strawberry.field
     def milestone(self) -> Milestone | None:
@@ -366,7 +428,11 @@ class PullRequest:
         before: str | None = None,
     ) -> IssueCommentConnection:
         _ = (first, last, after, before)
-        return IssueCommentConnection(nodes=[], total_count=0)
+        return IssueCommentConnection(
+            nodes=[],
+            total_count=0,
+            page_info=PageInfo(has_next_page=False, end_cursor=None),
+        )
 
     @strawberry.field
     def milestone(self) -> Milestone | None:
@@ -515,6 +581,43 @@ class CreateIssuePayload:
     issue: Issue
 
 
+@strawberry.input
+class CloseIssueInput:
+    """Input for the closeIssue mutation. Mirrors GitHub's CloseIssueInput.
+
+    `stateReason` is "COMPLETED" / "NOT_PLANNED" / "DUPLICATE"; we don't
+    persist it yet (the IssueDocument only has OPEN/CLOSED), but we accept it
+    so gh's mutation validates. `duplicateIssueId` is only sent with
+    stateReason=DUPLICATE; same accept-and-ignore rule applies.
+    """
+
+    issue_id: strawberry.ID
+    state_reason: str | None = None
+    duplicate_issue_id: strawberry.ID | None = None
+    client_mutation_id: str | None = None
+
+
+@strawberry.type
+class CloseIssuePayload:
+    issue: Issue
+
+
+@strawberry.input
+class AddCommentInput:
+    """Input for the addComment mutation. `subjectId` is the issue's GraphQL ID."""
+
+    subject_id: strawberry.ID
+    body: str
+    client_mutation_id: str | None = None
+
+
+@strawberry.type
+class AddCommentPayload:
+    """Return shape for addComment. gh selects `commentEdge { node { url } }`."""
+
+    comment_edge: IssueCommentEdge
+
+
 # ---- Query / Mutation roots --------------------------------------------- #
 
 
@@ -573,6 +676,59 @@ class Mutation:
         )
 
         return CreateIssuePayload(issue=_to_gql_issue(stored, coords.owner, coords.name))
+
+    @strawberry.mutation
+    def close_issue(self, info: strawberry.Info, input: CloseIssueInput) -> CloseIssuePayload:
+        settings: Settings = info.context["settings"]
+
+        coords = ids.decode_issue_id(input.issue_id)
+        if coords is None:
+            raise ValueError(f"Unknown issueId: {input.issue_id!r}")
+
+        bare = _open_bare_or_none(settings, coords.owner, coords.name)
+        # stateReason / duplicateIssueId are accepted-and-ignored for now —
+        # the storage doc only models OPEN/CLOSED, and gh treats the close as
+        # successful as long as the mutation returns the issue. A follow-up
+        # can extend IssueDocument to persist the reason.
+        stored = (
+            storage_close_issue(bare, number=coords.number, actor=settings.viewer_login)
+            if bare is not None
+            else None
+        )
+        if stored is None:
+            raise ValueError(f"Unknown issueId: {input.issue_id!r}")
+
+        return CloseIssuePayload(issue=_to_gql_issue(stored, coords.owner, coords.name))
+
+    @strawberry.mutation
+    def add_comment(self, info: strawberry.Info, input: AddCommentInput) -> AddCommentPayload:
+        settings: Settings = info.context["settings"]
+
+        # subjectId is an issue ID — gh sends the issue's GraphQL id as the
+        # comment's subject. We don't accept PR or discussion subjects yet.
+        coords = ids.decode_issue_id(input.subject_id)
+        if coords is None:
+            raise ValueError(f"Unknown subjectId: {input.subject_id!r}")
+
+        bare = _open_bare_or_none(settings, coords.owner, coords.name)
+        stored = (
+            storage_add_comment(
+                bare,
+                number=coords.number,
+                body=input.body,
+                author=settings.viewer_login,
+            )
+            if bare is not None
+            else None
+        )
+        if stored is None:
+            raise ValueError(f"Unknown subjectId: {input.subject_id!r}")
+
+        return AddCommentPayload(
+            comment_edge=IssueCommentEdge(
+                node=_to_gql_comment(stored, coords.owner, coords.name, coords.number),
+            ),
+        )
 
 
 # Strawberry doesn't auto-discover unused types reachable only via unions, so

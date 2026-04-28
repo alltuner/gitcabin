@@ -87,3 +87,8 @@ def decode_issue_id(node_id: str) -> IssueCoords | None:
     if not owner or not name or not number_str.isdigit():
         return None
     return IssueCoords(owner=owner, name=name, number=int(number_str))
+
+
+def comment_id(owner: str, name: str, issue_number: int, comment_number: int) -> str:
+    """ID for an issue comment. Opaque to gh; we never decode it back today."""
+    return _encode("IC", f"{owner}/{name}#{issue_number}.{comment_number}")

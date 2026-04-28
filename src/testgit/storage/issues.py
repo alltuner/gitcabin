@@ -298,9 +298,7 @@ def list_comments(repo: BareRepo, number: int) -> list[Comment]:
         raw = repo.run_git("cat-file", "-p", entry.sha)
         doc = CommentDocument.model_validate_json(raw)
         created_at = _comment_created_at(repo, ref, entry.name) or ""
-        comments.append(
-            Comment(number=n, body=doc.body, author=doc.author, created_at=created_at)
-        )
+        comments.append(Comment(number=n, body=doc.body, author=doc.author, created_at=created_at))
     comments.sort(key=lambda c: c.number)
     return comments
 
