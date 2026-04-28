@@ -4,6 +4,11 @@
 
 FROM python:3.14-slim
 
+# git is required at runtime: the storage layer shells out to git plumbing
+# (hash-object, mktree, commit-tree, update-ref) for every metadata write.
+# python:3.14-slim doesn't include it.
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 # Pull uv from its official image — fastest way to get the binary, no compile
 # step, version pinned by the tag we choose.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

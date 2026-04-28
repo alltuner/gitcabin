@@ -3,12 +3,16 @@
 
 from __future__ import annotations
 
-import hashlib
 from enum import Enum
+from pathlib import Path
 
 import strawberry
 
+from testgit import ids
 from testgit.config import Settings
+from testgit.storage.issues import IssueState as StorageIssueState
+from testgit.storage.issues import create_issue
+from testgit.storage.repo import BareRepo
 
 
 @strawberry.type
@@ -38,14 +42,19 @@ class RepositoryPermission(Enum):
     READ = "READ"
 
 
+@strawberry.enum
+class IssueState(Enum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
 @strawberry.type
 class Repository:
     """A repository identified by (owner, name).
 
-    The `id` is opaque to gh but must be stable for the same coordinates so it
-    can be used as a foreign key by mutations referencing this repo. We derive
-    it deterministically from "<owner>/<name>" rather than allocating a number,
-    because repos don't need a monotonic counter — issues and PRs do.
+    The `id` round-trips back to (owner, name) via testgit.ids.decode_repo_id —
+    that's how the createIssue mutation knows which bare repo to write to from
+    only an opaque `repositoryId`.
     """
 
     id: str
@@ -56,19 +65,64 @@ class Repository:
     viewer_permission: RepositoryPermission
 
 
-def _repo_id(owner: str, name: str) -> str:
-    # Prefixed + hashed so the id is greppable in logs and stable across
-    # requests. The "R_" prefix loosely mirrors GitHub's GlobalID convention
-    # (it ships ids like "R_kgDOBAQqUw") without trying to match its scheme.
-    digest = hashlib.sha1(f"{owner}/{name}".encode()).hexdigest()[:16]
-    return f"R_{digest}"
+@strawberry.type
+class Issue:
+    """An issue at <owner>/<name>#<number>."""
+
+    id: str
+    number: int
+    title: str
+    body: str
+    state: IssueState
+    url: str
+    author: User
 
 
-def _user_id(login: str) -> str:
-    # Same rationale as _repo_id: opaque, stable, greppable. "U_" because
-    # GitHub uses that prefix for User node ids.
-    digest = hashlib.sha1(f"user/{login}".encode()).hexdigest()[:16]
-    return f"U_{digest}"
+@strawberry.input
+class CreateIssueInput:
+    """Input for the createIssue mutation. Mirrors GitHub's CreateIssueInput.
+
+    Only the fields gh actually sends are required; the rest gh ships
+    (assigneeIds, labelIds, milestoneId, projectIds, etc.) are accepted as
+    optional so the schema doesn't reject the mutation, but ignored for now.
+    """
+
+    repository_id: strawberry.ID
+    title: str
+    body: str | None = None
+    assignee_ids: list[strawberry.ID] | None = None
+    label_ids: list[strawberry.ID] | None = None
+    milestone_id: strawberry.ID | None = None
+    project_ids: list[strawberry.ID] | None = None
+    issue_template: str | None = None
+
+
+@strawberry.type
+class CreateIssuePayload:
+    """Return shape for createIssue. gh selects `issue { id, url }`."""
+
+    issue: Issue
+
+
+def _user(login: str) -> User:
+    return User(id=ids.user_id(login), login=login)
+
+
+def _repo_path(settings: Settings, owner: str, name: str) -> Path:
+    """Path on disk for a repo's bare git directory."""
+    return settings.data_dir / "repos" / owner / f"{name}.git"
+
+
+def _issue_url(settings: Settings, owner: str, name: str, number: int) -> str:
+    # gh prints this URL after `gh issue create` — for github.localhost the
+    # natural URL is the parent host. We don't actually serve HTML there yet,
+    # but the string is what the user copy-pastes into a browser later.
+    _ = settings  # reserved for when we make the host configurable
+    return f"http://github.localhost/{owner}/{name}/issues/{number}"
+
+
+def _issue_state(state: StorageIssueState) -> IssueState:
+    return IssueState[state.value]
 
 
 @strawberry.type
@@ -79,22 +133,55 @@ class Query:
         # token resolves to a user. The login is whatever the server says it is —
         # gh just writes it to its config and trusts the answer.
         settings: Settings = info.context["settings"]
-        return User(id=_user_id(settings.viewer_login), login=settings.viewer_login)
+        return _user(settings.viewer_login)
 
     @strawberry.field
     def repository(self, owner: str, name: str) -> Repository | None:
         # Fixture phase: every (owner, name) resolves to an "exists, you can
         # write to it" repo. The git-backed implementation will replace this
-        # with a real lookup against ./data/repos/<owner>/<name>.git, returning
+        # with a real lookup against data_dir/repos/<owner>/<name>.git, returning
         # None when the bare repo is absent.
         return Repository(
-            id=_repo_id(owner, name),
+            id=ids.repo_id(owner, name),
             name=name,
-            owner=User(id=_user_id(owner), login=owner),
+            owner=_user(owner),
             description=None,
             has_issues_enabled=True,
             viewer_permission=RepositoryPermission.ADMIN,
         )
 
 
-schema = strawberry.Schema(query=Query)
+@strawberry.type
+class Mutation:
+    @strawberry.mutation
+    def create_issue(self, info: strawberry.Info, input: CreateIssueInput) -> CreateIssuePayload:
+        settings: Settings = info.context["settings"]
+
+        # The repositoryId is the opaque string we returned from Query.repository;
+        # decode it back to (owner, name) so we know which bare repo to open.
+        coords = ids.decode_repo_id(input.repository_id)
+        if coords is None:
+            raise ValueError(f"Unknown repositoryId: {input.repository_id!r}")
+
+        repo = BareRepo.open_or_init(_repo_path(settings, coords.owner, coords.name))
+        issue = create_issue(
+            repo,
+            title=input.title,
+            body=input.body or "",
+            author=settings.viewer_login,
+        )
+
+        return CreateIssuePayload(
+            issue=Issue(
+                id=ids.issue_id(coords.owner, coords.name, issue.number),
+                number=issue.number,
+                title=issue.title,
+                body=issue.body,
+                state=_issue_state(issue.state),
+                url=_issue_url(settings, coords.owner, coords.name, issue.number),
+                author=_user(issue.author),
+            )
+        )
+
+
+schema = strawberry.Schema(query=Query, mutation=Mutation)
