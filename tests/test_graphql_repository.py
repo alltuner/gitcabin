@@ -82,6 +82,30 @@ def test_repository_view_query(client: TestClient, init_repo) -> None:
     assert "description" in repo
 
 
+def test_repository_view_json_fields(client: TestClient, init_repo) -> None:
+    # `gh repo view --json url,defaultBranchRef,nameWithOwner` selects the
+    # fields that gh's RepositoryFields exporter exposes. Each is on
+    # GitHub's Repository type, so we have to expose them too — even when
+    # the values come from local git state instead of an external API.
+    init_repo("octocat", "hello")
+    query = """
+    query($owner: String!, $name: String!) {
+      repository(owner: $owner, name: $name) {
+        url
+        nameWithOwner
+        defaultBranchRef { name }
+      }
+    }
+    """
+    payload = post_graphql(client, query, {"owner": "octocat", "name": "hello"})
+    assert "errors" not in payload, payload
+    repo = payload["data"]["repository"]
+    assert repo["url"] == "http://github.localhost/octocat/hello"
+    assert repo["nameWithOwner"] == "octocat/hello"
+    # Fresh bare init defaults the symbolic HEAD to refs/heads/main.
+    assert repo["defaultBranchRef"]["name"] == "main"
+
+
 def test_repository_id_is_stable_across_calls(client: TestClient, init_repo) -> None:
     # The id is opaque to gh but must be stable for the same (owner, name)
     # pair so it can be used as a foreign key on issues/PRs across requests.

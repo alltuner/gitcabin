@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Annotated
@@ -69,6 +70,29 @@ class OrderDirection(Enum):
     DESC = "DESC"
 
 
+@strawberry.enum
+class RepositoryPrivacy(Enum):
+    PUBLIC = "PUBLIC"
+    PRIVATE = "PRIVATE"
+    INTERNAL = "INTERNAL"
+
+
+@strawberry.enum
+class RepositoryAffiliation(Enum):
+    OWNER = "OWNER"
+    COLLABORATOR = "COLLABORATOR"
+    ORGANIZATION_MEMBER = "ORGANIZATION_MEMBER"
+
+
+@strawberry.enum
+class RepositoryOrderField(Enum):
+    CREATED_AT = "CREATED_AT"
+    UPDATED_AT = "UPDATED_AT"
+    PUSHED_AT = "PUSHED_AT"
+    NAME = "NAME"
+    STARGAZERS = "STARGAZERS"
+
+
 # ---- Input types --------------------------------------------------------- #
 
 
@@ -89,6 +113,14 @@ class IssueFilters:
     mentioned: str | None = None
     labels: list[str] | None = None
     states: list[IssueState] | None = None
+
+
+@strawberry.input
+class RepositoryOrder:
+    """Sort spec for repositoryOwner.repositories. Accepted-but-ignored for now."""
+
+    field: RepositoryOrderField
+    direction: OrderDirection
 
 
 # ---- Leaf types ---------------------------------------------------------- #
@@ -480,6 +512,17 @@ def _open_bare_or_none(settings: Settings, owner: str, name: str) -> BareRepo | 
     return BareRepo.open_or_init(path)
 
 
+def _repo_url(owner: str, name: str) -> str:
+    return f"http://github.localhost/{owner}/{name}"
+
+
+@strawberry.type
+class Ref:
+    """A git ref (branch/tag). gh's defaultBranchRef selects just `name`."""
+
+    name: str
+
+
 @strawberry.type
 class Repository:
     """A repository identified by (owner, name).
@@ -495,6 +538,43 @@ class Repository:
     description: str | None
     has_issues_enabled: bool
     viewer_permission: RepositoryPermission
+    is_private: bool = False
+    is_fork: bool = False
+    is_archived: bool = False
+    visibility: RepositoryPrivacy = RepositoryPrivacy.PUBLIC
+    # ISO-8601 strings — populated by _to_gql_repository from git/filesystem
+    # state. Defaulted so other Repository constructions (Query.repository)
+    # don't have to plumb them through.
+    created_at: str = ""
+    pushed_at: str = ""
+
+    @strawberry.field
+    def url(self) -> str:
+        # Web URL on github.localhost. We don't host an HTML repo view yet,
+        # but `gh repo view --json url` and any caller that pastes the URL
+        # into a browser need a real-shaped string.
+        return _repo_url(self.owner.login, self.name)
+
+    @strawberry.field
+    def name_with_owner(self) -> str:
+        return f"{self.owner.login}/{self.name}"
+
+    @strawberry.field
+    def default_branch_ref(self, info: strawberry.Info) -> Ref | None:
+        # Resolves from the bare repo's symbolic HEAD. Fresh `git init --bare`
+        # sets HEAD to refs/heads/main (initial-branch=main), but a sync from
+        # an upstream would make HEAD whatever the upstream had — read it
+        # from git rather than hard-coding "main".
+        settings: Settings = info.context["settings"]
+        bare = _open_bare_or_none(settings, self.owner.login, self.name)
+        if bare is None:
+            return None
+        try:
+            head_ref = bare.repo.head.reference.name
+        except TypeError, ValueError:
+            # Detached HEAD or no commits yet — gh tolerates a null here.
+            return None
+        return Ref(name=head_ref)
 
     @strawberry.field
     def issues(
@@ -616,6 +696,114 @@ class AddCommentPayload:
     comment_edge: IssueCommentEdge
 
 
+# ---- RepositoryConnection / RepositoryOwner ----------------------------- #
+
+
+@strawberry.type
+class RepositoryConnection:
+    """The connection type behind RepositoryOwner.repositories (gh repo list)."""
+
+    nodes: list[Repository]
+    total_count: int
+    page_info: PageInfo
+
+
+def _to_gql_repository(bare: BareRepo, owner: str, name: str) -> Repository:
+    """Build a Repository from on-disk state. Used by the repo list resolver."""
+    created_at, pushed_at = _repo_timestamps(bare)
+    return Repository(
+        id=ids.repo_id(owner, name),
+        name=name,
+        owner=_user_for(owner),
+        description=None,
+        has_issues_enabled=True,
+        viewer_permission=RepositoryPermission.ADMIN,
+        is_private=False,
+        is_fork=False,
+        is_archived=False,
+        visibility=RepositoryPrivacy.PUBLIC,
+        created_at=created_at,
+        pushed_at=pushed_at,
+    )
+
+
+def _repo_timestamps(bare: BareRepo) -> tuple[str, str]:
+    """Return (created_at, pushed_at) as ISO-8601 strings.
+
+    pushed_at is the latest commit author date across all branches; created_at
+    is the oldest commit. With no commits at all (a fresh `git init`), both
+    fall back to the bare directory's mtime so the field still has a real
+    value gh can render.
+    """
+    commits = list(bare.repo.iter_commits("--all"))
+    if not commits:
+        mtime = datetime.fromtimestamp(bare.path.stat().st_mtime, tz=UTC).isoformat()
+        return (mtime, mtime)
+    dates = sorted(c.authored_datetime for c in commits)
+    return (dates[0].isoformat(), dates[-1].isoformat())
+
+
+@strawberry.type
+class RepositoryOwner:
+    """A user or organization that owns repositories.
+
+    GitHub models RepositoryOwner as an interface implemented by User and
+    Organization; gh's repo list query selects only the shared fields
+    (`login` and `repositories`), so a single concrete type is enough.
+    """
+
+    login: str
+
+    @strawberry.field
+    def repositories(
+        self,
+        info: strawberry.Info,
+        first: int | None = None,
+        after: str | None = None,
+        privacy: RepositoryPrivacy | None = None,
+        is_fork: bool | None = None,
+        owner_affiliations: list[RepositoryAffiliation] | None = None,
+        order_by: RepositoryOrder | None = None,
+    ) -> RepositoryConnection:
+        # privacy/isFork/ownerAffiliations/orderBy are part of gh's query
+        # template — accept them so the schema validates, then apply only the
+        # filters that make sense locally. We're always PUBLIC and never a fork,
+        # so privacy=PRIVATE / isFork=true legitimately yields an empty list.
+        _ = (after, owner_affiliations, order_by)
+        if privacy is not None and privacy is not RepositoryPrivacy.PUBLIC:
+            return RepositoryConnection(
+                nodes=[], total_count=0, page_info=PageInfo(has_next_page=False, end_cursor=None)
+            )
+        if is_fork is True:
+            return RepositoryConnection(
+                nodes=[], total_count=0, page_info=PageInfo(has_next_page=False, end_cursor=None)
+            )
+
+        settings: Settings = info.context["settings"]
+        owner_dir = settings.data_dir / "repos" / self.login
+        repos: list[Repository] = []
+        if owner_dir.is_dir():
+            for entry in sorted(owner_dir.iterdir()):
+                if not entry.name.endswith(".git"):
+                    continue
+                bare = BareRepo.open(entry)
+                if bare is None:
+                    continue
+                repos.append(_to_gql_repository(bare, self.login, entry.name[:-4]))
+
+        # Sort newest-pushed-first to match gh's default `orderBy: PUSHED_AT DESC`.
+        repos.sort(key=lambda r: r.pushed_at, reverse=True)
+
+        total = len(repos)
+        limit = first if first is not None else total
+        page = repos[:limit]
+        return RepositoryConnection(
+            nodes=page,
+            total_count=total,
+            page_info=PageInfo(has_next_page=limit < total, end_cursor=None),
+        )
+
+
 # ---- Query / Mutation roots --------------------------------------------- #
 
 
@@ -641,16 +829,26 @@ class Query:
         # existence today, mkdir the bare dir on the host (or wait for a
         # createRepository mutation in a follow-up).
         settings: Settings = info.context["settings"]
-        if BareRepo.open(_repo_path(settings, owner, name)) is None:
+        bare = BareRepo.open(_repo_path(settings, owner, name))
+        if bare is None:
             return None
-        return Repository(
-            id=ids.repo_id(owner, name),
-            name=name,
-            owner=_user_for(owner),
-            description=None,
-            has_issues_enabled=True,
-            viewer_permission=RepositoryPermission.ADMIN,
-        )
+        return _to_gql_repository(bare, owner, name)
+
+    @strawberry.field
+    def repository_owner(self, info: strawberry.Info, login: str) -> RepositoryOwner | None:
+        """Return the owner namespace at data_dir/repos/<login>/, or None.
+
+        gh repo list sends `repositoryOwner(login: $owner)`; null means
+        NOT_FOUND. We say None when no directory at all exists for that login
+        (so `gh repo list ghost-org` shows nothing-found cleanly), but if the
+        directory exists with zero repos inside, we still resolve — the owner
+        is real, just empty.
+        """
+        settings: Settings = info.context["settings"]
+        owner_dir = settings.data_dir / "repos" / login
+        if not owner_dir.is_dir():
+            return None
+        return RepositoryOwner(login=login)
 
 
 @strawberry.type
