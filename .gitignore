@@ -10,4 +10,4 @@ wheels/
 .venv
 
 # Claude Code harness state
-.claude/
+.claude/scheduled_tasks.lock
