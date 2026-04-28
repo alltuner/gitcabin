@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict
 
 from testgit.storage.counter import Counter
 from testgit.storage.repo import BareRepo
@@ -25,13 +26,31 @@ class IssueState(StrEnum):
     CLOSED = "CLOSED"
 
 
+class IssueDocument(BaseModel):
+    """The on-disk schema for `issue.json` inside an issue ref's tree.
+
+    Number is deliberately absent — it's the ref name, and keeping it in only
+    one place is what makes a future GitHub-authoritative renumbering on sync
+    a single `git update-ref` (no payload rewrite). `extra='ignore'` keeps us
+    forward-compatible with the older format that did include `number`.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    title: str
+    body: str
+    author: str
+    state: IssueState
+
+
 @dataclass(frozen=True, slots=True)
 class Issue:
     """A persisted issue, returned from the writer for use by GraphQL resolvers.
 
-    Timestamps are kept as ISO-8601 strings (with timezone offset) rather than
-    datetime objects so they pass through GraphQL serialization unchanged. They
-    come straight from `git log --format=%aI` against the issue's ref.
+    Combines the IssueDocument fields with metadata derived from git itself:
+    the number from the ref name, and the ISO-8601 timestamps from the commit
+    log. Kept as a separate type from IssueDocument because these extras
+    aren't in the file — they're computed from the surrounding git state.
     """
 
     number: int
@@ -52,17 +71,11 @@ def create_issue(repo: BareRepo, *, title: str, body: str, author: str) -> Issue
     """
     number = Counter(repo, "issues").next()
 
-    # 1. Hash the issue.json blob into the object database.
-    payload = json.dumps(
-        {
-            "number": number,
-            "title": title,
-            "body": body,
-            "author": author,
-            "state": IssueState.OPEN.value,
-        },
-        indent=2,
-    )
+    # 1. Hash the issue.json blob into the object database. The pydantic
+    #    model produces canonical JSON with stable field order, which keeps
+    #    blob hashes diff-able across writes.
+    doc = IssueDocument(title=title, body=body, author=author, state=IssueState.OPEN)
+    payload = doc.model_dump_json(indent=2)
     blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
 
     # 2. Build a tree containing just the issue.json blob. Future events that
@@ -142,17 +155,16 @@ def get_issue(repo: BareRepo, number: int) -> Issue | None:
 
 def _read_issue(repo: BareRepo, ref: str, number: int) -> Issue:
     raw = repo.run_git("cat-file", "-p", f"{ref}:issue.json")
-    payload = json.loads(raw)
+    doc = IssueDocument.model_validate_json(raw)
     created_at, updated_at = _read_timestamps(repo, ref)
-    # The number in the file should match the ref name; we trust the ref name
-    # as authoritative and pass `number` in so renumbering on sync is just a
-    # ref move (no payload rewrite needed).
+    # `number` comes from the ref name (the authoritative source), not from
+    # the payload — older files may carry it but newer ones don't.
     return Issue(
         number=number,
-        title=payload["title"],
-        body=payload["body"],
-        author=payload["author"],
-        state=IssueState(payload["state"]),
+        title=doc.title,
+        body=doc.body,
+        author=doc.author,
+        state=doc.state,
         created_at=created_at,
         updated_at=updated_at,
     )

@@ -47,8 +47,9 @@ def test_create_issue_tree_contains_issue_json(repo: BareRepo) -> None:
     issue = create_issue(repo, title="Title", body="Body text", author="david")
     raw = repo.run_git("cat-file", "-p", f"refs/issues/local/{issue.number}:issue.json")
     payload = json.loads(raw)
+    # Number is intentionally absent — it lives only in the ref name so a
+    # future GitHub-authoritative renumbering on sync is a single ref move.
     assert payload == {
-        "number": 1,
         "title": "Title",
         "body": "Body text",
         "author": "david",
@@ -106,6 +107,40 @@ def test_get_issue_returns_none_for_unknown_number(repo: BareRepo) -> None:
 
 def test_get_issue_returns_none_when_repo_has_no_issues(repo: BareRepo) -> None:
     assert get_issue(repo, 1) is None
+
+
+def test_legacy_issue_json_with_extra_number_field_loads(repo: BareRepo) -> None:
+    # Older writes embedded `number` inside issue.json. We've stopped writing
+    # it, but existing data must keep loading — the IssueDocument model uses
+    # extra='ignore' specifically to keep the on-disk format forward-compatible.
+    legacy_payload = json.dumps(
+        {
+            "number": 7,
+            "title": "Legacy",
+            "body": "from older format",
+            "author": "david",
+            "state": "OPEN",
+        },
+        indent=2,
+    )
+    blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=legacy_payload + "\n").strip()
+    tree_sha = repo.run_git("mktree", input=f"100644 blob {blob_sha}\tissue.json\n").strip()
+    commit_sha = repo.run_git(
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.com",
+        "commit-tree",
+        tree_sha,
+        "-m",
+        "synthetic legacy",
+    ).strip()
+    repo.run_git("update-ref", "refs/issues/local/7", commit_sha)
+
+    issue = get_issue(repo, 7)
+    assert issue is not None
+    assert issue.title == "Legacy"
+    assert issue.body == "from older format"
 
 
 def test_issue_carries_iso_timestamps(repo: BareRepo) -> None:
