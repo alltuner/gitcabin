@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from testgit.ids import (
+from gitcabin.ids import (
     decode_issue_id,
     decode_repo_id,
     issue_id,

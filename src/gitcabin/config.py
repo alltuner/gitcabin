@@ -1,4 +1,4 @@
-# ABOUTME: Runtime configuration for the testgit server.
+# ABOUTME: Runtime configuration for the gitcabin server.
 # ABOUTME: Values are read once from the environment; tests construct Settings directly.
 
 from __future__ import annotations
@@ -44,6 +44,6 @@ class Settings:
     @classmethod
     def from_env(cls) -> Settings:
         return cls(
-            viewer_login=os.environ.get("TESTGIT_VIEWER_LOGIN", DEFAULT_VIEWER_LOGIN),
-            data_dir=Path(os.environ.get("TESTGIT_DATA_DIR", str(DEFAULT_DATA_DIR))),
+            viewer_login=os.environ.get("GITCABIN_VIEWER_LOGIN", DEFAULT_VIEWER_LOGIN),
+            data_dir=Path(os.environ.get("GITCABIN_DATA_DIR", str(DEFAULT_DATA_DIR))),
         )

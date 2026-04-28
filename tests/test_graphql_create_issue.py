@@ -7,9 +7,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from testgit.config import Settings
-from testgit.ids import decode_issue_id, repo_id
-from testgit.storage.repo import BareRepo
+from gitcabin.config import Settings
+from gitcabin.ids import decode_issue_id, repo_id
+from gitcabin.storage.repo import BareRepo
 
 # Mirrors the exact mutation gh sends from api/queries_issue.go::IssueCreate.
 GH_CREATE_ISSUE = """

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from testgit.storage.repo import BareRepo
+from gitcabin.storage.repo import BareRepo
 
 
 def _is_bare(path: Path) -> bool:

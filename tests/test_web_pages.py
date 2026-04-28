@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from testgit.ids import repo_id
+from gitcabin.ids import repo_id
 
 CREATE_ISSUE = """
 mutation IssueCreate($input: CreateIssueInput!) {
@@ -36,7 +36,7 @@ def test_dashboard_renders_html(web_client: TestClient) -> None:
     response = web_client.get("/")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "testgit" in response.text
+    assert "gitcabin" in response.text
 
 
 def test_dashboard_lists_owners_and_repo_counts(web_client: TestClient, init_repo) -> None:

@@ -1,5 +1,5 @@
 # ABOUTME: HTML routes for the web UI. Read-only views over data/repos and side refs.
-# ABOUTME: Lives in its own FastAPI app (testgit.web.app) — separate process from gh's API.
+# ABOUTME: Lives in its own FastAPI app (gitcabin.web.app) — separate process from gh's API.
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from testgit.config import Settings
-from testgit.storage.issues import (
+from gitcabin.config import Settings
+from gitcabin.storage.issues import (
     IssueState,
     add_comment,
     close_issue,
@@ -21,8 +21,8 @@ from testgit.storage.issues import (
     list_issues,
     reopen_issue,
 )
-from testgit.storage.repo import BareRepo
-from testgit.web import code
+from gitcabin.storage.repo import BareRepo
+from gitcabin.web import code
 
 _WEB_DIR = Path(__file__).parent
 _templates = Jinja2Templates(directory=str(_WEB_DIR / "templates"))

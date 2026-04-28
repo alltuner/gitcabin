@@ -11,8 +11,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from testgit.storage.issues import add_comment, close_issue, create_issue
-from testgit.storage.repo import BareRepo
+from gitcabin.storage.issues import add_comment, close_issue, create_issue
+from gitcabin.storage.repo import BareRepo
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
@@ -107,7 +107,7 @@ class Commit:
     message: str
     when: str
     author_name: str = "Demo Author"
-    author_email: str = "demo@testgit.local"
+    author_email: str = "demo@gitcabin.local"
 
 
 @dataclass(frozen=True)
@@ -178,7 +178,7 @@ if __name__ == "__main__":
 
 HELLO_LICENSE = """MIT License
 
-Copyright (c) 2026 testgit demo
+Copyright (c) 2026 gitcabin demo
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -369,7 +369,7 @@ set ignorecase smartcase
 
 DOTFILES_GITCONFIG = """[user]
 \tname = Demo User
-\temail = demo@testgit.local
+\temail = demo@gitcabin.local
 [alias]
 \tst = status
 \tco = checkout
@@ -416,7 +416,7 @@ NOTES_IDEAS = """# Ideas
 
 RUNBOOK_README = """# runbook
 
-On-call documentation for the testgit demo. One file per scenario.
+On-call documentation for the gitcabin demo. One file per scenario.
 
 See:
 - [`incident.md`](./incident.md) — when the API container crash-loops
@@ -427,13 +427,13 @@ RUNBOOK_INCIDENT = """# Incident: API container crash-loop
 
 ## Symptoms
 
-`docker compose ps` shows `testgit` exiting with status 1 every few seconds.
+`docker compose ps` shows `gitcabin` exiting with status 1 every few seconds.
 The dashboard at port 8080 still works (different process); only gh's API
 calls fail.
 
 ## Diagnosis
 
-1. `docker compose logs testgit | tail -50` — almost always reveals a
+1. `docker compose logs gitcabin | tail -50` — almost always reveals a
    missing dependency or a broken import after a recent edit.
 2. If `granian` itself fails to bind, the host port is already taken — check
    for a stray `docker compose down` that didn't actually clean up.
@@ -441,8 +441,8 @@ calls fail.
 ## Mitigation
 
 ```sh
-docker compose down testgit
-docker compose up -d --build testgit
+docker compose down gitcabin
+docker compose up -d --build gitcabin
 ```
 
 ## Root cause
@@ -460,14 +460,14 @@ Recovery means recovering that directory.
 ## Backup
 
 ```sh
-tar -czf testgit-data-$(date +%Y%m%d).tar.gz data/
+tar -czf gitcabin-data-$(date +%Y%m%d).tar.gz data/
 ```
 
 ## Restore
 
 ```sh
 docker compose down
-tar -xzf testgit-data-20260427.tar.gz
+tar -xzf gitcabin-data-20260427.tar.gz
 docker compose up -d
 ```
 

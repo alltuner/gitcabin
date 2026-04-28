@@ -8,7 +8,7 @@ import subprocess
 import pytest
 from fastapi.testclient import TestClient
 
-from testgit.storage.repo import BareRepo
+from gitcabin.storage.repo import BareRepo
 
 
 def _hash_blob(bare: BareRepo, content: bytes) -> str:

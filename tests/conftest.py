@@ -8,10 +8,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from testgit.app import create_app
-from testgit.config import Settings
-from testgit.storage.repo import BareRepo
-from testgit.web.app import create_app as create_web_app
+from gitcabin.app import create_app
+from gitcabin.config import Settings
+from gitcabin.storage.repo import BareRepo
+from gitcabin.web.app import create_app as create_web_app
 
 
 @pytest.fixture

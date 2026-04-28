@@ -22,10 +22,10 @@ WORKDIR /app
 RUN chown app:app /app
 USER app
 
-# Copy the bits hatchling needs to build the testgit wheel: pyproject (deps +
+# Copy the bits uv_build needs to build the gitcabin wheel: pyproject (deps +
 # build config), README (referenced as project.readme), and the package source.
 # The src/ tree gets overlaid by a bind mount in compose for live reload, but
-# we still need it at build time so `uv sync` can install testgit editable.
+# we still need it at build time so `uv sync` can install gitcabin editable.
 COPY --chown=app:app pyproject.toml README.md ./
 COPY --chown=app:app src/ ./src/
 
@@ -52,4 +52,4 @@ EXPOSE 8000
 CMD ["uv", "run", "--no-dev", "granian", \
      "--interface", "asgi", "--factory", \
      "--host", "0.0.0.0", "--port", "8000", \
-     "testgit.app:create_app"]
+     "gitcabin.app:create_app"]

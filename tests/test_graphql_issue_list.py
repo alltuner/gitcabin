@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from testgit.ids import repo_id
+from gitcabin.ids import repo_id
 
 ISSUE_LIST_QUERY = """
 query IssueList(

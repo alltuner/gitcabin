@@ -6,20 +6,20 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from testgit import graphql_schema, rest
-from testgit.config import Settings
+from gitcabin import graphql_schema, rest
+from gitcabin.config import Settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the API FastAPI app — REST + GraphQL for gh.
 
-    The HTML dashboard lives in a separate process (testgit.web.app:create_app)
+    The HTML dashboard lives in a separate process (gitcabin.web.app:create_app)
     so each app has only one routing concern. Both processes read the same
     bare repos through the storage layer.
     """
     settings = settings or Settings.from_env()
 
-    app = FastAPI(title="testgit", version="0.1.0", redoc_url=None, docs_url=None)
+    app = FastAPI(title="gitcabin", version="0.1.0", redoc_url=None, docs_url=None)
     app.state.settings = settings
 
     app.include_router(rest.build_router(settings))

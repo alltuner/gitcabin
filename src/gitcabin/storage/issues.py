@@ -11,8 +11,8 @@ from git import Blob, Commit, Tree
 from git.exc import BadName
 from pydantic import BaseModel, ConfigDict
 
-from testgit.storage.counter import Counter
-from testgit.storage.repo import BareRepo
+from gitcabin.storage.counter import Counter
+from gitcabin.storage.repo import BareRepo
 
 # Locally-created issues live under refs/issues/local/<n> until a future sync
 # step assigns them an upstream-authoritative number and moves them to
@@ -123,7 +123,7 @@ def create_issue(repo: BareRepo, *, title: str, body: str, author: str) -> Issue
         tree_sha,
         message=f"create: {title}",
         author_name=author,
-        author_email=f"{author}@testgit.local",
+        author_email=f"{author}@gitcabin.local",
     )
 
     # 4. Create the ref. We use update-ref with the zero-OID sentinel so two
@@ -228,7 +228,7 @@ def _set_issue_state(
         new_tree_sha,
         message=f"{verb}: {doc.title}",
         author_name=actor,
-        author_email=f"{actor}@testgit.local",
+        author_email=f"{actor}@gitcabin.local",
         parents=(current.hexsha,),
     )
 
@@ -290,7 +290,7 @@ def add_comment(repo: BareRepo, *, number: int, body: str, author: str) -> Comme
         new_top_sha,
         message=f"comment: by {author}",
         author_name=author,
-        author_email=f"{author}@testgit.local",
+        author_email=f"{author}@gitcabin.local",
         parents=(current.hexsha,),
     )
     repo.run_git("update-ref", ref, commit_sha, current.hexsha)

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from testgit.ids import repo_id
+from gitcabin.ids import repo_id
 
 # Mirrors what gh sends from pkg/cmd/issue/shared/lookup.go::IssueByNumber.
 # We replicate the smaller subset of fields gh's IssueGraphQL/PullRequestGraphQL

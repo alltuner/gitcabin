@@ -10,27 +10,27 @@ from typing import Annotated
 
 import strawberry
 
-from testgit import ids
-from testgit.config import Settings
-from testgit.storage.issues import (
+from gitcabin import ids
+from gitcabin.config import Settings
+from gitcabin.storage.issues import (
     Comment as StorageComment,
 )
-from testgit.storage.issues import (
+from gitcabin.storage.issues import (
     Issue as StorageIssue,
 )
-from testgit.storage.issues import (
+from gitcabin.storage.issues import (
     add_comment as storage_add_comment,
 )
-from testgit.storage.issues import (
+from gitcabin.storage.issues import (
     close_issue as storage_close_issue,
 )
-from testgit.storage.issues import (
+from gitcabin.storage.issues import (
     create_issue,
     get_issue,
     list_comments,
     list_issues,
 )
-from testgit.storage.repo import BareRepo
+from gitcabin.storage.repo import BareRepo
 
 # ---- Enums --------------------------------------------------------------- #
 
@@ -550,7 +550,7 @@ class Ref:
 class Repository:
     """A repository identified by (owner, name).
 
-    The `id` round-trips back to (owner, name) via testgit.ids.decode_repo_id —
+    The `id` round-trips back to (owner, name) via gitcabin.ids.decode_repo_id —
     that's how the createIssue mutation knows which bare repo to write to from
     only an opaque `repositoryId`.
     """

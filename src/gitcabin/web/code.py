@@ -13,7 +13,7 @@ from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name, guess_lexer_for_filename
 from pygments.util import ClassNotFound
 
-from testgit.storage.repo import BareRepo
+from gitcabin.storage.repo import BareRepo
 
 # Filenames a project might use for the repo's "front-page" doc. GitHub picks
 # the first match in this order; we mirror that.

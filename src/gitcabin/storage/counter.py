@@ -11,7 +11,7 @@ from pathlib import Path
 from git import Actor, Commit
 from git.exc import BadName
 
-from testgit.storage.repo import BareRepo
+from gitcabin.storage.repo import BareRepo
 
 # Process-local lock per (repo_path, counter_name). CAS via git update-ref
 # is what makes the counter correct across processes (different workers,
@@ -49,7 +49,7 @@ ZERO_OID = "0000000000000000000000000000000000000000"
 # small enough that a real bug (a CAS that *never* succeeds) surfaces quickly.
 MAX_RETRIES = 50
 
-_COUNTER_ACTOR = Actor("testgit", "testgit@localhost")
+_COUNTER_ACTOR = Actor("gitcabin", "gitcabin@localhost")
 
 
 @dataclass(frozen=True, slots=True)

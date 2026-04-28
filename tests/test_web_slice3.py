@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from testgit.storage.repo import BareRepo
+from gitcabin.storage.repo import BareRepo
 
 from .test_web_code import _seed_repo
 

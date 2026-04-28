@@ -32,8 +32,8 @@ def test_graphql_error_envelope_matches_github_shape(client: TestClient) -> None
 def test_viewer_login_is_configurable() -> None:
     # Recreate the app with a custom login to confirm the value flows from
     # Settings into the resolver, rather than being a hardcoded literal.
-    from testgit.app import create_app
-    from testgit.config import Settings
+    from gitcabin.app import create_app
+    from gitcabin.config import Settings
 
     custom_app = create_app(Settings(viewer_login="alice"))
     with TestClient(custom_app) as c:

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Response
 
-from testgit.config import Settings
+from gitcabin.config import Settings
 
 
 def build_router(settings: Settings) -> APIRouter:

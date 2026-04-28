@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from testgit.storage.counter import Counter
-from testgit.storage.repo import BareRepo
+from gitcabin.storage.counter import Counter
+from gitcabin.storage.repo import BareRepo
 
 
 @pytest.fixture

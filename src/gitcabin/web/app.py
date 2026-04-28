@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from testgit.config import Settings
-from testgit.web import routes as web_routes
+from gitcabin.config import Settings
+from gitcabin.web import routes as web_routes
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -19,7 +19,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """
     settings = settings or Settings.from_env()
 
-    app = FastAPI(title="testgit-web", version="0.1.0", redoc_url=None, docs_url=None)
+    app = FastAPI(title="gitcabin-web", version="0.1.0", redoc_url=None, docs_url=None)
     app.state.settings = settings
 
     web_routes.mount_static(app)

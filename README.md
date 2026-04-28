@@ -1,4 +1,4 @@
-# testgit
+# gitcabin
 
 A tiny self-hosted GitHub clone driven by the official `gh` CLI, with all metadata stored in git itself — no separate database.
 
@@ -49,7 +49,7 @@ Drill into a repo to see refs and commits. Because we don't write to `refs/heads
 ## Running natively (no gh)
 
 ```sh
-uv run testgit
+uv run gitcabin
 ```
 
 Listens on `127.0.0.1:8000`. This bypasses Docker and is useful for direct probing with curl / httpie, but gh won't reach it — gh dials port 80, not 8000, when `GH_HOST=github.localhost`.
@@ -57,7 +57,7 @@ Listens on `127.0.0.1:8000`. This bypasses Docker and is useful for direct probi
 ## Development
 
 ```sh
-uv sync                                    # install deps + editable testgit
+uv sync                                    # install deps + editable gitcabin
 uv run pytest                              # tests
 uv run ruff check . && uv run ruff format --check .
 ```

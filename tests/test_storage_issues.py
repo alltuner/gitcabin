@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from testgit.storage.issues import (
+from gitcabin.storage.issues import (
     Comment,
     Issue,
     IssueState,
@@ -19,7 +19,7 @@ from testgit.storage.issues import (
     list_comments,
     list_issues,
 )
-from testgit.storage.repo import BareRepo
+from gitcabin.storage.repo import BareRepo
 
 
 @pytest.fixture

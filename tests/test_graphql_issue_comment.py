@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from testgit.ids import issue_id, repo_id
+from gitcabin.ids import issue_id, repo_id
 
 # Mirrors api/queries_comments.go's CommentCreate mutation. gh selects
 # `commentEdge { node { url } }` — that URL is what gets printed back.
