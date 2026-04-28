@@ -3,6 +3,8 @@ name = "gitcabin"
 version = "0.1.0"
 description = "A tiny self-hosted GitHub clone driven by the official gh CLI, with all metadata stored in git itself."
 readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "David Poblador i Garcia", email = "david@poblador.com" }]
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.115",
