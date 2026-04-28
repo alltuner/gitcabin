@@ -9,5 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
+# Runtime state — bare repos with code + metadata refs written by the server
+data/
+
 # Claude Code harness state
 .claude/scheduled_tasks.lock

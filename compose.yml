@@ -14,6 +14,11 @@ services:
       # host:container. Port 80 on the host needs Docker to grant it; on
       # macOS Docker Desktop's vmnetd handles that without `sudo docker`.
       - "80:8000"
+    volumes:
+      # Bare repos (code + metadata refs) live here. Host bind mount on
+      # purpose: David can `cd ./data/repos/owner/name.git && git log` to
+      # inspect state with native tooling. Excluded from git via .gitignore.
+      - ./data:/app/data
     restart: unless-stopped
     develop:
       watch:

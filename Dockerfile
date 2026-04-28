@@ -24,6 +24,11 @@ USER app
 COPY --chown=app:app pyproject.toml README.md ./
 COPY --chown=app:app src/ ./src/
 
+# Pre-create the data directory so a host bind mount inherits its ownership
+# (uid 1000). Without this, Docker creates the empty bind-mount target as
+# root and the server can't write its bare repos.
+RUN mkdir -p /app/data && chown app:app /app/data
+
 # UV_LINK_MODE=copy avoids hardlinks across the layer-cache boundary, which
 # uv otherwise warns about inside Docker. UV_PROJECT_ENVIRONMENT pins the
 # venv inside the image so it doesn't drift to /tmp or similar.
