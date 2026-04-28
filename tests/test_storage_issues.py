@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from testgit.storage.issues import Issue, IssueState, create_issue
+from testgit.storage.issues import Issue, IssueState, create_issue, get_issue, list_issues
 from testgit.storage.repo import BareRepo
 
 
@@ -65,3 +65,44 @@ def test_create_issue_commit_carries_author_metadata(repo: BareRepo) -> None:
         "log", "-1", "--format=%an <%ae>", f"refs/issues/local/{issue.number}"
     ).strip()
     assert author_line.startswith("alice <")
+
+
+def test_list_issues_returns_empty_for_fresh_repo(repo: BareRepo) -> None:
+    assert list_issues(repo) == []
+
+
+def test_list_issues_returns_all_creates_sorted_by_number(repo: BareRepo) -> None:
+    create_issue(repo, title="first", body="", author="david")
+    create_issue(repo, title="second", body="", author="david")
+    create_issue(repo, title="third", body="", author="david")
+
+    issues = list_issues(repo)
+    assert [i.number for i in issues] == [1, 2, 3]
+    assert [i.title for i in issues] == ["first", "second", "third"]
+
+
+def test_list_issues_preserves_state_and_author(repo: BareRepo) -> None:
+    create_issue(repo, title="t", body="b", author="alice")
+    [issue] = list_issues(repo)
+    assert isinstance(issue, Issue)
+    assert issue.author == "alice"
+    assert issue.state is IssueState.OPEN
+    assert issue.body == "b"
+
+
+def test_get_issue_returns_the_named_issue(repo: BareRepo) -> None:
+    create_issue(repo, title="one", body="", author="david")
+    create_issue(repo, title="two", body="", author="david")
+
+    issue = get_issue(repo, 2)
+    assert issue is not None
+    assert issue.number == 2
+    assert issue.title == "two"
+
+
+def test_get_issue_returns_none_for_unknown_number(repo: BareRepo) -> None:
+    assert get_issue(repo, 999) is None
+
+
+def test_get_issue_returns_none_when_repo_has_no_issues(repo: BareRepo) -> None:
+    assert get_issue(repo, 1) is None
