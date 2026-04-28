@@ -21,3 +21,8 @@ enable-remote-branches=1
 
 # Auto-discover repos under this directory at request time.
 scan-path=/repos
+
+# Generate URLs relative to the site root rather than to the cgit.cgi
+# script path, so links read like /octocat/hello/log/ instead of
+# /cgit.cgi/octocat/hello/log/.
+virtual-root=/

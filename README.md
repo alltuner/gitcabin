@@ -38,13 +38,13 @@ Stop with `docker compose down` (or Ctrl-C if running in the foreground).
 
 ## Browsing the data with cgit
 
-The compose stack also runs a read-only `cgit` web UI on port 8080 that scans `./data/repos/` for bare repos:
+The compose stack also runs a read-only `cgit` web UI (lighttpd-backed, ~80 MB image) on port 8080 that scans `./data/repos/` for bare repos:
 
 ```sh
-open http://localhost:8080/cgit/
+open http://localhost:8080/
 ```
 
-Drill into a repo to see refs and commits. Because we don't write to `refs/heads/main`, the default summary page is empty — to inspect issue history, point at the side ref directly: `http://localhost:8080/cgit/octocat/hello/log/?h=refs/issues/local/1`.
+Drill into a repo to see refs and commits. Because we don't write to `refs/heads/main`, the default summary page is empty — to inspect issue history, point at the side ref directly: `http://localhost:8080/octocat/hello/log/?h=refs/issues/local/1`.
 
 ## Running natively (no gh)
 
