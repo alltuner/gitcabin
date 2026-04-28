@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>gitcabin — a tiny self-hosted GitHub clone driven by gh</title>
+  <meta name="description" content="gitcabin is a small self-hosted GitHub clone. All issue and PR metadata lives in git refs. No database. Drives the official gh CLI.">
+  <meta property="og:title" content="gitcabin">
+  <meta property="og:description" content="A tiny self-hosted GitHub clone driven by gh. All metadata in git refs. No database.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://gitcabin.com/">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23111'%3E%3Ccircle cx='4' cy='3' r='1.5'/%3E%3Ccircle cx='4' cy='13' r='1.5'/%3E%3Ccircle cx='12' cy='8' r='1.5'/%3E%3Cpath d='M4 4.5v7' stroke='%23111' stroke-width='1.25' fill='none'/%3E%3Cpath d='M4 8h6.5' stroke='%23111' stroke-width='1.25' fill='none'/%3E%3C/svg%3E">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Tighten body line-height on prose-heavy sections */
+    .prose-tight p { margin-bottom: 0.75rem; }
+    pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+</head>
+<body class="bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100 font-sans">
+
+<header class="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
+  <div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+    <a href="/" class="flex items-center gap-2 font-semibold text-gray-900 dark:text-gray-100 hover:no-underline">
+      <svg viewBox="0 0 16 16" class="h-5 w-5" aria-hidden="true" fill="currentColor">
+        <circle cx="4" cy="3" r="1.5"/>
+        <circle cx="4" cy="13" r="1.5"/>
+        <circle cx="12" cy="8" r="1.5"/>
+        <path d="M4 4.5v7" stroke="currentColor" stroke-width="1.25" fill="none"/>
+        <path d="M4 8h6.5" stroke="currentColor" stroke-width="1.25" fill="none"/>
+      </svg>
+      gitcabin
+    </a>
+    <nav class="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+      <a href="#quickstart" class="hover:text-gray-900 dark:hover:text-gray-100">Quickstart</a>
+      <a href="#deploy" class="hover:text-gray-900 dark:hover:text-gray-100">Deploy</a>
+      <a href="#how" class="hover:text-gray-900 dark:hover:text-gray-100">How it works</a>
+      <a href="https://github.com/alltuner/gitcabin" class="hover:text-gray-900 dark:hover:text-gray-100">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main class="mx-auto max-w-5xl px-4 py-12">
+
+<!-- Hero -->
+<section class="mb-16">
+  <h1 class="text-4xl font-semibold tracking-tight sm:text-5xl">
+    A tiny self-hosted GitHub clone <span class="text-gray-500 dark:text-gray-400">driven by <code class="rounded bg-gray-100 px-1.5 py-0.5 text-3xl font-mono dark:bg-gray-800">gh</code></span>
+  </h1>
+  <p class="mt-4 max-w-2xl text-lg text-gray-600 dark:text-gray-400">
+    Issues, PRs, and counters live in git refs of the bare repo. No database. The official GitHub CLI talks to it natively. Small enough to read in an afternoon.
+  </p>
+
+  <div class="mt-8 rounded-lg border border-gray-200 bg-gray-50 p-4 font-mono text-sm dark:border-gray-800 dark:bg-gray-900">
+    <pre class="overflow-x-auto"><code><span class="text-gray-500"># clone, run, point gh at it</span>
+git clone https://github.com/alltuner/gitcabin
+cd gitcabin
+docker compose up -d
+echo any-token | gh auth login --hostname github.localhost --with-token
+GH_HOST=github.localhost gh issue list</code></pre>
+  </div>
+
+  <div class="mt-6 flex flex-wrap gap-3">
+    <a href="#quickstart" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200">Get started</a>
+    <a href="https://github.com/alltuner/gitcabin" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800">View on GitHub</a>
+  </div>
+</section>
+
+<!-- What it is -->
+<section class="mb-16 grid gap-8 md:grid-cols-3">
+  <div>
+    <h3 class="text-lg font-semibold">No database</h3>
+    <p class="mt-2 text-gray-600 dark:text-gray-400">
+      Issues live in <code class="rounded bg-gray-100 px-1 py-0.5 text-sm font-mono dark:bg-gray-800">refs/issues/*</code>. PRs in <code class="rounded bg-gray-100 px-1 py-0.5 text-sm font-mono dark:bg-gray-800">refs/prs/*</code>. Counters in <code class="rounded bg-gray-100 px-1 py-0.5 text-sm font-mono dark:bg-gray-800">refs/meta/*</code>. Code stays in <code class="rounded bg-gray-100 px-1 py-0.5 text-sm font-mono dark:bg-gray-800">refs/heads/*</code>. Two namespaces, zero collision.
+    </p>
+  </div>
+  <div>
+    <h3 class="text-lg font-semibold">Native gh integration</h3>
+    <p class="mt-2 text-gray-600 dark:text-gray-400">
+      No new CLI to learn. Set <code class="rounded bg-gray-100 px-1 py-0.5 text-sm font-mono dark:bg-gray-800">GH_HOST</code> and gh's existing <code>auth</code>, <code>issue</code>, <code>pr</code>, <code>repo</code> commands work. gitcabin serves the GitHub Enterprise URL shape (<code>/api/v3</code>, <code>/api/graphql</code>) plus the <code>github.localhost</code> HTTP shortcut.
+    </p>
+  </div>
+  <div>
+    <h3 class="text-lg font-semibold">Small enough to read</h3>
+    <p class="mt-2 text-gray-600 dark:text-gray-400">
+      A few thousand lines of Python. FastAPI for REST, Strawberry for GraphQL, GitPython for the storage layer. One container for the API, one for the dashboard. That's it.
+    </p>
+  </div>
+</section>
+
+<!-- Quickstart -->
+<section id="quickstart" class="mb-16">
+  <h2 class="text-2xl font-semibold tracking-tight">Quickstart</h2>
+  <p class="mt-2 text-gray-600 dark:text-gray-400">Local-only, on your machine, in 60 seconds.</p>
+
+  <ol class="mt-6 space-y-6">
+    <li>
+      <h3 class="text-base font-semibold">1. Run the stack</h3>
+      <pre class="mt-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-4 font-mono text-sm dark:border-gray-800 dark:bg-gray-900"><code>git clone https://github.com/alltuner/gitcabin
+cd gitcabin
+docker compose up -d</code></pre>
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+        Two containers come up: the API on <code class="rounded bg-gray-100 px-1 py-0.5 font-mono dark:bg-gray-800">127.0.0.1:80</code>, the dashboard on <code class="rounded bg-gray-100 px-1 py-0.5 font-mono dark:bg-gray-800">127.0.0.1:8080</code>. Bare repos live under <code class="rounded bg-gray-100 px-1 py-0.5 font-mono dark:bg-gray-800">./data/repos/</code>.
+      </p>
+    </li>
+
+    <li>
+      <h3 class="text-base font-semibold">2. Point gh at it</h3>
+      <pre class="mt-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-4 font-mono text-sm dark:border-gray-800 dark:bg-gray-900"><code>echo any-token | gh auth login --hostname github.localhost --with-token
+GH_HOST=github.localhost gh auth status</code></pre>
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+        The token is unverified — gitcabin trusts whoever can reach the port. <code>github.localhost</code> is gh's built-in HTTP-over-port-80 shortcut for local development; nothing else has to be installed.
+      </p>
+    </li>
+
+    <li>
+      <h3 class="text-base font-semibold">3. Use it</h3>
+      <pre class="mt-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-4 font-mono text-sm dark:border-gray-800 dark:bg-gray-900"><code>gh issue list --repo octocat/hello
+gh issue create --repo octocat/hello --title 'first issue' --body 'hi'
+open http://localhost:8080/   <span class="text-gray-500"># browse the dashboard</span></code></pre>
+    </li>
+  </ol>
+
+  <p class="mt-6 text-sm text-gray-600 dark:text-gray-400">
+    Port 80 already in use? See the <a href="https://github.com/alltuner/gitcabin#port-80-is-already-in-use" class="font-medium text-gray-900 underline hover:no-underline dark:text-gray-100">loopback-alias workaround</a> in the README.
+  </p>
+</section>
+
+<!-- Deployment modes -->
+<section id="deploy" class="mb-16">
+  <h2 class="text-2xl font-semibold tracking-tight">Deployment modes</h2>
+  <p class="mt-2 text-gray-600 dark:text-gray-400">
+    The local-only quickstart is one of several supported setups. Pick the one that matches your audience.
+  </p>
+
+  <div class="mt-6 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
+    <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800">
+      <thead class="bg-gray-50 dark:bg-gray-900">
+        <tr>
+          <th class="px-4 py-3 text-left font-semibold">Mode</th>
+          <th class="px-4 py-3 text-left font-semibold">Audience</th>
+          <th class="px-4 py-3 text-left font-semibold">TLS</th>
+          <th class="px-4 py-3 text-left font-semibold">Setup</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-800 dark:bg-gray-950">
+        <tr>
+          <td class="px-4 py-3 font-medium">Local-only</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">just this machine</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">none (HTTP via <code>github.localhost</code>)</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">docker compose up</td>
+        </tr>
+        <tr>
+          <td class="px-4 py-3 font-medium">Local + TLS</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">just this machine, real cert</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">per-machine local CA</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">one-time admin prompt</td>
+        </tr>
+        <tr>
+          <td class="px-4 py-3 font-medium">Tailnet-shared</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">anyone on your tailnet</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">Tailscale-provisioned</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">add tailscale sidecar</td>
+        </tr>
+        <tr>
+          <td class="px-4 py-3 font-medium">Public / team</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">anyone with DNS resolution</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">Caddy + DNS-01 ACME</td>
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-400">domain + DNS API token</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-4 text-sm text-gray-600 dark:text-gray-400">
+    Full recipes with compose snippets and the matching <code>gh auth login</code> invocation in
+    <a href="https://github.com/alltuner/gitcabin/blob/main/docs/installation.md" class="font-medium text-gray-900 underline hover:no-underline dark:text-gray-100">docs/installation.md</a>.
+  </p>
+</section>
+
+<!-- How it works -->
+<section id="how" class="mb-16">
+  <h2 class="text-2xl font-semibold tracking-tight">How it works</h2>
+
+  <div class="mt-6 grid gap-6 md:grid-cols-2">
+    <div>
+      <h3 class="text-base font-semibold">Storage in git refs</h3>
+      <p class="mt-2 text-gray-600 dark:text-gray-400">
+        Each issue is its own ref under <code class="rounded bg-gray-100 px-1 py-0.5 font-mono text-sm dark:bg-gray-800">refs/issues/&lt;n&gt;</code>. Each comment is a commit on that ref. Counters (next issue number, etc.) live as content-addressed blobs under <code class="rounded bg-gray-100 px-1 py-0.5 font-mono text-sm dark:bg-gray-800">refs/meta/*</code>. Code is untouched in <code class="rounded bg-gray-100 px-1 py-0.5 font-mono text-sm dark:bg-gray-800">refs/heads/*</code>.
+      </p>
+      <p class="mt-3 text-gray-600 dark:text-gray-400">
+        Plain <code>git clone</code> and <code>git push</code> only see code refs. Metadata is invisible to anyone who hasn't asked for it.
+      </p>
+    </div>
+    <div>
+      <h3 class="text-base font-semibold">Two URL shapes</h3>
+      <p class="mt-2 text-gray-600 dark:text-gray-400">
+        gh dials <code class="rounded bg-gray-100 px-1 py-0.5 font-mono text-sm dark:bg-gray-800">/api/v3/&hellip;</code> and <code class="rounded bg-gray-100 px-1 py-0.5 font-mono text-sm dark:bg-gray-800">/api/graphql</code> for any non-<code>github.localhost</code> hostname (the GHES shape, forced over HTTPS), and bare <code class="rounded bg-gray-100 px-1 py-0.5 font-mono text-sm dark:bg-gray-800">/</code>, <code class="rounded bg-gray-100 px-1 py-0.5 font-mono text-sm dark:bg-gray-800">/graphql</code> for <code>github.localhost</code> (the HTTP shortcut). gitcabin serves both, so the same image works behind either deployment mode.
+      </p>
+      <p class="mt-3 text-gray-600 dark:text-gray-400">
+        The local-only quickstart uses the HTTP shortcut. TLS deployments use the GHES shape behind a Caddy sidecar.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ / why -->
+<section class="mb-16">
+  <h2 class="text-2xl font-semibold tracking-tight">A few questions</h2>
+
+  <dl class="mt-6 space-y-6">
+    <div>
+      <dt class="font-semibold">How is this different from gitea / forgejo / gogs?</dt>
+      <dd class="mt-2 text-gray-600 dark:text-gray-400">
+        Smaller. No database. Native <code>gh</code> compatibility instead of a custom CLI. Closer to "what if a GitHub clone fit in your head" than "what if a GitHub clone fit in your data centre."
+      </dd>
+    </div>
+    <div>
+      <dt class="font-semibold">Is there auth?</dt>
+      <dd class="mt-2 text-gray-600 dark:text-gray-400">
+        Not really. gitcabin trusts whoever can reach the port. Token in <code>gh auth login</code> is accepted unverified. Constrain reach at the network layer (loopback bind, tailnet ACL, reverse proxy basic auth) instead of inventing per-user accounts inside gitcabin.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-semibold">Can it sync with real GitHub?</dt>
+      <dd class="mt-2 text-gray-600 dark:text-gray-400">
+        Designed for it; not built yet. The authorship and edit-affordance model is in
+        <a href="https://github.com/alltuner/gitcabin/blob/main/docs/github-sync.md" class="font-medium text-gray-900 underline hover:no-underline dark:text-gray-100">docs/github-sync.md</a>.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-semibold">Is it production-ready?</dt>
+      <dd class="mt-2 text-gray-600 dark:text-gray-400">
+        No. Pre-1.0. Treat it as a working sketch you can shape into something. Run it on your laptop, file issues, send PRs.
+      </dd>
+    </div>
+  </dl>
+</section>
+
+</main>
+
+<footer class="border-t border-gray-200 bg-gray-50 py-8 dark:border-gray-800 dark:bg-gray-900">
+  <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 text-sm text-gray-600 dark:text-gray-400">
+    <div class="flex items-center gap-2">
+      <svg viewBox="0 0 16 16" class="h-4 w-4" aria-hidden="true" fill="currentColor">
+        <circle cx="4" cy="3" r="1.5"/>
+        <circle cx="4" cy="13" r="1.5"/>
+        <circle cx="12" cy="8" r="1.5"/>
+        <path d="M4 4.5v7" stroke="currentColor" stroke-width="1.25" fill="none"/>
+        <path d="M4 8h6.5" stroke="currentColor" stroke-width="1.25" fill="none"/>
+      </svg>
+      <span>gitcabin &middot; MIT licensed &middot; built by <a href="https://alltuner.com/" class="hover:underline">All Tuner Labs</a></span>
+    </div>
+    <nav class="flex flex-wrap gap-4">
+      <a href="https://github.com/alltuner/gitcabin" class="hover:text-gray-900 dark:hover:text-gray-100">Source</a>
+      <a href="https://github.com/alltuner/gitcabin/releases" class="hover:text-gray-900 dark:hover:text-gray-100">Releases</a>
+      <a href="https://github.com/alltuner/gitcabin/blob/main/docs/installation.md" class="hover:text-gray-900 dark:hover:text-gray-100">Docs</a>
+      <a href="https://github.com/alltuner/gitcabin/blob/main/SECURITY.md" class="hover:text-gray-900 dark:hover:text-gray-100">Security</a>
+      <a href="https://github.com/alltuner/gitcabin/blob/main/LICENSE" class="hover:text-gray-900 dark:hover:text-gray-100">License</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>
