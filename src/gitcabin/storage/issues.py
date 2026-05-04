@@ -675,6 +675,66 @@ def list_synced_comments(repo: BareRepo, issue_number: int) -> list[Comment]:
     return _list_comments_at(repo, f"{ISSUE_REF_PREFIX}/{issue_number}")
 
 
+def list_synced_issues(repo: BareRepo) -> list[Issue]:
+    """Return every issue at refs/issues/<n> (the synced namespace), sorted by number.
+
+    Distinct from list_issues, which walks refs/issues/local/<n>. Callers that
+    want both namespaces unified should use list_all_issues.
+    """
+    issues: list[Issue] = []
+    prefix = f"{ISSUE_REF_PREFIX}/"
+    for ref in repo.repo.refs:
+        if not ref.path.startswith(prefix):
+            continue
+        # Skip refs/issues/local/<n> — that's the local namespace, walked
+        # separately by list_issues.
+        if ref.path.startswith(LOCAL_ISSUE_REF_PREFIX + "/"):
+            continue
+        try:
+            number = int(ref.path.removeprefix(prefix))
+        except ValueError:
+            continue
+        issues.append(_read_issue_at(ref.commit, number))
+    issues.sort(key=lambda i: i.number)
+    return issues
+
+
+def list_all_issues(repo: BareRepo) -> list[Issue]:
+    """Return every issue across both namespaces, sorted with synced first.
+
+    Synced issues appear before local-only ones so a viewer reading the list
+    sees what's published before what's still in draft. Within each namespace,
+    sorted by number ascending.
+    """
+    return list_synced_issues(repo) + list_issues(repo)
+
+
+def get_any_issue(repo: BareRepo, number: int) -> Issue | None:
+    """Return the issue with `number`, preferring the synced namespace.
+
+    For repos linked to GitHub, the synced ref is what callers usually want —
+    a synced issue numbered `n` carries upstream provenance, while a local
+    issue numbered `n` is a draft that hasn't been pushed. If both exist
+    (rare; only happens before push), synced wins.
+    """
+    synced = get_synced_issue(repo, number)
+    if synced is not None:
+        return synced
+    return get_issue(repo, number)
+
+
+def list_any_comments(repo: BareRepo, issue_number: int) -> list[Comment]:
+    """Return comments for an issue from whichever namespace it lives in.
+
+    Mirrors get_any_issue — checks the synced namespace first, falling back
+    to local. Callers that already know which namespace to use should call
+    list_comments or list_synced_comments directly.
+    """
+    if _load_commit(repo, f"{ISSUE_REF_PREFIX}/{issue_number}") is not None:
+        return list_synced_comments(repo, issue_number)
+    return list_comments(repo, issue_number)
+
+
 def _list_comments_at(repo: BareRepo, ref: str) -> list[Comment]:
     """Walk the comments/ subtree at `ref` and materialize each blob as a Comment."""
     commit = _load_commit(repo, ref)

@@ -18,9 +18,15 @@ from gitcabin.storage.issues import (
     add_comment,
     close_issue,
     create_issue,
+    get_any_issue,
     get_issue,
+    import_comment,
+    import_issue,
+    list_all_issues,
+    list_any_comments,
     list_comments,
     list_issues,
+    list_synced_issues,
 )
 from gitcabin.storage.repo import BareRepo
 
@@ -352,3 +358,105 @@ def test_comment_document_loads_legacy_without_provenance_field() -> None:
     doc = CommentDocument.model_validate_json(legacy)
     assert doc.provenance is Provenance.LOCAL_ONLY
     assert doc.gh_comment_id is None
+
+
+# ---- list_synced_issues / list_all_issues / get_any_issue ------------- #
+
+
+def test_list_synced_issues_returns_only_synced_namespace(repo: BareRepo) -> None:
+    create_issue(repo, title="local-1", body="", author="alice")
+    import_issue(
+        repo,
+        number=42,
+        title="synced-42",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=900,
+    )
+
+    synced = list_synced_issues(repo)
+    assert [i.number for i in synced] == [42]
+    assert synced[0].provenance is Provenance.SYNCED_FROM_GITHUB
+
+
+def test_list_all_issues_returns_synced_first_then_local(repo: BareRepo) -> None:
+    create_issue(repo, title="local-1", body="", author="alice")
+    create_issue(repo, title="local-2", body="", author="alice")
+    import_issue(
+        repo,
+        number=42,
+        title="synced-42",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=900,
+    )
+
+    combined = list_all_issues(repo)
+    titles = [i.title for i in combined]
+    assert titles == ["synced-42", "local-1", "local-2"]
+
+
+def test_get_any_issue_prefers_synced_over_local(repo: BareRepo) -> None:
+    # Local issue 1 created first.
+    create_issue(repo, title="local one", body="", author="alice")
+    # Then a synced issue lands at number 1 too (rare collision).
+    import_issue(
+        repo,
+        number=1,
+        title="synced one",
+        body="",
+        author="bob",
+        state=IssueState.OPEN,
+        gh_issue_id=999,
+    )
+
+    issue = get_any_issue(repo, 1)
+    assert issue is not None
+    assert issue.title == "synced one"
+    assert issue.provenance is Provenance.SYNCED_FROM_GITHUB
+
+
+def test_get_any_issue_falls_back_to_local_when_synced_missing(
+    repo: BareRepo,
+) -> None:
+    create_issue(repo, title="just local", body="", author="alice")
+    issue = get_any_issue(repo, 1)
+    assert issue is not None
+    assert issue.title == "just local"
+    assert issue.provenance is Provenance.LOCAL_ONLY
+
+
+def test_list_any_comments_uses_synced_namespace_when_synced_issue_exists(
+    repo: BareRepo,
+) -> None:
+    import_issue(
+        repo,
+        number=42,
+        title="t",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=900,
+    )
+    import_comment(
+        repo,
+        issue_number=42,
+        body="from-gh",
+        author="alice",
+        gh_comment_id=12345,
+    )
+
+    comments = list_any_comments(repo, 42)
+    assert [c.body for c in comments] == ["from-gh"]
+
+
+def test_list_any_comments_falls_back_to_local_when_synced_absent(
+    repo: BareRepo,
+) -> None:
+    create_issue(repo, title="t", body="", author="alice")
+    add_comment(repo, number=1, body="local-c", author="alice")
+
+    comments = list_any_comments(repo, 1)
+    assert [c.body for c in comments] == ["local-c"]
