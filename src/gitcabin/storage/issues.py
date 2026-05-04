@@ -341,36 +341,11 @@ def add_comment(repo: BareRepo, *, number: int, body: str, author: str) -> Comme
 
 
 def list_comments(repo: BareRepo, number: int) -> list[Comment]:
-    """Return every comment on the issue, ordered by number ascending.
+    """Return every comment on a local issue, ordered by number ascending.
 
     Empty list if the issue doesn't exist or has no comments yet.
     """
-    ref = _ref_for(number)
-    commit = _load_commit(repo, ref)
-    if commit is None:
-        return []
-    subtree = _subtree_or_none(commit.tree, "comments")
-    if subtree is None:
-        return []
-    comments: list[Comment] = []
-    for entry in subtree:
-        if entry.type != "blob" or not entry.name.endswith(".json"):
-            continue
-        n = _comment_number_from_name(entry.name)
-        doc = CommentDocument.model_validate_json(_read_blob(entry))
-        created_at = _comment_created_at(repo, ref, entry.name) or ""
-        comments.append(
-            Comment(
-                number=n,
-                body=doc.body,
-                author=doc.author,
-                created_at=created_at,
-                provenance=doc.provenance,
-                gh_comment_id=doc.gh_comment_id,
-            )
-        )
-    comments.sort(key=lambda c: c.number)
-    return comments
+    return _list_comments_at(repo, _ref_for(number))
 
 
 # ---- read helpers (object graph) --------------------------------------- #
@@ -610,3 +585,120 @@ def get_synced_issue(repo: BareRepo, number: int) -> Issue | None:
     if commit is None:
         return None
     return _read_issue_at(commit, number)
+
+
+def import_comment(
+    repo: BareRepo,
+    *,
+    issue_number: int,
+    body: str,
+    author: str,
+    gh_comment_id: int,
+    provenance: Provenance = Provenance.SYNCED_FROM_GITHUB,
+    authored_at: str | None = None,
+) -> Comment | None:
+    """Persist a synced comment at refs/issues/<n>:comments/<gh_comment_id>.json.
+
+    Returns None if the issue ref doesn't exist — the caller is expected to
+    have pulled the issue first. Re-importing the same gh_comment_id replaces
+    the blob in place rather than duplicating, so GitHub-side edits survive
+    a re-pull cleanly.
+
+    The on-disk filename is the GitHub comment id (a stable, unique, large
+    integer) rather than a sequential number — that's what makes the
+    in-place update work without filename ambiguity.
+    """
+    ref = f"{ISSUE_REF_PREFIX}/{issue_number}"
+    parent = _load_commit(repo, ref)
+    if parent is None:
+        return None
+
+    doc = CommentDocument(
+        body=body,
+        author=author,
+        provenance=provenance,
+        gh_comment_id=gh_comment_id,
+    )
+    payload = doc.model_dump_json(indent=2)
+    blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
+
+    name = f"{gh_comment_id}.json"
+    new_blob = _TreeEntry(mode="100644", type="blob", sha=blob_sha, name=name)
+
+    existing_subtree = _entries_of(_subtree_or_none(parent.tree, "comments"))
+    new_subtree_entries = [new_blob if e.name == name else e for e in existing_subtree]
+    if not any(e.name == name for e in new_subtree_entries):
+        new_subtree_entries.append(new_blob)
+    new_subtree_sha = _write_tree(repo, new_subtree_entries)
+
+    top_entries = _entries_of(parent.tree)
+    new_top: list[_TreeEntry] = []
+    seen_comments = False
+    for entry in top_entries:
+        if entry.name == "comments":
+            new_top.append(
+                _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+            )
+            seen_comments = True
+        else:
+            new_top.append(entry)
+    if not seen_comments:
+        new_top.append(
+            _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+        )
+    new_top_sha = _write_tree(repo, new_top)
+
+    commit_sha = _commit_with_identity(
+        repo,
+        new_top_sha,
+        message=f"sync comment by {author}",
+        author_name=author,
+        author_email=f"{author}@gitcabin.local",
+        parents=(parent.hexsha,),
+        authored_at=authored_at,
+    )
+    repo.run_git("update-ref", ref, commit_sha)
+
+    created_at = _comment_created_at(repo, ref, name) or (authored_at or "")
+    return Comment(
+        number=gh_comment_id,
+        body=body,
+        author=author,
+        created_at=created_at,
+        provenance=provenance,
+        gh_comment_id=gh_comment_id,
+    )
+
+
+def list_synced_comments(repo: BareRepo, issue_number: int) -> list[Comment]:
+    """Return every comment on the synced issue at refs/issues/<n>, ordered by id."""
+    return _list_comments_at(repo, f"{ISSUE_REF_PREFIX}/{issue_number}")
+
+
+def _list_comments_at(repo: BareRepo, ref: str) -> list[Comment]:
+    """Walk the comments/ subtree at `ref` and materialize each blob as a Comment."""
+    commit = _load_commit(repo, ref)
+    if commit is None:
+        return []
+    subtree = _subtree_or_none(commit.tree, "comments")
+    if subtree is None:
+        return []
+    comments: list[Comment] = []
+    for entry in subtree:
+        if entry.type != "blob" or not entry.name.endswith(".json"):
+            continue
+        n = _comment_number_from_name(entry.name)
+        doc = CommentDocument.model_validate_json(_read_blob(entry))
+        created_at = _comment_created_at(repo, ref, entry.name) or ""
+        comments.append(
+            Comment(
+                number=n,
+                body=doc.body,
+                author=doc.author,
+                created_at=created_at,
+                provenance=doc.provenance,
+                gh_comment_id=doc.gh_comment_id,
+            )
+        )
+    comments.sort(key=lambda c: c.number)
+    return comments

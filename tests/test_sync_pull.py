@@ -14,12 +14,14 @@ from gitcabin.storage.issues import (
     IssueState,
     Provenance,
     get_synced_issue,
+    import_comment,
     import_issue,
+    list_synced_comments,
 )
 from gitcabin.storage.repo import BareRepo
 from gitcabin.sync.config import SyncConfig
 from gitcabin.sync.gh import GhClient
-from gitcabin.sync.pull import pull_issues
+from gitcabin.sync.pull import pull_comments, pull_issues
 
 
 @pytest.fixture
@@ -286,3 +288,197 @@ def test_pull_issues_re_pull_replaces_existing_data(
     assert issue is not None
     assert issue.title == "new title"
     assert issue.state is IssueState.CLOSED
+
+
+# ---- import_comment / list_synced_comments ----------------------------- #
+
+
+def test_import_comment_returns_none_when_issue_ref_missing(repo: BareRepo) -> None:
+    assert (
+        import_comment(
+            repo,
+            issue_number=1,
+            body="hi",
+            author="alice",
+            gh_comment_id=12345,
+        )
+        is None
+    )
+
+
+def test_import_comment_writes_blob_at_gh_id_filename(repo: BareRepo) -> None:
+    import_issue(
+        repo,
+        number=1,
+        title="t",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=11,
+    )
+    import_comment(
+        repo,
+        issue_number=1,
+        body="from-gh",
+        author="bob",
+        gh_comment_id=999000111,
+    )
+    raw = repo.run_git(
+        "cat-file", "-p", f"{ISSUE_REF_PREFIX}/1:comments/999000111.json"
+    )
+    payload = json.loads(raw)
+    assert payload == {
+        "body": "from-gh",
+        "author": "bob",
+        "provenance": "SYNCED_FROM_GITHUB",
+        "gh_comment_id": 999000111,
+    }
+
+
+def test_re_import_replaces_blob_in_place(repo: BareRepo) -> None:
+    import_issue(
+        repo,
+        number=1,
+        title="t",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=11,
+    )
+    import_comment(repo, issue_number=1, body="v1", author="bob", gh_comment_id=555)
+    import_comment(repo, issue_number=1, body="v2 (edited)", author="bob", gh_comment_id=555)
+
+    comments = list_synced_comments(repo, 1)
+    assert len(comments) == 1
+    assert comments[0].body == "v2 (edited)"
+
+
+def test_list_synced_comments_returns_each_comment_in_id_order(repo: BareRepo) -> None:
+    import_issue(
+        repo,
+        number=1,
+        title="t",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=11,
+    )
+    import_comment(repo, issue_number=1, body="second", author="x", gh_comment_id=200)
+    import_comment(repo, issue_number=1, body="first", author="y", gh_comment_id=100)
+
+    comments = list_synced_comments(repo, 1)
+    assert [c.gh_comment_id for c in comments] == [100, 200]
+    assert [c.body for c in comments] == ["first", "second"]
+    assert all(c.provenance is Provenance.SYNCED_FROM_GITHUB for c in comments)
+
+
+# ---- pull_comments ------------------------------------------------------ #
+
+
+def _comment_payload(
+    comment_id: int, issue_number: int, body: str, login: str
+) -> dict[str, object]:
+    return {
+        "id": comment_id,
+        "issue_url": f"https://api.github.com/repos/octo/hello/issues/{issue_number}",
+        "body": body,
+        "user": {"login": login},
+        "created_at": "2025-01-02T00:00:00Z",
+    }
+
+
+def test_pull_comments_imports_each_comment_under_its_issue(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    import_issue(
+        repo,
+        number=1,
+        title="t1",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=11,
+    )
+    import_issue(
+        repo,
+        number=2,
+        title="t2",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=22,
+    )
+
+    comments = [
+        _comment_payload(101, 1, "first on issue 1", "bob"),
+        _comment_payload(202, 2, "first on issue 2", "alice"),
+        _comment_payload(102, 1, "second on issue 1", "carol"),
+    ]
+
+    def runner(argv: list[str]) -> str:
+        assert "issues/comments" in argv[-1]
+        return json.dumps(comments)
+
+    pulled = pull_comments(repo, GhClient(runner=runner), config)
+
+    assert len(pulled) == 3
+    on_one = list_synced_comments(repo, 1)
+    assert [c.body for c in on_one] == ["first on issue 1", "second on issue 1"]
+    on_two = list_synced_comments(repo, 2)
+    assert [c.body for c in on_two] == ["first on issue 2"]
+
+
+def test_pull_comments_skips_comments_for_unknown_issues(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    # Issue 99 was never imported (pull_issues ran on a different scope).
+    payload = [_comment_payload(50, 99, "orphaned", "alice")]
+
+    def runner(argv: list[str]) -> str:
+        return json.dumps(payload)
+
+    pulled = pull_comments(repo, GhClient(runner=runner), config)
+    assert pulled == []
+
+
+def test_pull_comments_handles_null_user_as_ghost(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    import_issue(
+        repo,
+        number=1,
+        title="t",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=11,
+    )
+    payload = [
+        {
+            "id": 999,
+            "issue_url": "https://api.github.com/repos/octo/hello/issues/1",
+            "body": "ghost comment",
+            "user": None,
+            "created_at": "2025-01-02T00:00:00Z",
+        }
+    ]
+
+    def runner(argv: list[str]) -> str:
+        return json.dumps(payload)
+
+    pull_comments(repo, GhClient(runner=runner), config)
+
+    [comment] = list_synced_comments(repo, 1)
+    assert comment.author == "ghost"
+
+
+def test_pull_comments_uses_paginate_flag(repo: BareRepo, config: SyncConfig) -> None:
+    captured: list[list[str]] = []
+
+    def runner(argv: list[str]) -> str:
+        captured.append(argv)
+        return "[]"
+
+    pull_comments(repo, GhClient(runner=runner), config)
+
+    assert "--paginate" in captured[0]
