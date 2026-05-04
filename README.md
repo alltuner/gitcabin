@@ -1,4 +1,6 @@
-<h1 align="center">gitcabin</h1>
+<p align="center">
+  <img src="https://brand.alltuner.com/logos/gitcabin/horizontal.png" alt="gitcabin" width="500">
+</p>
 
 <p align="center">
   <strong>A tiny self-hosted GitHub clone driven by the official <code>gh</code> CLI.</strong><br>
