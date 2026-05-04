@@ -41,7 +41,7 @@ Maintainer-side cost matters but is a softer constraint. We're willing to run mo
 
 ## The options we have researched
 
-Eight distinct approaches were investigated. Four remain live; four are ruled out. The live four are all viable; none has been chosen.
+Eight distinct approaches were investigated. Three remain live; the rest are ruled out. The live three are all viable; none has been chosen.
 
 ### Live options
 
@@ -49,26 +49,27 @@ Eight distinct approaches were investigated. Four remain live; four are ruled ou
 |---|---|---|---|---|
 | [Local-only HTTP](#l1-local-only-http-already-shipped) | `docker compose up` | nothing | none | `github.localhost` |
 | [Shared wildcard cert](#l2-shared-wildcard-cert) | `docker compose up`; pick a subdomain | always-on Caddy + R2 (or equivalent) | LE via DNS-01 (we run it) | `*.local.gitcabin.com` |
-| [DuckDNS + per-user ACME](#l3-duckdns--per-user-acme) | sign up at duckdns.org, copy token; `docker compose up` | nothing | LE via DNS-01 (user runs it) | `*.duckdns.org` |
 | [Tailnet-shared (Tailscale)](#l4-tailnet-shared-tailscale) | install Tailscale CLI; mint auth key; `docker compose up` | nothing (Tailscale Inc. provides the control plane) | LE via DNS-01 (Tailscale runs it) | `<host>.<tailnet>.ts.net` |
-| [Public/team (own domain)](#l5-publicteam-own-domain) | `docker compose up` with a domain + DNS provider token | nothing | LE via DNS-01 (user runs it) | whatever they own |
+
+The numbering preserves L1, L2, L4 to match the order in which the options were considered; "L3" and "L5" labels are intentionally absent because those slots map to options that have been ruled out.
 
 ### Ruled out
 
 | Option | Reason it's out |
 |---|---|
 | **Per-machine local CA** (mkcert / Caddy local CA) | Violates C3. Every prior install required a sudo-prompted keychain step. This was the trigger for this entire redesign. |
+| **L3 — DuckDNS / deSEC / dynv6 + per-user ACME** | Scoped out. Technically viable (zero maintainer infra, real LE certs via DNS-01, all hard constraints met), but the hostname is `*.duckdns.org` (or equivalent third-party), it adds a third-party uptime dependency in the renewal path, and it pushes the user through an external signup. Within the simplified scope of L1 + L2 + L4, it doesn't earn its keep. Recipe and trade-offs preserved in git history (commit `72b0767` if needed). |
+| **L5 — Public/team (own domain)** | Scoped out. Violates C4 by definition (domain required), and the original framing — "for operators who already pass C4" — turned out to be carrying scope we don't want. Anyone who owns a domain and wants gitcabin reachable from anywhere can build a Caddy + DNS-01 recipe themselves; we're not the right project to document that. Also drops support for "GitHub Actions runners reaching gitcabin" as a use case — see [What's not in this doc](#whats-not-in-this-doc). |
 | **mDNS / `gitcabin.local`** | No public CA issues certs for `.local` (CA/B Forum policy). The only way to get a "trusted" cert for `.local` is a private CA, which violates C3. |
 | **Magic-DNS-only services without certs** (`lvh.me`, `localtest.me`, `local.gd`, `vcap.me`) | No cert path. gh forces HTTPS, so a hostname with no cert story is unusable as the ingress. Useful only for plain-HTTP local dev, where we already have `github.localhost`. |
 | **Per-host LE via HTTP-01 on `nip.io` / `sslip.io`** | Requires LE servers to reach the user's machine on port 80 from the public internet. For "TLS on localhost" the IP encoded in the hostname has to be public, so it's not loopback. Plus no wildcard support — every gh hostname swap is a fresh issuance. |
 | **Reverse tunnels with rotating hostnames** (CF Quick Tunnels, ngrok-free without dev-domain, Pinggy free, localhost.run free) | The hostname rotates per session, so `gh auth login --hostname …` is invalidated every restart. Plus the audience is "the public internet" not "this machine," which is a different deployment shape. |
-| **Mesh networks without their own cert provisioning** (NetBird, ZeroTier, Nebula, Innernet, Tinc) | These give you connectivity, not trusted public TLS. To get a cert through them, you need a domain you own and an ACME runner — at which point you're back to the [Public/team](#l5-publicteam-own-domain) recipe with extra mesh on top. |
+| **Mesh networks without their own cert provisioning** (NetBird, ZeroTier, Nebula, Innernet, Tinc) | These give you connectivity, not trusted public TLS. To get a cert through them, you need a domain you own and an ACME runner — which lands in the (now-ruled-out) Public/team territory. |
 | **Headscale (today)** | The `tailscale cert` / `tailscale serve` HTTPS provisioning that makes Tailscale the live option does not work the same way under Headscale. Tracked at [juanfont/headscale#1921](https://github.com/juanfont/headscale/issues/1921). Revisit if/when that lands. |
 
-A few options were neither fully ruled out nor fully designed — they sit between live and dead:
+A couple of options were neither fully ruled out nor fully designed — they sit between live and dead:
 
-- **Tailscale Funnel as a fifth mode.** Funnel exposes a tailnet service on `*.ts.net` to the public internet with a real cert. It would meet C1–C6 cleanly and give "public reach without owning a domain," which nothing else in this list does. **Not yet verified that `gh auth login --hostname <funnel-host>.ts.net` accepts it.** Worth a smoke test before promoting.
-- **deSEC / dynv6** as DuckDNS replacements. Better wildcard story (they support multiple TXT records), comparable signup cost. Live option; not detailed below because the recipe is structurally identical to DuckDNS's. Worth choosing between them before shipping the per-user ACME mode, not before deciding *whether* to ship it.
+- **Tailscale Funnel as an additional mode beyond L4.** Funnel exposes a tailnet service on `*.ts.net` to the public internet with a real cert. It would meet C1–C6 cleanly and give "public reach without owning a domain," which nothing else in this list does. **Not yet verified that `gh auth login --hostname <funnel-host>.ts.net` accepts it.** Worth a smoke test before promoting.
 - **`SSL_CERT_FILE` wrapper around `gh`.** Genuinely good for power users (two-line shell wrapper, no cert distribution needed). Not a default because of C6, but worth documenting as an alternative path.
 
 ## Cross-cutting open questions
@@ -95,15 +96,13 @@ The localhost.direct project [has lived this](https://github.com/Upinel/localhos
 **Implications for our options:**
 
 - **Shared wildcard cert (L2)** is the design that explicitly publishes the private key. It is therefore the design where this risk lands. Not a blocker, but the rotation cadence and the revocation runbook stop being optional polish — they become load-bearing. If LE revokes, every user's gitcabin handshake fails until we publish a fresh cert with a different private key (and even then, OCSP/CRL caches mean some users see failures for hours).
-- **DuckDNS + per-user ACME (L3)** does not publish anyone's private key. Each user holds their own. Not affected.
 - **Tailnet-shared (L4)** does not publish anyone's private key. Tailscale holds the LE account; users don't see private keys. Not affected.
-- **Public/team (L5)** does not publish anyone's private key. Operator holds it. Not affected.
 
 So this risk is unique to L2. It's manageable, but it raises L2's maintainer-side operational floor.
 
 ### Does `gh auth login --hostname <funnel>.ts.net` work cleanly?
 
-Open. The Tailscale Funnel hostnames are real `*.ts.net` names with real LE certs, and `gh` should accept them the same way it accepts any HTTPS hostname. But this hasn't been verified end-to-end. A 5-minute smoke test would settle it. Worth doing before either committing to or ruling out a Funnel-based fifth mode.
+Open. The Tailscale Funnel hostnames are real `*.ts.net` names with real LE certs, and `gh` should accept them the same way it accepts any HTTPS hostname. But this hasn't been verified end-to-end. A 5-minute smoke test would settle it. Worth doing before either committing to or ruling out a Funnel-based addition to L4.
 
 ### Will `tailscale cert` work in the recipe we plan to use?
 
@@ -117,7 +116,7 @@ Default mode. `gh` dials `http://api.github.localhost/` over plain HTTP because 
 
 **Constraint check:** C1–C6 all met trivially because there is no cert chain, no domain, no third party.
 
-**What it doesn't cover:** anything that isn't "this single user, this single machine." For multi-device, sharing, or anyone-else-on-the-network access, we need one of L2–L5.
+**What it doesn't cover:** anything that isn't "this single user, this single machine." For multi-device, sharing, or anyone-else-on-the-network access, we need L2 or L4.
 
 Already documented in [`installation.md`](installation.md#local-only). Nothing more to design here.
 
@@ -244,96 +243,6 @@ If `127.0.0.1:443` is already in use on the user's machine, the loopback-alias p
 
 ---
 
-## L3 — DuckDNS + per-user ACME
-
-The user signs up at duckdns.org (free, GitHub OAuth), claims a subdomain like `mycabin.duckdns.org`, points its A record at `127.0.0.1`, drops the DuckDNS token in `.env`, and `docker compose up`. A Caddy sidecar (built with the `caddy-dns/duckdns` plugin) issues a real LE cert via DNS-01 and renews automatically.
-
-**Constraint check:** C1–C6 all met. Single signup in a browser, no sudo, no privileged-port binding (docker handles that), no custom CA, no domain ownership, no allocation step gated by us. Maintainer side: zero ongoing infrastructure.
-
-### Recipe
-
-`Caddyfile`:
-
-```caddyfile
-{$DOMAIN} {
-    reverse_proxy gitcabin:8000
-    tls {
-        dns duckdns {env.DUCKDNS_TOKEN}
-    }
-}
-```
-
-`Dockerfile.caddy`:
-
-```dockerfile
-FROM caddy:2-builder AS builder
-RUN xcaddy build --with github.com/caddy-dns/duckdns
-
-FROM caddy:2
-COPY --from=builder /usr/bin/caddy /usr/bin/caddy
-```
-
-`compose.duckdns.yml`:
-
-```yaml
-services:
-  caddy:
-    build: { context: ., dockerfile: Dockerfile.caddy }
-    restart: unless-stopped
-    ports: ["127.0.0.1:443:443"]
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-    environment:
-      DOMAIN: ${DOMAIN:?Set DOMAIN}
-      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:?Set DUCKDNS_TOKEN}
-  gitcabin:
-    ports: !reset []
-volumes: { caddy-data: }
-```
-
-User flow: sign in to duckdns.org with GitHub, claim `mycabin`, copy the token, set the A record to `127.0.0.1`, write `.env` with `DOMAIN=mycabin.duckdns.org` and `DUCKDNS_TOKEN=…`, run `docker compose -f compose.yml -f compose.duckdns.yml up -d`, then `gh auth login --hostname mycabin.duckdns.org`. Caddy renews automatically every ~60 days with no user action.
-
-### DuckDNS specifics
-
-- **5 subdomains per account** (one is plenty for gitcabin).
-- **Single TXT record per subdomain.** This breaks wildcard issuance (which needs two simultaneous TXT records). It does *not* break single-subdomain issuance, which is what gitcabin needs — `gh -h <one host>` works for a single SAN.
-- **Rate limits are not shared globally.** `duckdns.org` is in the [Public Suffix List](https://publicsuffix.org/list/public_suffix_list.dat) ICANN section, so LE's 50-cert-per-week limit applies per `*.duckdns.org` subdomain, not across all DuckDNS users.
-- The [`caddy-dns/duckdns`](https://github.com/caddy-dns/duckdns) plugin is actively maintained (last commit April 2025, libdns 1.0).
-
-### Comparison with `*.duckdns.org` alternatives
-
-- **deSEC / dedyn.io** — better wildcard story (multiple TXT records supported), 15-subdomain free tier, also in the PSL. Caddy plugin exists. Nicer DX if wildcards mattered, equivalent if they don't.
-- **dynv6.com** (`dynv6.net` in PSL) — supports DNS-01, multiple TXT records, but signup is email-only (no GitHub OAuth).
-- **freedns.afraid.org** — *not* in the PSL, so it would share the LE rate limit with everyone else on `afraid.org`. Disqualifying.
-
-If we ship L3, the choice between DuckDNS / deSEC / dynv6 matters. DuckDNS's GitHub-OAuth signup is the lowest-friction onboarding; deSEC's wildcards are cleanest for users who want them.
-
-### Trade-offs vs L2
-
-| Dimension | Shared cert (L2) | DuckDNS (L3) |
-|---|---|---|
-| Maintainer infra | always-on Caddy + R2 + signing key + rotation runbook | none |
-| User signup steps | 0 | 1 (DuckDNS via GitHub OAuth) |
-| User config in `.env` | none | `DOMAIN` + `DUCKDNS_TOKEN` |
-| User-side compose build | vanilla `caddy:2` | `xcaddy` build with plugin (~30s first time) |
-| Hostname brand | `*.local.gitcabin.com` | `*.duckdns.org` |
-| LE revocation risk | yes (we publish the key) | no (each user holds their own key) |
-| Third-party uptime in critical path at install | our R2 (cached locally for 60 days after) | DuckDNS (cached locally for 60 days after) |
-| Total user steps to "gh auth login works" | 3 | 5–6 |
-
-### What's locked, what's open (for L3 specifically)
-
-**Settled within this design:** the Caddyfile + Dockerfile + compose snippet above, plus DNS pointed to `127.0.0.1`.
-
-**Open:**
-
-- Choice of DNS provider — DuckDNS (lowest signup friction) vs deSEC (best wildcards) vs dynv6 (no GitHub OAuth).
-- Whether to ship the `caddy-dns/<provider>` plugin baked into a published gitcabin-caddy image, vs requiring users to do the xcaddy build themselves.
-- What happens at renewal if DuckDNS is down (Caddy retries; cert keeps working until expiry; 60-day cache means a multi-day outage is survivable). Document the failure UX.
-
----
-
 ## L4 — Tailnet-shared (Tailscale)
 
 A `tailscale/tailscale` sidecar puts gitcabin on the user's tailnet under `<host>.<tailnet>.ts.net`. Tailscale's coordination plane provisions and renews a real LE cert via DNS-01 (against TXT records under their `*.ts.net` zone). No host port is bound; access is gated by tailnet membership.
@@ -395,36 +304,16 @@ The recipe in current [`installation.md`](installation.md) is structurally corre
 **Open:**
 
 - Whether to ship a published gitcabin-tailscale image with the deltas pre-applied, vs documenting them in `installation.md` and letting users hand-edit.
-- Tailscale Funnel as a fifth mode (see open questions above).
+- Tailscale Funnel as an additional mode beyond L4 (see open questions above).
 - What happens if the user's free-tier device count exceeds the limit (it's currently unlimited devices, but if Tailscale changes pricing we want a doc note).
-
----
-
-## L5 — Public/team (own domain)
-
-For users who own a domain and want gitcabin reachable from anywhere. Caddy with the appropriate DNS-provider plugin issues a real LE cert via DNS-01; reverse-proxies to gitcabin.
-
-**Constraint check:** C4 explicitly violated (domain ownership required), but L5 is documented as the option *for users who already pass C4*. C1–C3 and C5–C6 all met.
-
-The recipe lives in [`installation.md`](installation.md#publicteam) and is essentially the same shape as L3, with a different DNS provider plugin. Cloudflare is the documented example because it's the most common; any of the [`caddy-dns`](https://github.com/caddy-dns) plugins works.
-
-**Cloudflare Tunnel** is a viable alternative within L5: instead of binding port 443 on a public IP, `cloudflared` makes outbound connections to Cloudflare and Cloudflare fronts the public hostname. Real cert (Cloudflare-issued), no inbound port required. Same domain-ownership requirement; same `gh` UX. Worth a paragraph in `installation.md` once we ship.
-
-### Trade-offs
-
-- **Real, browser-trusted TLS** that works for everyone, not just the user.
-- **Reachable from anywhere**, which may be wider than wanted. Gate with basic auth or an OAuth proxy in front of the reverse proxy if needed.
-- **Domain required.** This is the option *for* users who already have one; not for users who don't.
-
-Nothing currently open here that isn't already covered by `installation.md`. This subsection exists in this doc only for completeness of the survey.
 
 ---
 
 ## What's not in this doc
 
-- **Per-user authentication on top of gitcabin.** All five live options give TLS, not authn. gitcabin trusts whoever can reach the port. Adding authn is a separate design exercise.
+- **Per-user authentication on top of gitcabin.** All three live options give TLS, not authn. gitcabin trusts whoever can reach the port. Adding authn is a separate design exercise.
 - **The `uv run gitcabin` native path.** Listens on `127.0.0.1:8000`, doesn't satisfy gh's port-80/443 expectations, no TLS. Useful for direct probing only.
-- **CI / Action runner reach.** None of the L1–L4 options work for "GitHub Actions running in someone else's cloud needs to reach my gitcabin." That's an L5 problem and an L5-only problem.
+- **Public-internet reach (use cases that need anyone on the internet to dial gitcabin).** With L5 ruled out, there is no documented path for "GitHub Actions running in someone else's cloud needs to reach my gitcabin," "share a link with someone not on my tailnet," or similar. Anyone needing this is outside the scope of this project; build it on top.
 
 ## References
 
@@ -436,8 +325,6 @@ Nothing currently open here that isn't already covered by `installation.md`. Thi
 - Upinel/localhost.direct — [issue #18](https://github.com/Upinel/localhost.direct/issues/18) (GlobalSign revocation after key leak), [issue #19](https://github.com/Upinel/localhost.direct/issues/19) (open BR-violation complaint).
 - traefik.me — prior art: https://traefik.me/, https://github.com/pyrou/traefik.me.
 - Caddy ACME with DNS providers: https://caddyserver.com/docs/automatic-https.
-- caddy-dns/duckdns — https://github.com/caddy-dns/duckdns.
-- Public Suffix List — https://publicsuffix.org/list/public_suffix_list.dat.
 - Tailscale pricing (free tier) — https://tailscale.com/pricing.
 - Tailscale HTTPS / `tailscale cert` — https://tailscale.com/docs/how-to/set-up-https-certificates.
 - Headscale issue — `tailscale cert` provisioning gap: https://github.com/juanfont/headscale/issues/1921.

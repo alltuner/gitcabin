@@ -1,8 +1,8 @@
 # Installation
 
-gitcabin can be deployed three different ways today. They differ only in *who can reach it* and *whether TLS is involved*. The application is identical across all three; the only thing that changes is the proxy in front of it and the hostname you give to `gh`.
+gitcabin can be deployed two different ways today. They differ only in *who can reach it* and *whether TLS is involved*. The application is identical in both; the only thing that changes is the proxy in front of it and the hostname you give to `gh`.
 
-The design discussion behind these choices — including options that have been ruled out and options still being designed (a shared-wildcard-cert path and a DuckDNS path that don't require owning a domain) — lives in [`tls.md`](tls.md).
+The design discussion behind these choices — including options that have been ruled out and a shared-wildcard-cert path still under design — lives in [`tls.md`](tls.md).
 
 ## Pick a mode
 
@@ -10,11 +10,10 @@ The design discussion behind these choices — including options that have been 
 |---|---|---|---|---|
 | [Local-only](#local-only) | the user, on this machine | `github.localhost` | none (gh's HTTP shortcut) | 1 |
 | [Tailnet-shared](#tailnet-shared) | anyone on your tailnet | `<machine>.<tailnet>.ts.net` | provisioned by Tailscale | 3 |
-| [Public/team](#publicteam) | anyone with DNS resolution | `<your domain>` | provisioned by Caddy via DNS-01 | 4 |
 
 If in doubt, start with **Local-only**. It's what the README quickstart sets up; everything else is opt-in.
 
-> A previous "Local with TLS" mode used a per-machine local CA (`mkcert`-style). It has been retired — the sudo-prompted keychain install was the wrong UX trade-off for a project meant to be installable without admin privileges. See [`tls.md`](tls.md) for the design discussion of what may replace it.
+> A previous "Local with TLS" mode (per-machine local CA) and a "Public/team" mode (operator-owned domain) have both been retired from the supported set. The first violated the no-sudo constraint; the second was scoped out. See [`tls.md`](tls.md) for the full reasoning.
 
 ---
 
@@ -146,91 +145,6 @@ gh will use the `/api/v3/...` and `/api/graphql` URL shape, which gitcabin serve
 
 ---
 
-## Public/team
-
-A [Caddy](https://caddyserver.com/) sidecar fronts gitcabin under a hostname *you* own (e.g. `git.example.com`), terminating TLS with a Let's Encrypt cert obtained via DNS-01 — so no inbound port 80/443 is required from the public internet. Anyone whose machine can resolve your hostname can reach gitcabin.
-
-This is the mode for "team server" or "shared developer instance" deploys. It assumes you own a domain and have an API token for its DNS provider.
-
-### Setup
-
-The example below uses Cloudflare DNS. Other providers work the same way with a different Caddy plugin (see https://github.com/caddy-dns).
-
-1. **Create a Cloudflare API token** with `Zone:DNS:Edit` permission for the zone serving your hostname. Save as `CF_API_TOKEN`.
-
-2. **Create `Caddyfile`** next to `compose.yml`:
-
-   ```
-   git.example.com {
-       reverse_proxy gitcabin:8000
-       tls {
-           dns cloudflare {env.CF_API_TOKEN}
-       }
-   }
-   ```
-
-3. **Create `Dockerfile.caddy`** to bake the Cloudflare DNS plugin into Caddy:
-
-   ```dockerfile
-   FROM caddy:2-builder AS builder
-   RUN xcaddy build --with github.com/caddy-dns/cloudflare
-
-   FROM caddy:2
-   COPY --from=builder /usr/bin/caddy /usr/bin/caddy
-   ```
-
-4. **Add a sidecar to `compose.yml`** (or to a `compose.public.yml` overlay):
-
-   ```yaml
-   services:
-     caddy:
-       build:
-         context: .
-         dockerfile: Dockerfile.caddy
-       restart: unless-stopped
-       ports:
-         - "443:443"
-       volumes:
-         - ./Caddyfile:/etc/caddy/Caddyfile:ro
-         - caddy-data:/data
-         - caddy-config:/config
-       environment:
-         CF_API_TOKEN: ${CF_API_TOKEN:?Set CF_API_TOKEN in .env}
-
-     gitcabin:
-       ports: !reset []   # caddy is the only ingress now
-
-   volumes:
-     caddy-data:
-     caddy-config:
-   ```
-
-5. **Point your DNS** (`git.example.com` A/AAAA) at the host running this stack.
-
-6. Bring it up:
-
-   ```sh
-   echo "CF_API_TOKEN=..." > .env
-   docker compose up -d
-   docker compose logs caddy | grep "obtained certificate"
-   ```
-
-### Point gh at it
-
-```sh
-echo "any-token" | gh auth login --hostname git.example.com --with-token
-GH_HOST=git.example.com gh auth status
-```
-
-### Trade-offs
-
-- **Real, browser-trusted TLS** — works for everyone, no client-side trust steps.
-- **Reachable from anywhere** that resolves your hostname. If that's wider than you want, gate access at Caddy with basic auth or an OAuth proxy in front of `reverse_proxy`.
-- **You need a domain and a DNS provider with an API.** Without that, this mode doesn't apply.
-- **Port 443 must be free** on whatever host runs the stack.
-
----
-
 ## Verifying any mode works
 
 After `gh auth login` in any mode, all three of these should succeed without error:
@@ -241,4 +155,4 @@ gh api /
 gh api graphql -f query='query { viewer { login } }'
 ```
 
-If `gh auth status` returns `connection refused`, the proxy isn't bound where gh is looking. If it returns a TLS error, the cert isn't trusted by your OS — that's a sign the wrong mode is configured (e.g. you're using a Caddy internal CA without installing the root). If it returns a 404, your URL prefix is wrong; gitcabin serves both `/` and `/api/v3` shapes, so a 404 means the proxy is rewriting paths in a way gitcabin doesn't expect.
+If `gh auth status` returns `connection refused`, the proxy isn't bound where gh is looking. If it returns a TLS error, the cert isn't trusted by your OS. If it returns a 404, your URL prefix is wrong; gitcabin serves both `/` and `/api/v3` shapes, so a 404 means the proxy is rewriting paths in a way gitcabin doesn't expect.
