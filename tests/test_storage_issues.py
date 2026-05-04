@@ -10,8 +10,11 @@ import pytest
 
 from gitcabin.storage.issues import (
     Comment,
+    CommentDocument,
     Issue,
+    IssueDocument,
     IssueState,
+    Provenance,
     add_comment,
     close_issue,
     create_issue,
@@ -64,6 +67,8 @@ def test_create_issue_tree_contains_issue_json(repo: BareRepo) -> None:
         "body": "Body text",
         "author": "david",
         "state": "OPEN",
+        "provenance": "LOCAL_ONLY",
+        "gh_issue_id": None,
     }
 
 
@@ -254,7 +259,12 @@ def test_add_comment_writes_blob_under_comments_subtree(repo: BareRepo) -> None:
     add_comment(repo, number=1, body="hello", author="bob")
     raw = repo.run_git("cat-file", "-p", "refs/issues/local/1:comments/0001.json")
     payload = json.loads(raw)
-    assert payload == {"body": "hello", "author": "bob"}
+    assert payload == {
+        "body": "hello",
+        "author": "bob",
+        "provenance": "LOCAL_ONLY",
+        "gh_comment_id": None,
+    }
 
 
 def test_add_comment_advances_issue_updated_at(repo: BareRepo) -> None:
@@ -288,3 +298,57 @@ def test_add_comment_after_close_still_works(repo: BareRepo) -> None:
     refreshed = get_issue(repo, 1)
     assert refreshed.state is IssueState.CLOSED
     assert [c.body for c in list_comments(repo, 1)] == ["post-close"]
+
+
+# ---- provenance + gh ids ------------------------------------------------ #
+
+
+def test_create_issue_defaults_to_local_only_provenance(repo: BareRepo) -> None:
+    issue = create_issue(repo, title="t", body="b", author="alice")
+    assert issue.provenance is Provenance.LOCAL_ONLY
+    assert issue.gh_issue_id is None
+
+
+def test_create_issue_persists_provenance_to_disk(repo: BareRepo) -> None:
+    create_issue(repo, title="t", body="b", author="alice")
+    raw = repo.run_git("cat-file", "-p", "refs/issues/local/1:issue.json")
+    payload = json.loads(raw)
+    assert payload["provenance"] == "LOCAL_ONLY"
+    assert payload["gh_issue_id"] is None
+
+
+def test_issue_document_loads_legacy_without_provenance_field() -> None:
+    legacy = '{"title": "t", "body": "b", "author": "a", "state": "OPEN"}'
+    doc = IssueDocument.model_validate_json(legacy)
+    assert doc.provenance is Provenance.LOCAL_ONLY
+    assert doc.gh_issue_id is None
+
+
+def test_close_issue_preserves_provenance_and_gh_id(repo: BareRepo) -> None:
+    create_issue(repo, title="t", body="", author="alice")
+    closed = close_issue(repo, number=1, actor="alice")
+    assert closed.provenance is Provenance.LOCAL_ONLY
+    assert closed.gh_issue_id is None
+
+
+def test_add_comment_defaults_to_local_only_provenance(repo: BareRepo) -> None:
+    create_issue(repo, title="t", body="", author="alice")
+    comment = add_comment(repo, number=1, body="hi", author="bob")
+    assert comment.provenance is Provenance.LOCAL_ONLY
+    assert comment.gh_comment_id is None
+
+
+def test_add_comment_persists_provenance_to_disk(repo: BareRepo) -> None:
+    create_issue(repo, title="t", body="", author="alice")
+    add_comment(repo, number=1, body="hi", author="bob")
+    raw = repo.run_git("cat-file", "-p", "refs/issues/local/1:comments/0001.json")
+    payload = json.loads(raw)
+    assert payload["provenance"] == "LOCAL_ONLY"
+    assert payload["gh_comment_id"] is None
+
+
+def test_comment_document_loads_legacy_without_provenance_field() -> None:
+    legacy = '{"body": "b", "author": "a"}'
+    doc = CommentDocument.model_validate_json(legacy)
+    assert doc.provenance is Provenance.LOCAL_ONLY
+    assert doc.gh_comment_id is None

@@ -28,6 +28,20 @@ class IssueState(StrEnum):
     CLOSED = "CLOSED"
 
 
+class Provenance(StrEnum):
+    """Where a stored item came from relative to GitHub.
+
+    LOCAL_ONLY items live only in gitcabin and have no upstream counterpart.
+    SYNCED_FROM_GITHUB items were pulled from GitHub; upstream is canonical.
+    SYNCED_BIDIR items were created locally and successfully pushed; upstream
+    has them too.
+    """
+
+    LOCAL_ONLY = "LOCAL_ONLY"
+    SYNCED_FROM_GITHUB = "SYNCED_FROM_GITHUB"
+    SYNCED_BIDIR = "SYNCED_BIDIR"
+
+
 class IssueDocument(BaseModel):
     """The on-disk schema for `issue.json` inside an issue ref's tree.
 
@@ -35,6 +49,9 @@ class IssueDocument(BaseModel):
     one place is what makes a future GitHub-authoritative renumbering on sync
     a single `git update-ref` (no payload rewrite). `extra='ignore'` keeps us
     forward-compatible with the older format that did include `number`.
+
+    `provenance` and `gh_issue_id` default to LOCAL_ONLY / None so older payloads
+    that predate the sync subsystem load with the right semantics.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -43,6 +60,8 @@ class IssueDocument(BaseModel):
     body: str
     author: str
     state: IssueState
+    provenance: Provenance = Provenance.LOCAL_ONLY
+    gh_issue_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +81,8 @@ class Issue:
     state: IssueState
     created_at: str
     updated_at: str
+    provenance: Provenance
+    gh_issue_id: int | None
 
 
 class CommentDocument(BaseModel):
@@ -70,12 +91,17 @@ class CommentDocument(BaseModel):
     Author and body are all that lives in the blob — the comment number is the
     filename, and the timestamp is the commit's author date. Same forward-compat
     contract as IssueDocument: extra fields are ignored.
+
+    `provenance` and `gh_comment_id` default to LOCAL_ONLY / None so older
+    payloads that predate the sync subsystem load with the right semantics.
     """
 
     model_config = ConfigDict(extra="ignore")
 
     body: str
     author: str
+    provenance: Provenance = Provenance.LOCAL_ONLY
+    gh_comment_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +117,8 @@ class Comment:
     body: str
     author: str
     created_at: str
+    provenance: Provenance
+    gh_comment_id: int | None
 
 
 def create_issue(repo: BareRepo, *, title: str, body: str, author: str) -> Issue:
@@ -296,7 +324,14 @@ def add_comment(repo: BareRepo, *, number: int, body: str, author: str) -> Comme
     repo.run_git("update-ref", ref, commit_sha, current.hexsha)
 
     created_at = _comment_created_at(repo, ref, comment_name) or ""
-    return Comment(number=next_number, body=body, author=author, created_at=created_at)
+    return Comment(
+        number=next_number,
+        body=body,
+        author=author,
+        created_at=created_at,
+        provenance=doc.provenance,
+        gh_comment_id=doc.gh_comment_id,
+    )
 
 
 def list_comments(repo: BareRepo, number: int) -> list[Comment]:
@@ -318,7 +353,16 @@ def list_comments(repo: BareRepo, number: int) -> list[Comment]:
         n = _comment_number_from_name(entry.name)
         doc = CommentDocument.model_validate_json(_read_blob(entry))
         created_at = _comment_created_at(repo, ref, entry.name) or ""
-        comments.append(Comment(number=n, body=doc.body, author=doc.author, created_at=created_at))
+        comments.append(
+            Comment(
+                number=n,
+                body=doc.body,
+                author=doc.author,
+                created_at=created_at,
+                provenance=doc.provenance,
+                gh_comment_id=doc.gh_comment_id,
+            )
+        )
     comments.sort(key=lambda c: c.number)
     return comments
 
@@ -383,6 +427,8 @@ def _read_issue_at(commit: Commit, number: int) -> Issue:
         state=doc.state,
         created_at=created_at,
         updated_at=updated_at,
+        provenance=doc.provenance,
+        gh_issue_id=doc.gh_issue_id,
     )
 
 
