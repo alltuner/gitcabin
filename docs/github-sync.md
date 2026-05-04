@@ -1,10 +1,35 @@
 # GitHub sync (design notes)
 
-> **Status:** design notes for an unbuilt subsystem. Captures the model and the open questions so we don't re-derive them when implementation starts.
+> **Status:** partially implemented as of commit `9e6383d`. The identity / provenance / can_edit model below is built and tested; pull-side sync of issues, PRs, and comments works end-to-end against real GitHub (smoke-tested against `alltuner/gitcabin-sync-smoke`); push-side covers issues + comments but not PRs. Outstanding gaps are tracked as GitHub issues — links inline below.
 
 The goal of GitHub sync is bidirectional mirroring between gitcabin's metadata refs (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`) and a real GitHub repository. A user can browse and act on issues / PRs / comments in gitcabin's local UI, and changes propagate to/from GitHub.com.
 
 This doc focuses specifically on **authorship attribution and edit affordances**: which items in the local UI should expose edit / delete actions, and which should be read-only because acting on them would lie about who wrote them on GitHub.
+
+## What's built
+
+| Capability | Module | State |
+|---|---|---|
+| Provenance + gh ids on issues / comments | `gitcabin.storage.issues` | done |
+| Per-repo sync config at `refs/meta/sync` | `gitcabin.sync.config` | done |
+| `gh api` wrapper with runner injection | `gitcabin.sync.gh` | done |
+| Pull issues + comments | `gitcabin.sync.pull` | done |
+| Pull PRs | `gitcabin.sync.pull` | done |
+| Push local-only issues + comments | `gitcabin.sync.push` | done |
+| Push PRs | — | not built ([#14](https://github.com/alltuner/gitcabin/issues/14)) |
+| `can_edit` / `can_delete` rules | `gitcabin.permissions` | done |
+| Mutation enforcement (closeIssue) | `gitcabin.graphql_schema` | done |
+| Mutation enforcement (updateIssue, updateComment, deleteComment) | — | not built ([#15](https://github.com/alltuner/gitcabin/issues/15)) |
+| GraphQL surfaces synced issues + viewer_can_* | `gitcabin.graphql_schema` | done |
+| GraphQL surfaces synced PRs + viewer_can_* | `gitcabin.graphql_schema` | done |
+| CLI `gitcabin sync identity / link / pull / push` | `gitcabin.cli` | done |
+| Resumable push (crash safety) | — | not built ([#12](https://github.com/alltuner/gitcabin/issues/12)) |
+| Push-then-pull orchestration | — | not built ([#13](https://github.com/alltuner/gitcabin/issues/13)) |
+| `viewer_repo_role` auto-fetch | partially built | broken ([#16](https://github.com/alltuner/gitcabin/issues/16)) |
+| Web dashboard reads viewer_can_* | — | not built ([#17](https://github.com/alltuner/gitcabin/issues/17)) |
+| `gh_author_id` for rename stability | — | not built ([#18](https://github.com/alltuner/gitcabin/issues/18)) |
+
+End-to-end smoke test verified at commit `9e6383d` against `alltuner/gitcabin-sync-smoke`: pull recovered both issues + the comment + the closed-state of issue 2; push of a local draft created issue 3 upstream (with its comment), renumbered locally from `refs/issues/local/1` to `refs/issues/3`, and stamped `provenance: SYNCED_BIDIR` + the upstream `gh_issue_id`.
 
 ---
 
