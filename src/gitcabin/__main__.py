@@ -1,8 +1,9 @@
-# ABOUTME: Module entry point: `python -m gitcabin` or `uv run gitcabin` starts the server.
-# ABOUTME: Binds an unprivileged port; Docker Compose republishes it on host port 80 for gh.
+# ABOUTME: Module entry point: `gitcabin` runs the server, `gitcabin sync ...` dispatches CLI.
+# ABOUTME: The server binds an unprivileged port; Docker Compose republishes it on 80 for gh.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from granian import Granian
@@ -18,6 +19,13 @@ PORT = 8000
 
 
 def main() -> None:
+    # If invoked as `gitcabin sync ...`, dispatch to the sync CLI; otherwise
+    # default to running the server. Keeps `uv run gitcabin` working as before.
+    if len(sys.argv) >= 2 and sys.argv[1] == "sync":
+        from gitcabin.cli import main as cli_main
+
+        sys.exit(cli_main(sys.argv[2:]))
+
     # Watch only the package source for reload. Without an explicit reload path,
     # granian defaults to the current working directory, which is the uv
     # workspace root here and triggers reloads on unrelated edits.
