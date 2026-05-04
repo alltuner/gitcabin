@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sponsors/alltuner">Sponsor</a>
+  <a href="https://alltuner.com/sponsor">Sponsor</a>
 </p>
 
 <p align="center">
@@ -20,17 +20,7 @@
 
 ---
 
-## What is gitcabin?
-
-A tiny self-hosted GitHub clone driven by the official `gh` CLI, with all metadata stored in git itself.
-
-### How it works
-
-- `gh` has built-in support for arbitrary hosts via `GH_HOST`. The hostname `github.localhost` is special: `gh` sends to `http://api.github.localhost/` (REST) and `http://api.github.localhost/graphql` (GraphQL), so HTTPS is not required for local dev. For any other hostname `gh` forces HTTPS and uses the GitHub Enterprise URL shape (`https://<host>/api/v3/...` and `https://<host>/api/graphql`). gitcabin serves both shapes, so the same image works behind either path.
-- Issues, PRs, and counters live in side refs of the bare git repo (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`). Code lives in normal `refs/heads/*` and `refs/tags/*`. The two namespaces never collide.
-- The HTTP API server is the only writer of metadata refs. Plain `git clone`/`git push` only see code.
-
-## Quickstart
+## Get Started
 
 The default deploy is local-only over HTTP via `github.localhost`. One command brings it up:
 
@@ -69,6 +59,18 @@ services:
 ```
 
 `127/8` is all loopback on Linux and macOS, so `127.42.0.1` is essentially free real estate. Run `docker compose up -d` and `gh` will dial port 80 on `127.42.0.1` instead of `127.0.0.1`.
+
+---
+
+## What is gitcabin?
+
+A tiny self-hosted GitHub clone driven by the official `gh` CLI, with all metadata stored in git itself.
+
+### How it works
+
+- `gh` has built-in support for arbitrary hosts via `GH_HOST`. The hostname `github.localhost` is special: `gh` sends to `http://api.github.localhost/` (REST) and `http://api.github.localhost/graphql` (GraphQL), so HTTPS is not required for local dev. For any other hostname `gh` forces HTTPS and uses the GitHub Enterprise URL shape (`https://<host>/api/v3/...` and `https://<host>/api/graphql`). gitcabin serves both shapes, so the same image works behind either path.
+- Issues, PRs, and counters live in side refs of the bare git repo (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`). Code lives in normal `refs/heads/*` and `refs/tags/*`. The two namespaces never collide.
+- The HTTP API server is the only writer of metadata refs. Plain `git clone`/`git push` only see code.
 
 ## Browsing the data
 
@@ -113,15 +115,7 @@ uv run ruff check . && uv run ruff format --check .
 
 gitcabin is an open source project built by [David Poblador i Garcia](https://davidpoblador.com/) through [All Tuner Labs](https://www.alltuner.com/).
 
-If the direction interests you, consider supporting its development.
-
-❤️ **Sponsor development**
-https://github.com/sponsors/alltuner
-
-☕ **One-time support**
-https://buymeacoffee.com/alltuner
-
-Your support helps fund the continued development of gitcabin and other open source developer tools such as [Factory Floor](https://github.com/alltuner/factoryfloor).
+If this project was useful to you, [consider supporting its development](https://alltuner.com/sponsor).
 
 ## License
 
