@@ -86,16 +86,15 @@ The dashboard reads the same bare repos as the API and lets you browse issues, r
 
 ## Other deployment modes
 
-The local-only quickstart is one of four documented setups:
+The local-only quickstart is one of three documented setups:
 
 | Mode | Audience | Cert work | Domain needed |
 |---|---|---|---|
 | Local-only (default) | the user, on this machine | none | `github.localhost` (built in) |
-| Local with TLS | the user, on this machine | per-machine local CA, one-time `scripts/trust.sh` | `*.gitcabin.localhost` (built in) |
 | Tailnet-shared | anyone on your tailnet | none (Tailscale provisions) | tailnet hostname (built in) |
 | Public/team | anyone with DNS resolution | DNS-01 via Caddy | one you own |
 
-See [`docs/installation.md`](docs/installation.md) for the TLS, Tailscale, and Caddy recipes, the exact `gh auth login` invocation each one pairs with, and trade-offs.
+See [`docs/installation.md`](docs/installation.md) for the Tailscale and Caddy recipes, the exact `gh auth login` invocation each one pairs with, and trade-offs. The design discussion behind these modes — including options ruled out (per-machine local CA) and options still being designed (a shared-wildcard-cert path and a DuckDNS path that don't require owning a domain) — lives in [`docs/tls.md`](docs/tls.md).
 
 ## Running natively (no Docker, no gh)
 

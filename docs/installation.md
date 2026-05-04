@@ -1,17 +1,20 @@
 # Installation
 
-gitcabin can be deployed four different ways. They differ only in *who can reach it* and *whether TLS is involved*. The application is identical across all four; the only thing that changes is the proxy in front of it and the hostname you give to `gh`.
+gitcabin can be deployed three different ways today. They differ only in *who can reach it* and *whether TLS is involved*. The application is identical across all three; the only thing that changes is the proxy in front of it and the hostname you give to `gh`.
+
+The design discussion behind these choices — including options that have been ruled out and options still being designed (a shared-wildcard-cert path and a DuckDNS path that don't require owning a domain) — lives in [`tls.md`](tls.md).
 
 ## Pick a mode
 
 | Mode | Audience | Hostname | TLS | Setup steps |
 |---|---|---|---|---|
 | [Local-only](#local-only) | the user, on this machine | `github.localhost` | none (gh's HTTP shortcut) | 1 |
-| [Local with TLS](#local-with-tls) | the user, on this machine | `*.gitcabin.localhost` | per-machine local CA | 2 (one-time admin prompt) |
 | [Tailnet-shared](#tailnet-shared) | anyone on your tailnet | `<machine>.<tailnet>.ts.net` | provisioned by Tailscale | 3 |
 | [Public/team](#publicteam) | anyone with DNS resolution | `<your domain>` | provisioned by Caddy via DNS-01 | 4 |
 
 If in doubt, start with **Local-only**. It's what the README quickstart sets up; everything else is opt-in.
+
+> A previous "Local with TLS" mode used a per-machine local CA (`mkcert`-style). It has been retired — the sudo-prompted keychain install was the wrong UX trade-off for a project meant to be installable without admin privileges. See [`tls.md`](tls.md) for the design discussion of what may replace it.
 
 ---
 
@@ -42,71 +45,24 @@ GH_HOST=github.localhost gh auth status
 
 ---
 
-## Local with TLS
-
-A Caddy sidecar terminates TLS on `127.0.0.1:443` using a **per-machine local CA**. The CA's root cert is generated on first start and never leaves the machine; one `bash scripts/trust.sh` invocation installs it into the OS keychain so `gh`, `curl`, and browsers all trust it cleanly. Every gh command then talks to gitcabin over real validated HTTPS.
-
-This is the right mode if you want a TLS-protected setup on your own machine without owning a public domain or relying on any third party for cert provisioning. The hostname is `*.gitcabin.localhost` — `.localhost` resolves to `127.0.0.1` natively on macOS, Linux, and Windows, so no `/etc/hosts` editing is needed.
-
-### Setup
-
-1. **Bring up the stack with the TLS overlay**:
-
-   ```sh
-   docker compose -f compose.yml -f compose.tls.yml up -d
-   ```
-
-   This adds a Caddy container alongside gitcabin. Caddy auto-generates its local CA on first run (a few seconds).
-
-2. **Install the CA into your OS trust store** (one-time, idempotent):
-
-   ```sh
-   bash scripts/trust.sh
-   ```
-
-   The script extracts the CA from the Caddy container, detects your platform, and runs the appropriate trust install:
-
-   | Platform | What it does |
-   |---|---|
-   | macOS | `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain` (Touch ID / password prompt) |
-   | Debian/Ubuntu | `/usr/local/share/ca-certificates/` + `update-ca-certificates` (sudo) |
-   | Fedora/RHEL/CentOS | `/etc/pki/ca-trust/source/anchors/` + `update-ca-trust` (sudo) |
-   | Arch | `/etc/ca-certificates/trust-source/anchors/` + `trust extract-compat` (sudo) |
-   | openSUSE | `/etc/pki/trust/anchors/` + `update-ca-certificates` (sudo) |
-   | Windows | Manual — see below. |
-
-   **Windows**: extract the cert with `docker exec gitcabin-caddy cat /data/caddy/pki/authorities/local/root.crt > gitcabin-ca.pem`, then `certutil.exe -addstore -user Root gitcabin-ca.pem` (no admin prompt) or `certutil.exe -addstore Root gitcabin-ca.pem` (UAC prompt, system-wide).
-
-### Point gh at it
-
-Pick any subdomain of `gitcabin.localhost` — the cert covers all of them.
-
-```sh
-echo "any-token" | gh auth login --hostname mycabin.gitcabin.localhost --with-token
-GH_HOST=mycabin.gitcabin.localhost gh auth status
-```
-
-The token is unverified — gitcabin trusts whoever can reach the port (the CA install only protects the *transport*, not authn). Constrain reach with the loopback binding (default) or with a reverse-proxy access rule in front if needed.
-
-### Trade-offs
-
-- **Real TLS, real cert chain.** Browsers, `gh`, `curl`, language HTTP libs all validate without warnings or `--insecure` flags after the one-time CA install.
-- **Trust anchor lives on your machine.** A DNS hijack of any public domain we control cannot produce a cert your install will accept — the CA's private key never left this machine.
-- **One-time admin prompt** (`bash scripts/trust.sh`). Touch ID on macOS, sudo password on Linux. Idempotent on re-runs.
-- **Requires port 443 free on `127.0.0.1`.** If something else is already there, edit `compose.tls.yml` to bind to a free loopback alias (the same trick as the port-80 workaround for the local-only mode).
-- **Per-machine CA, not portable.** If you want gitcabin reachable from another machine in the same shape, you'd need to copy the CA's root cert to that machine and trust it there too. For multi-machine reach, switch to the Tailnet-shared or Public/team mode below.
-
----
-
 ## Tailnet-shared
 
 A [Tailscale](https://tailscale.com/) sidecar puts gitcabin on your tailnet under `<machine>.<tailnet>.ts.net`. Tailscale provisions and renews a real Let's Encrypt cert via its coordination server, with no DNS or ACME work on your side. Anyone on the tailnet can hit it; nobody off it can.
 
 This is the right mode if your audience is "you across all your machines" or "your team, all of whom are already on Tailscale."
 
+### One-time tailnet prep
+
+Before any of the per-machine setup below, the tailnet itself needs two things turned on (admin console, once per tailnet, by whoever owns it):
+
+- **MagicDNS** — required for tailnet hostnames to resolve to `*.<tailnet>.ts.net`.
+- **HTTPS Certificates** — required for `tailscale cert` / `tailscale serve` to provision LE certs. Enabling this opts your tailnet's machine names into public Certificate Transparency logs (one-time consent in the admin console).
+
+Without both, the sidecar comes up but `tailscale cert` returns nothing and 443 never serves.
+
 ### Setup
 
-1. **Generate a Tailscale auth key** at https://login.tailscale.com/admin/settings/keys. Reusable + ephemeral is fine for a sidecar. Save it as `TS_AUTHKEY`.
+1. **Generate a Tailscale auth key** at https://login.tailscale.com/admin/settings/keys. Make it **reusable, 90-day, non-ephemeral** (an ephemeral key would make the node disappear on every container restart). Save it as `TS_AUTHKEY`. After the node first joins the tailnet, flip "Disable key expiry" on the node in the admin UI so node lifetime is decoupled from auth-key lifetime — otherwise the node disappears in 90 days when the key expires, even if it's still running.
 
 2. **Create `tailscale-serve.json`** next to `compose.yml`:
 
@@ -121,37 +77,48 @@ This is the right mode if your audience is "you across all your machines" or "yo
            "/": { "Proxy": "http://127.0.0.1:8000" }
          }
        }
+     },
+     "AllowFunnel": {
+       "${TS_CERT_DOMAIN}:443": false
      }
    }
    ```
 
-   `${TS_CERT_DOMAIN}` is expanded by tailscaled at runtime to the FQDN it owns; you don't have to hardcode your tailnet name.
+   `${TS_CERT_DOMAIN}` is expanded by tailscaled at runtime to the FQDN it owns; you don't have to hardcode your tailnet name. The explicit `AllowFunnel: false` prevents accidental public exposure if anyone runs `tailscale funnel` against this port.
 
 3. **Add a sidecar to `compose.yml`** (or to a `compose.tailscale.yml` overlay):
 
    ```yaml
    services:
      tailscale:
-       image: tailscale/tailscale:latest
+       image: tailscale/tailscale:v1.96
+       restart: unless-stopped
        hostname: gitcabin
        environment:
          TS_AUTHKEY: ${TS_AUTHKEY:?Set TS_AUTHKEY in .env}
          TS_STATE_DIR: /var/lib/tailscale
          TS_SERVE_CONFIG: /config/serve.json
-         TS_EXTRA_ARGS: --ssh
        volumes:
-         - ./tailscale-state:/var/lib/tailscale
+         - ts-state:/var/lib/tailscale
          - ./tailscale-serve.json:/config/serve.json:ro
        cap_add: [net_admin, sys_module]
+       devices:
+         - /dev/net/tun:/dev/net/tun
        network_mode: service:gitcabin
 
      gitcabin:
        # Drop the `ports:` block — the tailscale sidecar publishes the only
        # ingress now, on tailnet 443. Local-only access is gone.
        ports: !reset []
+
+   volumes:
+     ts-state:
    ```
 
-   `network_mode: service:gitcabin` puts the two containers in the same network namespace, so `127.0.0.1:8000` inside the tailscale container is gitcabin.
+   - `network_mode: service:gitcabin` puts the two containers in the same network namespace, so `127.0.0.1:8000` inside the tailscale container is gitcabin.
+   - `image: tailscale/tailscale:v1.96` is pinned on purpose — `:latest` plus container auto-update is a recipe for a silent breaking restart.
+   - `ts-state` is a named volume, not a bind mount, to avoid permissions traps with the uid the tailscale container runs as.
+   - `devices: [/dev/net/tun:/dev/net/tun]` belt-and-suspenders the cap-only form, which fails on some hosts.
 
 4. Bring it up:
 
