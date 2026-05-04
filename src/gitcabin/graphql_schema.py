@@ -37,6 +37,15 @@ from gitcabin.storage.issues import (
     list_all_issues,
     list_any_comments,
 )
+from gitcabin.storage.prs import (
+    Pr as StoragePr,
+)
+from gitcabin.storage.prs import (
+    PrState,
+    get_synced_pr,
+    list_synced_pr_comments,
+    list_synced_prs,
+)
 from gitcabin.storage.repo import BareRepo
 from gitcabin.sync.config import read_config as read_sync_config
 
@@ -494,11 +503,11 @@ class Issue:
 
 @strawberry.type
 class PullRequest:
-    """Stub mirroring Issue's shape so the IssueOrPullRequest union validates.
+    """A pull request mirrored from GitHub.
 
-    We don't have PRs yet, so a PullRequest is never returned from any resolver.
-    Defining the type with the same fields gh's PullRequestGraphQL fragment
-    selects (a strict subset of IssueGraphQL) is enough for query validation.
+    State is exposed as IssueState (OPEN/CLOSED) for gh wire compatibility —
+    `merged` is a separate boolean flag. `head_ref_name` / `base_ref_name`
+    are the source/target branch labels, mostly for display.
     """
 
     id: str
@@ -510,6 +519,13 @@ class PullRequest:
     author: User
     created_at: str
     updated_at: str
+    head_ref_name: str = ""
+    base_ref_name: str = ""
+    is_draft: bool = False
+    merged: bool = False
+    viewer_did_author: bool = False
+    viewer_can_update: bool = False
+    viewer_can_close_or_reopen: bool = False
 
     @strawberry.field
     def labels(self, first: int | None = None, after: str | None = None) -> LabelConnection:
@@ -524,17 +540,33 @@ class PullRequest:
     @strawberry.field
     def comments(
         self,
+        info: strawberry.Info,
         first: int | None = None,
         last: int | None = None,
         after: str | None = None,
         before: str | None = None,
     ) -> IssueCommentConnection:
-        _ = (first, last, after, before)
-        return IssueCommentConnection(
-            nodes=[],
-            total_count=0,
-            page_info=PageInfo(has_next_page=False, end_cursor=None),
-        )
+        _ = (after, before)
+        empty_page = PageInfo(has_next_page=False, end_cursor=None)
+        coords = ids.decode_issue_id(self.id)
+        if coords is None:
+            return IssueCommentConnection(nodes=[], total_count=0, page_info=empty_page)
+        settings: Settings = info.context["settings"]
+        bare = _open_bare_or_none(settings, coords.owner, coords.name)
+        if bare is None:
+            return IssueCommentConnection(nodes=[], total_count=0, page_info=empty_page)
+        stored = list_synced_pr_comments(bare, coords.number)
+        viewer = settings.viewer_login
+        role = _viewer_role(bare)
+        nodes = [
+            _to_gql_comment(c, coords.owner, coords.name, coords.number, viewer, role)
+            for c in stored
+        ]
+        if first is not None:
+            nodes = nodes[:first]
+        elif last is not None:
+            nodes = nodes[-last:] if last > 0 else []
+        return IssueCommentConnection(nodes=nodes, total_count=len(stored), page_info=empty_page)
 
     @strawberry.field
     def milestone(self) -> Milestone | None:
@@ -560,6 +592,49 @@ IssueOrPullRequest = Annotated[
     Issue | PullRequest,
     strawberry.union("IssueOrPullRequest"),
 ]
+
+
+def _to_gql_pr(
+    stored: StoragePr, owner: str, name: str, viewer: str, role: RepoRole
+) -> PullRequest:
+    """Translate a storage Pr into the GraphQL PullRequest. State maps OPEN
+    or CLOSED for gh wire compatibility — merged is exposed via the boolean."""
+    state = IssueState.OPEN if stored.state is PrState.OPEN else IssueState.CLOSED
+    is_author = stored.author == viewer
+    return PullRequest(
+        id=ids.issue_id(owner, name, stored.number),
+        number=stored.number,
+        title=stored.title,
+        body=stored.body,
+        state=state,
+        url=_issue_url(owner, name, stored.number),
+        author=_user_for(stored.author),
+        created_at=stored.created_at,
+        updated_at=stored.updated_at,
+        head_ref_name=stored.head_ref,
+        base_ref_name=stored.base_ref,
+        is_draft=stored.is_draft,
+        merged=stored.state is PrState.MERGED,
+        viewer_did_author=is_author,
+        # PRs are content-edit-only-by-author, mirroring issues. Merge / close
+        # are admin actions but we surface them under the same close gate for now.
+        viewer_can_update=is_author,
+        viewer_can_close_or_reopen=is_author or role in _PRIVILEGED_ROLES_FOR_PR,
+    )
+
+
+# Same triage-or-above ladder issues use; PRs share the rule because closing
+# someone else's PR is the same kind of moderation action as closing an issue.
+_PRIVILEGED_ROLES_FOR_PR: frozenset[RepoRole] = frozenset(
+    {RepoRole.TRIAGE, RepoRole.WRITE, RepoRole.MAINTAIN, RepoRole.ADMIN}
+)
+
+
+@strawberry.type
+class PullRequestConnection:
+    nodes: list[PullRequest]
+    page_info: PageInfo
+    total_count: int
 
 
 @strawberry.type
@@ -701,9 +776,72 @@ class Repository:
     def issue_or_pull_request(
         self, info: strawberry.Info, number: int
     ) -> IssueOrPullRequest | None:
-        """gh's IssueByNumber query uses this field. We don't have PRs yet, so
-        it always resolves to an Issue if one exists at that number."""
+        """gh's IssueByNumber query uses this field — number-based lookup that
+        resolves to whichever item type matches. PRs win over issues when both
+        exist (which can't actually happen in real GitHub repos because the
+        numbering is shared, but we check both namespaces deterministically)."""
+        settings: Settings = info.context["settings"]
+        bare = _open_bare_or_none(settings, self.owner.login, self.name)
+        if bare is None:
+            return None
+        viewer = settings.viewer_login
+        role = _viewer_role(bare)
+        pr = get_synced_pr(bare, number)
+        if pr is not None:
+            return _to_gql_pr(pr, self.owner.login, self.name, viewer, role)
         return self.issue(info, number)
+
+    @strawberry.field
+    def pull_request(self, info: strawberry.Info, number: int) -> PullRequest | None:
+        """Single-PR lookup by number. Returns None if not found."""
+        settings: Settings = info.context["settings"]
+        bare = _open_bare_or_none(settings, self.owner.login, self.name)
+        if bare is None:
+            return None
+        stored = get_synced_pr(bare, number)
+        if stored is None:
+            return None
+        return _to_gql_pr(
+            stored, self.owner.login, self.name, settings.viewer_login, _viewer_role(bare)
+        )
+
+    @strawberry.field
+    def pull_requests(
+        self,
+        info: strawberry.Info,
+        first: int | None = None,
+        after: str | None = None,
+        states: list[IssueState] | None = None,
+    ) -> PullRequestConnection:
+        """List of synced PRs. State filter accepts gh's IssueState (OPEN/CLOSED);
+        merged PRs are filtered as CLOSED for wire compatibility."""
+        _ = after
+        settings: Settings = info.context["settings"]
+        bare = _open_bare_or_none(settings, self.owner.login, self.name)
+        all_stored = list_synced_prs(bare) if bare is not None else []
+
+        if states:
+            wanted = {s.name for s in states}
+
+            def _match(pr: StoragePr) -> bool:
+                # GraphQL wire IssueState only has OPEN/CLOSED, so a "CLOSED"
+                # filter must include MERGED PRs (they're closed-and-merged).
+                if pr.state is PrState.OPEN:
+                    return "OPEN" in wanted
+                return "CLOSED" in wanted
+
+            all_stored = [p for p in all_stored if _match(p)]
+
+        total = len(all_stored)
+        limit = first if first is not None else total
+        page = all_stored[:limit]
+        viewer = settings.viewer_login
+        role = _viewer_role(bare)
+        return PullRequestConnection(
+            nodes=[_to_gql_pr(p, self.owner.login, self.name, viewer, role) for p in page],
+            page_info=PageInfo(has_next_page=limit < total, end_cursor=None),
+            total_count=total,
+        )
 
 
 # ---- Mutation input/payload --------------------------------------------- #
