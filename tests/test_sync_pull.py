@@ -18,10 +18,17 @@ from gitcabin.storage.issues import (
     import_issue,
     list_synced_comments,
 )
+from gitcabin.storage.prs import (
+    PrState,
+    get_synced_pr,
+    import_pr,
+    list_synced_pr_comments,
+    list_synced_prs,
+)
 from gitcabin.storage.repo import BareRepo
 from gitcabin.sync.config import SyncConfig
 from gitcabin.sync.gh import GhClient
-from gitcabin.sync.pull import pull_comments, pull_issues
+from gitcabin.sync.pull import pull_comments, pull_issues, pull_prs
 
 
 @pytest.fixture
@@ -482,3 +489,169 @@ def test_pull_comments_uses_paginate_flag(repo: BareRepo, config: SyncConfig) ->
     pull_comments(repo, GhClient(runner=runner), config)
 
     assert "--paginate" in captured[0]
+
+
+# ---- pull_prs ----------------------------------------------------------- #
+
+
+def _pr_payload(
+    number: int,
+    title: str,
+    login: str,
+    gh_id: int,
+    *,
+    state: str = "open",
+    merged: bool = False,
+    draft: bool = False,
+    head_ref: str = "feature",
+    base_ref: str = "main",
+) -> dict[str, object]:
+    return {
+        "number": number,
+        "id": gh_id,
+        "title": title,
+        "body": "",
+        "user": {"login": login},
+        "state": state,
+        "merged": merged,
+        "merged_at": "2025-02-01T00:00:00Z" if merged else None,
+        "draft": draft,
+        "head": {"label": f"{login}:{head_ref}", "ref": head_ref},
+        "base": {"ref": base_ref},
+        "created_at": "2025-01-01T00:00:00Z",
+        "pull_request": {"url": "x"},
+    }
+
+
+def test_pull_prs_imports_each_pr(repo: BareRepo, config: SyncConfig) -> None:
+    payload = [
+        _pr_payload(1, "first", "alice", 11),
+        _pr_payload(7, "merged one", "bob", 77, state="closed", merged=True),
+        _pr_payload(8, "draft", "alice", 88, draft=True),
+    ]
+
+    def runner(argv: list[str]) -> str:
+        assert "repos/octo/hello/pulls" in argv[-1]
+        return json.dumps(payload)
+
+    pulled = pull_prs(repo, GhClient(runner=runner), config)
+
+    assert {p.number for p in pulled} == {1, 7, 8}
+    one = get_synced_pr(repo, 1)
+    seven = get_synced_pr(repo, 7)
+    eight = get_synced_pr(repo, 8)
+    assert one is not None and seven is not None and eight is not None
+    assert one.state is PrState.OPEN
+    assert seven.state is PrState.MERGED
+    assert eight.is_draft is True
+    assert one.head_ref == "alice:feature"
+    assert one.base_ref == "main"
+
+
+def test_pull_prs_uses_paginate_and_state_all(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    captured: list[list[str]] = []
+
+    def runner(argv: list[str]) -> str:
+        captured.append(argv)
+        return "[]"
+
+    pull_prs(repo, GhClient(runner=runner), config)
+
+    assert "--paginate" in captured[0]
+    assert "state=all" in captured[0][-1]
+
+
+def test_pull_prs_handles_null_user_as_ghost(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    payload = [
+        {
+            "number": 5,
+            "id": 55,
+            "title": "ghost pr",
+            "body": "",
+            "user": None,
+            "state": "closed",
+            "merged": False,
+            "draft": False,
+            "head": {"ref": "x"},
+            "base": {"ref": "main"},
+            "created_at": "2025-01-01T00:00:00Z",
+        }
+    ]
+
+    def runner(argv: list[str]) -> str:
+        return json.dumps(payload)
+
+    pull_prs(repo, GhClient(runner=runner), config)
+
+    pr = get_synced_pr(repo, 5)
+    assert pr is not None
+    assert pr.author == "ghost"
+    assert pr.state is PrState.CLOSED
+
+
+# ---- pull_comments dispatches to PR or issue --------------------------- #
+
+
+def test_pull_comments_dispatches_to_pr_when_pr_ref_exists(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    # Pre-import a PR at number 5 — comment with issue_url ending in /issues/5
+    # should land in the PR namespace, not the issue namespace.
+    import_pr(
+        repo,
+        number=5,
+        title="t",
+        body="",
+        author="alice",
+        state=PrState.OPEN,
+        head_ref="x",
+        base_ref="main",
+        is_draft=False,
+        gh_pr_id=55,
+    )
+
+    payload = [
+        {
+            "id": 100,
+            "issue_url": "https://api.github.com/repos/octo/hello/issues/5",
+            "body": "comment on a pr",
+            "user": {"login": "bob"},
+            "created_at": "2025-01-02T00:00:00Z",
+        }
+    ]
+
+    def runner(argv: list[str]) -> str:
+        return json.dumps(payload)
+
+    pull_comments(repo, GhClient(runner=runner), config)
+
+    pr_comments = list_synced_pr_comments(repo, 5)
+    assert [c.body for c in pr_comments] == ["comment on a pr"]
+    # Issue side should be empty.
+    assert list_synced_comments(repo, 5) == []
+
+
+def test_pull_comments_skips_when_neither_issue_nor_pr_ref_exists(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    # No issue 7, no PR 7 — comment should be silently dropped.
+    payload = [
+        {
+            "id": 100,
+            "issue_url": "https://api.github.com/repos/octo/hello/issues/7",
+            "body": "orphaned",
+            "user": {"login": "x"},
+            "created_at": "2025-01-02T00:00:00Z",
+        }
+    ]
+
+    def runner(argv: list[str]) -> str:
+        return json.dumps(payload)
+
+    pulled = pull_comments(repo, GhClient(runner=runner), config)
+    assert pulled == []
+    assert list_synced_prs(repo) == []

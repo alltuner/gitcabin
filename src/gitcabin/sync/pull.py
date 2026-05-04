@@ -1,16 +1,25 @@
-# ABOUTME: Inbound sync — pulls issues and their comments from GitHub.
-# ABOUTME: Issues land at refs/issues/<gh_number>; comments at the same ref's comments/ subtree.
+# ABOUTME: Inbound sync — pulls issues, PRs, and their comments from GitHub.
+# ABOUTME: Issues at refs/issues/<n>, PRs at refs/prs/<n>; comments dispatch to the right ref.
 
 from __future__ import annotations
 
 from typing import Any
 
 from gitcabin.storage.issues import (
+    ISSUE_REF_PREFIX,
     Comment,
     Issue,
     IssueState,
+    _load_commit,
     import_comment,
     import_issue,
+)
+from gitcabin.storage.prs import (
+    PR_REF_PREFIX,
+    Pr,
+    PrState,
+    import_pr,
+    import_pr_comment,
 )
 from gitcabin.storage.repo import BareRepo
 from gitcabin.sync.config import SyncConfig
@@ -93,10 +102,10 @@ def pull_comments(repo: BareRepo, client: GhClient, config: SyncConfig) -> list[
     for item in payload:
         if not isinstance(item, dict):
             continue
-        issue_number = _issue_number_from_url(str(item.get("issue_url", "")))
-        if issue_number is None:
+        number = _issue_number_from_url(str(item.get("issue_url", "")))
+        if number is None:
             continue
-        result = _import_one_comment(repo, issue_number, item)
+        result = _import_one_comment(repo, number, item)
         if result is not None:
             out.append(result)
     return out
@@ -120,19 +129,103 @@ def _issue_number_from_url(url: str) -> int | None:
 
 
 def _import_one_comment(
-    repo: BareRepo, issue_number: int, gh_comment: dict[str, Any]
+    repo: BareRepo, number: int, gh_comment: dict[str, Any]
 ) -> Comment | None:
-    """Translate a GitHub comment payload into a stored Comment."""
+    """Translate a GitHub comment payload and dispatch it to issue or PR storage.
+
+    GitHub's /issues/comments endpoint returns comments for both issues and
+    PRs (PRs are issues with extra fields, in GitHub's data model). We
+    decide where to store the comment by checking which ref already exists:
+    refs/issues/<n> means it's an issue comment, refs/prs/<n> means PR.
+    Numbers are unique across both within a repo, so there's never both.
+    """
     user = gh_comment.get("user")
     if isinstance(user, dict) and "login" in user:
         author = str(user["login"])
     else:
         author = "ghost"
-    return import_comment(
+    body = str(gh_comment.get("body") or "")
+    gh_comment_id = int(gh_comment["id"])
+    authored_at = gh_comment.get("created_at")
+
+    if _load_commit(repo, f"{PR_REF_PREFIX}/{number}") is not None:
+        return import_pr_comment(
+            repo,
+            pr_number=number,
+            body=body,
+            author=author,
+            gh_comment_id=gh_comment_id,
+            authored_at=authored_at,
+        )
+    if _load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
+        return import_comment(
+            repo,
+            issue_number=number,
+            body=body,
+            author=author,
+            gh_comment_id=gh_comment_id,
+            authored_at=authored_at,
+        )
+    return None
+
+
+def pull_prs(repo: BareRepo, client: GhClient, config: SyncConfig) -> list[Pr]:
+    """Pull every pull request from `config.gh_owner/config.gh_name` into refs/prs/<n>.
+
+    Each PR is written with provenance SYNCED_FROM_GITHUB. Re-pulls replace
+    pr.json but preserve the comments/ subtree (same shape as pull_issues).
+    State mapping: GitHub's `merged` boolean takes precedence over `state` —
+    a closed-and-merged PR surfaces as MERGED, distinct from CLOSED.
+
+    Returns the list of imported Prs in upstream order.
+    """
+    path = f"repos/{config.gh_owner}/{config.gh_name}/pulls?state=all&per_page=100"
+    payload = client.get_json(path, paginate=True)
+    if not isinstance(payload, list):
+        raise RuntimeError(
+            f"unexpected /pulls response: {type(payload).__name__} (wanted list)"
+        )
+
+    out: list[Pr] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        out.append(_import_one_pr(repo, item))
+    return out
+
+
+def _import_one_pr(repo: BareRepo, gh_pr: dict[str, Any]) -> Pr:
+    """Translate a GitHub PR payload into a stored Pr."""
+    state_str = str(gh_pr.get("state", "open")).lower()
+    merged = bool(gh_pr.get("merged") or gh_pr.get("merged_at"))
+    if merged:
+        state = PrState.MERGED
+    elif state_str == "closed":
+        state = PrState.CLOSED
+    else:
+        state = PrState.OPEN
+
+    user = gh_pr.get("user")
+    if isinstance(user, dict) and "login" in user:
+        author = str(user["login"])
+    else:
+        author = "ghost"
+
+    head = gh_pr.get("head") or {}
+    base = gh_pr.get("base") or {}
+    head_ref = str(head.get("label") or head.get("ref") or "")
+    base_ref = str(base.get("ref") or "")
+
+    return import_pr(
         repo,
-        issue_number=issue_number,
-        body=str(gh_comment.get("body") or ""),
+        number=int(gh_pr["number"]),
+        title=str(gh_pr.get("title") or ""),
+        body=str(gh_pr.get("body") or ""),
         author=author,
-        gh_comment_id=int(gh_comment["id"]),
-        authored_at=gh_comment.get("created_at"),
+        state=state,
+        head_ref=head_ref,
+        base_ref=base_ref,
+        is_draft=bool(gh_pr.get("draft", False)),
+        gh_pr_id=int(gh_pr["id"]),
+        authored_at=gh_pr.get("created_at"),
     )
