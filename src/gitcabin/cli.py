@@ -115,9 +115,7 @@ def _cmd_link(
     if role is None:
         try:
             payload = client.get_json(f"repos/{gh_owner}/{gh_name}")
-            if isinstance(payload, dict):
-                role = str(payload.get("viewer_permission") or payload.get("permission") or "")
-            role = role or "READ"
+            role = _role_from_repo_payload(payload) or "READ"
         except Exception:
             # Fetching the role is a nice-to-have; treat failure as READ so
             # the user retains the option to escalate manually via --role on
@@ -189,6 +187,30 @@ def _split_slash(s: str, flag: str) -> tuple[str | None, str | None]:
         print(f"{flag} expects <owner>/<name>; got {s!r}", file=sys.stderr)
         return (None, None)
     return parts[0], parts[1]
+
+
+def _role_from_repo_payload(payload: object) -> str | None:
+    """Map a `/repos/<o>/<r>` REST response to a RepoRole string.
+
+    The REST endpoint returns a `permissions` object with boolean flags rather
+    than the GraphQL viewerPermission enum, so we walk the booleans from
+    most-privileged to least to find the highest role the viewer holds.
+    """
+    if not isinstance(payload, dict):
+        return None
+    perms = payload.get("permissions")
+    if not isinstance(perms, dict):
+        return None
+    for flag, role in (
+        ("admin", "ADMIN"),
+        ("maintain", "MAINTAIN"),
+        ("push", "WRITE"),
+        ("triage", "TRIAGE"),
+        ("pull", "READ"),
+    ):
+        if perms.get(flag):
+            return role
+    return None
 
 
 def _open_local(settings: Settings, local: str) -> BareRepo | None:
