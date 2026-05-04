@@ -211,7 +211,9 @@ def close_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
     an already-closed issue is a no-op (no commit appended) so this is safe
     to call repeatedly without polluting the log.
     """
-    return _set_issue_state(repo, number, IssueState.CLOSED, actor=actor, verb="close")
+    return _set_issue_state(
+        repo, _ref_for(number), number, IssueState.CLOSED, actor=actor, verb="close"
+    )
 
 
 def reopen_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
@@ -220,11 +222,47 @@ def reopen_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
     Symmetric counterpart to close_issue. Reopening an already-open issue is
     a no-op (no commit appended) so the UI's reopen button is safe to spam.
     """
-    return _set_issue_state(repo, number, IssueState.OPEN, actor=actor, verb="reopen")
+    return _set_issue_state(
+        repo, _ref_for(number), number, IssueState.OPEN, actor=actor, verb="reopen"
+    )
+
+
+def close_any_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
+    """Close an issue in either namespace, preferring the synced ref if both exist.
+
+    Resolves the same way as get_any_issue: synced wins on collision. The
+    state flip lands locally only — pushing the closed state back to GitHub
+    is a sync operation handled separately.
+    """
+    if _load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
+        return _set_issue_state(
+            repo,
+            f"{ISSUE_REF_PREFIX}/{number}",
+            number,
+            IssueState.CLOSED,
+            actor=actor,
+            verb="close",
+        )
+    return close_issue(repo, number=number, actor=actor)
+
+
+def reopen_any_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
+    """Reopen an issue in either namespace, preferring the synced ref if both exist."""
+    if _load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
+        return _set_issue_state(
+            repo,
+            f"{ISSUE_REF_PREFIX}/{number}",
+            number,
+            IssueState.OPEN,
+            actor=actor,
+            verb="reopen",
+        )
+    return reopen_issue(repo, number=number, actor=actor)
 
 
 def _set_issue_state(
     repo: BareRepo,
+    ref: str,
     number: int,
     new_state: IssueState,
     *,
@@ -234,7 +272,6 @@ def _set_issue_state(
     """Shared body for close/reopen — append a state-flip commit if the
     current state differs, otherwise no-op.
     """
-    ref = _ref_for(number)
     current = _load_commit(repo, ref)
     if current is None:
         return None

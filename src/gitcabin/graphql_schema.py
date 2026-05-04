@@ -12,6 +12,13 @@ import strawberry
 
 from gitcabin import ids
 from gitcabin.config import Settings
+from gitcabin.permissions import (
+    RepoRole,
+    can_change_issue_state,
+    can_delete_comment,
+    can_edit_comment,
+    can_edit_issue,
+)
 from gitcabin.storage.issues import (
     Comment as StorageComment,
 )
@@ -22,15 +29,16 @@ from gitcabin.storage.issues import (
     add_comment as storage_add_comment,
 )
 from gitcabin.storage.issues import (
-    close_issue as storage_close_issue,
+    close_any_issue as storage_close_issue,
 )
 from gitcabin.storage.issues import (
     create_issue,
-    get_issue,
-    list_comments,
-    list_issues,
+    get_any_issue,
+    list_all_issues,
+    list_any_comments,
 )
 from gitcabin.storage.repo import BareRepo
+from gitcabin.sync.config import read_config as read_sync_config
 
 # ---- Enums --------------------------------------------------------------- #
 
@@ -199,6 +207,8 @@ class IssueComment:
     minimized_reason: str | None
     url: str
     viewer_did_author: bool
+    viewer_can_update: bool
+    viewer_can_delete: bool
 
     @strawberry.field
     def reaction_groups(self) -> list[ReactionGroup]:
@@ -328,7 +338,30 @@ def _user_for(login: str) -> User:
     return User(id=ids.user_id(login), login=login, name=None, database_id=None)
 
 
-def _to_gql_issue(stored: StorageIssue, owner: str, name: str) -> Issue:
+def _viewer_role(bare: BareRepo | None) -> RepoRole:
+    """Resolve the viewer's role on the linked GitHub repo (or ADMIN if local-only).
+
+    Local-only repos that have never been linked to GitHub are implicitly
+    ADMIN — the user owns the bare repo on their disk. Linked repos cache
+    the actual role in SyncConfig.viewer_repo_role at sync time.
+    """
+    if bare is None:
+        return RepoRole.ADMIN
+    config = read_sync_config(bare)
+    if config is None or config.viewer_repo_role is None:
+        return RepoRole.ADMIN
+    try:
+        return RepoRole(config.viewer_repo_role)
+    except ValueError:
+        # Forward-compat: if upstream introduces a new role we don't know,
+        # default to the safest interpretation (read-only). User won't get
+        # write affordances they're not entitled to.
+        return RepoRole.READ
+
+
+def _to_gql_issue(
+    stored: StorageIssue, owner: str, name: str, viewer: str, role: RepoRole
+) -> Issue:
     return Issue(
         id=ids.issue_id(owner, name, stored.number),
         number=stored.number,
@@ -340,25 +373,33 @@ def _to_gql_issue(stored: StorageIssue, owner: str, name: str) -> Issue:
         created_at=stored.created_at,
         updated_at=stored.updated_at,
         state_reason=None,
+        viewer_did_author=stored.author == viewer,
+        viewer_can_update=can_edit_issue(stored, viewer),
+        viewer_can_close_or_reopen=can_change_issue_state(stored, viewer, role),
     )
 
 
 def _to_gql_comment(
-    stored: StorageComment, owner: str, name: str, issue_number: int
+    stored: StorageComment, owner: str, name: str, issue_number: int,
+    viewer: str, role: RepoRole,
 ) -> IssueComment:
+    is_author = stored.author == viewer
     return IssueComment(
         id=ids.comment_id(owner, name, issue_number, stored.number),
         author=_user_for(stored.author),
-        # OWNER means the commenter has admin rights — true for any local
-        # actor on a self-hosted clone, same logic as viewerPermission=ADMIN.
-        author_association="OWNER",
+        # OWNER == "viewer authored this comment", per GitHub's enum semantics.
+        # Map to OWNER for the viewer's own comments and NONE otherwise so gh
+        # renders a sensible label.
+        author_association="OWNER" if is_author else "NONE",
         body=stored.body,
         created_at=stored.created_at,
         includes_created_edit=False,
         is_minimized=False,
         minimized_reason=None,
         url=_comment_url(owner, name, issue_number, stored.number),
-        viewer_did_author=False,
+        viewer_did_author=is_author,
+        viewer_can_update=can_edit_comment(stored, viewer),
+        viewer_can_delete=can_delete_comment(stored, viewer, role),
     )
 
 
@@ -383,6 +424,9 @@ class Issue:
     created_at: str
     updated_at: str
     state_reason: str | None = None
+    viewer_did_author: bool = False
+    viewer_can_update: bool = False
+    viewer_can_close_or_reopen: bool = False
 
     @strawberry.field
     def labels(self, first: int | None = None, after: str | None = None) -> LabelConnection:
@@ -415,8 +459,13 @@ class Issue:
         bare = _open_bare_or_none(settings, coords.owner, coords.name)
         if bare is None:
             return IssueCommentConnection(nodes=[], total_count=0, page_info=empty_page)
-        stored = list_comments(bare, coords.number)
-        nodes = [_to_gql_comment(c, coords.owner, coords.name, coords.number) for c in stored]
+        stored = list_any_comments(bare, coords.number)
+        viewer = settings.viewer_login
+        role = _viewer_role(bare)
+        nodes = [
+            _to_gql_comment(c, coords.owner, coords.name, coords.number, viewer, role)
+            for c in stored
+        ]
         if first is not None:
             nodes = nodes[:first]
         elif last is not None:
@@ -616,7 +665,7 @@ class Repository:
         _ = (after, order_by, filter_by)  # reserved
         settings: Settings = info.context["settings"]
         bare = _open_bare_or_none(settings, self.owner.login, self.name)
-        all_stored = list_issues(bare) if bare is not None else []
+        all_stored = list_all_issues(bare) if bare is not None else []
 
         if states:
             wanted = {s.name for s in states}
@@ -626,8 +675,10 @@ class Repository:
         limit = first if first is not None else total
         page = all_stored[:limit]
 
+        viewer = settings.viewer_login
+        role = _viewer_role(bare)
         return IssueConnection(
-            nodes=[_to_gql_issue(i, self.owner.login, self.name) for i in page],
+            nodes=[_to_gql_issue(i, self.owner.login, self.name, viewer, role) for i in page],
             page_info=PageInfo(has_next_page=limit < total, end_cursor=None),
             total_count=total,
         )
@@ -639,10 +690,12 @@ class Repository:
         bare = _open_bare_or_none(settings, self.owner.login, self.name)
         if bare is None:
             return None
-        stored = get_issue(bare, number)
+        stored = get_any_issue(bare, number)
         if stored is None:
             return None
-        return _to_gql_issue(stored, self.owner.login, self.name)
+        return _to_gql_issue(
+            stored, self.owner.login, self.name, settings.viewer_login, _viewer_role(bare)
+        )
 
     @strawberry.field
     def issue_or_pull_request(
@@ -914,7 +967,11 @@ class Mutation:
             author=settings.viewer_login,
         )
 
-        return CreateIssuePayload(issue=_to_gql_issue(stored, coords.owner, coords.name))
+        return CreateIssuePayload(
+            issue=_to_gql_issue(
+                stored, coords.owner, coords.name, settings.viewer_login, _viewer_role(repo)
+            )
+        )
 
     @strawberry.mutation
     def close_issue(self, info: strawberry.Info, input: CloseIssueInput) -> CloseIssuePayload:
@@ -925,19 +982,36 @@ class Mutation:
             raise ValueError(f"Unknown issueId: {input.issue_id!r}")
 
         bare = _open_bare_or_none(settings, coords.owner, coords.name)
+        if bare is None:
+            raise ValueError(f"Unknown issueId: {input.issue_id!r}")
+
+        # Permission check before mutating: a viewer who isn't the author and
+        # doesn't have a privileged role on the repo cannot close someone
+        # else's issue. For local-only repos the role defaults to ADMIN, so
+        # this is effectively a no-op there. For synced repos it's the
+        # security boundary protecting upstream-authored issues.
+        existing = get_any_issue(bare, coords.number)
+        if existing is None:
+            raise ValueError(f"Unknown issueId: {input.issue_id!r}")
+        viewer = settings.viewer_login
+        role = _viewer_role(bare)
+        if not can_change_issue_state(existing, viewer, role):
+            raise PermissionError(
+                f"viewer {viewer!r} cannot change state of issue authored by "
+                f"{existing.author!r}"
+            )
+
         # stateReason / duplicateIssueId are accepted-and-ignored for now —
         # the storage doc only models OPEN/CLOSED, and gh treats the close as
         # successful as long as the mutation returns the issue. A follow-up
         # can extend IssueDocument to persist the reason.
-        stored = (
-            storage_close_issue(bare, number=coords.number, actor=settings.viewer_login)
-            if bare is not None
-            else None
-        )
+        stored = storage_close_issue(bare, number=coords.number, actor=viewer)
         if stored is None:
             raise ValueError(f"Unknown issueId: {input.issue_id!r}")
 
-        return CloseIssuePayload(issue=_to_gql_issue(stored, coords.owner, coords.name))
+        return CloseIssuePayload(
+            issue=_to_gql_issue(stored, coords.owner, coords.name, viewer, role)
+        )
 
     @strawberry.mutation
     def add_comment(self, info: strawberry.Info, input: AddCommentInput) -> AddCommentPayload:
@@ -965,7 +1039,14 @@ class Mutation:
 
         return AddCommentPayload(
             comment_edge=IssueCommentEdge(
-                node=_to_gql_comment(stored, coords.owner, coords.name, coords.number),
+                node=_to_gql_comment(
+                    stored,
+                    coords.owner,
+                    coords.name,
+                    coords.number,
+                    settings.viewer_login,
+                    _viewer_role(bare),
+                ),
             ),
         )
 
