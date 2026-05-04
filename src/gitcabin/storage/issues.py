@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
@@ -19,6 +20,11 @@ from gitcabin.storage.repo import BareRepo
 # refs/issues/<n>. The number lives only in the ref name (not in any file
 # inside the tree) so renumbering is a single `git update-ref`.
 LOCAL_ISSUE_REF_PREFIX = "refs/issues/local"
+
+# GitHub-authoritative issues — pulled from upstream — live under refs/issues/<n>
+# directly. The number IS GitHub's issue number; sync code writes here, not under
+# .../local. The two namespaces never collide.
+ISSUE_REF_PREFIX = "refs/issues"
 
 
 class IssueState(StrEnum):
@@ -497,13 +503,16 @@ def _commit_with_identity(
     author_name: str,
     author_email: str,
     parents: tuple[str, ...] = (),
+    authored_at: str | None = None,
 ) -> str:
     """commit-tree with an explicit author/committer identity.
 
     Setting identity via -c overrides any process-level git config and works
     in containers where no git config is provisioned. `parents` chains this
     commit onto prior events on the same ref — empty for a create, one parent
-    for every later append.
+    for every later append. `authored_at` (ISO-8601 / RFC-3339) sets the
+    commit's author and committer dates so synced items can carry the
+    upstream timeline; default None lets git stamp the current time.
     """
     args = [
         "-c",
@@ -516,11 +525,88 @@ def _commit_with_identity(
     for parent in parents:
         args += ["-p", parent]
     args += ["-m", message]
+    env: dict[str, str] | None = None
+    if authored_at is not None:
+        env = {**os.environ, "GIT_AUTHOR_DATE": authored_at, "GIT_COMMITTER_DATE": authored_at}
     result = subprocess.run(
         ["git", *args],
         cwd=repo.path,
         capture_output=True,
         text=True,
         check=True,
+        env=env,
     )
     return result.stdout.strip()
+
+
+# ---- sync inbound (import) --------------------------------------------- #
+
+
+def import_issue(
+    repo: BareRepo,
+    *,
+    number: int,
+    title: str,
+    body: str,
+    author: str,
+    state: IssueState,
+    gh_issue_id: int,
+    provenance: Provenance = Provenance.SYNCED_FROM_GITHUB,
+    authored_at: str | None = None,
+) -> Issue:
+    """Persist an issue with an externally-assigned number (e.g. from GitHub).
+
+    Bypasses the local Counter — `number` is GitHub's issue number, used as-is.
+    Writes to refs/issues/<number>, distinct from refs/issues/local/<n> where
+    locally-numbered drafts live. If the ref already exists (re-pull), this
+    replaces issue.json but preserves any other tree entries (notably the
+    comments/ subtree the comment importer adds in a later commit).
+
+    `authored_at` controls the commit's author + committer dates so the
+    on-disk log matches the upstream timeline. Pass GitHub's `created_at`.
+    """
+    doc = IssueDocument(
+        title=title,
+        body=body,
+        author=author,
+        state=state,
+        provenance=provenance,
+        gh_issue_id=gh_issue_id,
+    )
+    payload = doc.model_dump_json(indent=2)
+    blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
+
+    ref = f"{ISSUE_REF_PREFIX}/{number}"
+    parent = _load_commit(repo, ref)
+
+    new_entry = _TreeEntry(mode="100644", type="blob", sha=blob_sha, name="issue.json")
+    if parent is None:
+        new_entries: list[_TreeEntry] = [new_entry]
+    else:
+        # Re-import: replace issue.json, keep everything else (e.g. comments/).
+        existing = _entries_of(parent.tree)
+        new_entries = [new_entry if e.name == "issue.json" else e for e in existing]
+        if not any(e.name == "issue.json" for e in new_entries):
+            new_entries.append(new_entry)
+    tree_sha = _write_tree(repo, new_entries)
+
+    parents: tuple[str, ...] = (parent.hexsha,) if parent is not None else ()
+    commit_sha = _commit_with_identity(
+        repo,
+        tree_sha,
+        message=f"sync: {title}",
+        author_name=author,
+        author_email=f"{author}@gitcabin.local",
+        parents=parents,
+        authored_at=authored_at,
+    )
+    repo.run_git("update-ref", ref, commit_sha)
+    return _read_issue_at(repo.repo.commit(ref), number)
+
+
+def get_synced_issue(repo: BareRepo, number: int) -> Issue | None:
+    """Return the synced issue at refs/issues/<number>, or None if absent."""
+    commit = _load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}")
+    if commit is None:
+        return None
+    return _read_issue_at(commit, number)
