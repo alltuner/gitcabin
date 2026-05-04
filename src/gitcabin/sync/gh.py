@@ -5,15 +5,22 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Callable
 from dataclasses import dataclass
-
-# A runner takes a list of args (everything after the leading "gh") and returns
-# stdout. Real callers shell out; tests substitute a deterministic stand-in.
-type GhRunner = Callable[[list[str]], str]
+from typing import Protocol
 
 
-def _default_runner(argv: list[str]) -> str:
+class GhRunner(Protocol):
+    """Callable that runs `gh <argv>` and returns stdout (text).
+
+    Real implementations shell out via subprocess; tests substitute a
+    deterministic stand-in. `stdin` is forwarded for endpoints that accept
+    a request body via `gh api --input -`.
+    """
+
+    def __call__(self, argv: list[str], *, stdin: str | None = None) -> str: ...
+
+
+def _default_runner(argv: list[str], *, stdin: str | None = None) -> str:
     """Shell out to `gh` with the given args and return stdout (text).
 
     Raises subprocess.CalledProcessError on non-zero exit. Higher layers decide
@@ -22,6 +29,7 @@ def _default_runner(argv: list[str]) -> str:
     """
     result = subprocess.run(
         ["gh", *argv],
+        input=stdin,
         capture_output=True,
         text=True,
         check=True,
@@ -52,6 +60,27 @@ class GhClient:
             argv.append("--paginate")
         argv.append(path)
         return json.loads(self.runner(argv))
+
+    def post_json(self, path: str, body: dict[str, object]) -> object:
+        """POST `body` (encoded as JSON) to `path` and decode the response.
+
+        Goes through `gh api -X POST --input -`, which reads the request body
+        from stdin — robust against arbitrary-content fields like issue bodies
+        with newlines, quotes, and unicode that `-f field=value` can mangle.
+        """
+        argv = ["api", "--hostname", self.host, "-X", "POST", "--input", "-", path]
+        raw = self.runner(argv, stdin=json.dumps(body))
+        return json.loads(raw)
+
+    def patch_json(self, path: str, body: dict[str, object]) -> object:
+        """PATCH `body` (encoded as JSON) to `path` and decode the response.
+
+        Same shape as post_json but with `-X PATCH`. Used to flip an issue's
+        state (open ↔ closed) or update other mutable fields on existing items.
+        """
+        argv = ["api", "--hostname", self.host, "-X", "PATCH", "--input", "-", path]
+        raw = self.runner(argv, stdin=json.dumps(body))
+        return json.loads(raw)
 
 
 def gh_login(client: GhClient) -> str:
