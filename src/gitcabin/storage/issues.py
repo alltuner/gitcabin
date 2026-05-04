@@ -260,6 +260,228 @@ def reopen_any_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None
     return reopen_issue(repo, number=number, actor=actor)
 
 
+def update_any_issue(
+    repo: BareRepo, *, number: int, title: str, body: str, actor: str
+) -> Issue | None:
+    """Update title and body on an issue in either namespace.
+
+    Returns the refreshed Issue, or None if the issue doesn't exist.
+    No-op (no commit appended) if neither field changed.
+    """
+    synced_ref = f"{ISSUE_REF_PREFIX}/{number}"
+    local_ref = _ref_for(number)
+    if _load_commit(repo, synced_ref) is not None:
+        ref = synced_ref
+    elif _load_commit(repo, local_ref) is not None:
+        ref = local_ref
+    else:
+        return None
+
+    current = _load_commit(repo, ref)
+    if current is None:
+        return None
+    doc = IssueDocument.model_validate_json(_read_blob(current.tree["issue.json"]))
+    if doc.title == title and doc.body == body:
+        return _read_issue_at(current, number)
+
+    new_doc = doc.model_copy(update={"title": title, "body": body})
+    new_payload = new_doc.model_dump_json(indent=2)
+    new_blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=new_payload + "\n").strip()
+
+    new_entries = [
+        _TreeEntry(mode="100644", type="blob", sha=new_blob_sha, name="issue.json")
+        if e.name == "issue.json"
+        else e
+        for e in _entries_of(current.tree)
+    ]
+    new_tree_sha = _write_tree(repo, new_entries)
+    commit_sha = _commit_with_identity(
+        repo,
+        new_tree_sha,
+        message=f"edit: {title}",
+        author_name=actor,
+        author_email=f"{actor}@gitcabin.local",
+        parents=(current.hexsha,),
+    )
+    repo.run_git("update-ref", ref, commit_sha, current.hexsha)
+    return _read_issue_at(repo.repo.commit(ref), number)
+
+
+def update_any_comment(
+    repo: BareRepo,
+    *,
+    issue_number: int,
+    comment_number: int,
+    body: str,
+    actor: str,
+) -> Comment | None:
+    """Replace `body` on a comment under either namespace.
+
+    `comment_number` matches the int the Comment dataclass exposes — for local
+    comments that's the sequential 1-based index; for synced it's the GitHub
+    comment id. The on-disk filename is `<comment_number>.json` in both cases.
+
+    Returns the refreshed Comment, or None if the issue or comment is absent.
+    """
+    ref = _resolve_issue_ref(repo, issue_number)
+    if ref is None:
+        return None
+    current = _load_commit(repo, ref)
+    if current is None:
+        return None
+    subtree = _subtree_or_none(current.tree, "comments")
+    if subtree is None:
+        return None
+
+    target = _find_comment_entry(subtree, comment_number)
+    if target is None:
+        return None
+    name = target.name
+
+    doc = CommentDocument.model_validate_json(_read_blob(target))
+    if doc.body == body:
+        # No change; surface the current state without a no-op commit.
+        return _comment_from_entry(repo, ref, name, doc)
+
+    new_doc = doc.model_copy(update={"body": body})
+    new_payload = new_doc.model_dump_json(indent=2)
+    new_blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=new_payload + "\n").strip()
+
+    new_subtree_entries = [
+        _TreeEntry(mode="100644", type="blob", sha=new_blob_sha, name=name)
+        if e.name == name
+        else _TreeEntry(mode=f"{e.mode:06o}", type=e.type, sha=e.hexsha, name=e.name)
+        for e in subtree
+    ]
+    new_subtree_sha = _write_tree(repo, new_subtree_entries)
+    new_top = _splice_comments_into_top(_entries_of(current.tree), new_subtree_sha)
+    new_top_sha = _write_tree(repo, new_top)
+
+    commit_sha = _commit_with_identity(
+        repo,
+        new_top_sha,
+        message=f"edit comment by {actor}",
+        author_name=actor,
+        author_email=f"{actor}@gitcabin.local",
+        parents=(current.hexsha,),
+    )
+    repo.run_git("update-ref", ref, commit_sha, current.hexsha)
+    return _comment_from_entry(repo, ref, name, new_doc)
+
+
+def delete_any_comment(
+    repo: BareRepo, *, issue_number: int, comment_number: int, actor: str
+) -> bool:
+    """Delete a comment from an issue in either namespace.
+
+    Returns True on success, False if the issue or comment doesn't exist.
+    The deleted blob remains reachable via git history; only the current
+    tree drops it.
+    """
+    ref = _resolve_issue_ref(repo, issue_number)
+    if ref is None:
+        return False
+    current = _load_commit(repo, ref)
+    if current is None:
+        return False
+    subtree = _subtree_or_none(current.tree, "comments")
+    if subtree is None:
+        return False
+
+    target = _find_comment_entry(subtree, comment_number)
+    if target is None:
+        return False
+    name = target.name
+
+    new_subtree_entries = [
+        _TreeEntry(mode=f"{e.mode:06o}", type=e.type, sha=e.hexsha, name=e.name)
+        for e in subtree
+        if e.name != name
+    ]
+    if new_subtree_entries:
+        new_subtree_sha = _write_tree(repo, new_subtree_entries)
+        new_top = _splice_comments_into_top(_entries_of(current.tree), new_subtree_sha)
+    else:
+        # Subtree empties out — drop the comments/ entry entirely so the tree
+        # doesn't carry an empty directory.
+        new_top = [e for e in _entries_of(current.tree) if e.name != "comments"]
+    new_top_sha = _write_tree(repo, new_top)
+
+    commit_sha = _commit_with_identity(
+        repo,
+        new_top_sha,
+        message=f"delete comment by {actor}",
+        author_name=actor,
+        author_email=f"{actor}@gitcabin.local",
+        parents=(current.hexsha,),
+    )
+    repo.run_git("update-ref", ref, commit_sha, current.hexsha)
+    return True
+
+
+def _resolve_issue_ref(repo: BareRepo, number: int) -> str | None:
+    """Return the ref name for `number`, preferring synced over local."""
+    synced = f"{ISSUE_REF_PREFIX}/{number}"
+    if _load_commit(repo, synced) is not None:
+        return synced
+    local = _ref_for(number)
+    if _load_commit(repo, local) is not None:
+        return local
+    return None
+
+
+def _find_comment_entry(subtree: object, comment_number: int):
+    """Find the tree entry for a given comment_number, regardless of filename style.
+
+    Local comments are written as 4-digit zero-padded names (`0001.json`) by
+    add_comment; synced comments are written as the raw GitHub id
+    (`1234567890.json`) by import_comment. Both decode back to the same int,
+    so the lookup walks the subtree and matches on the parsed number.
+    """
+    for entry in subtree:  # type: ignore[union-attr]
+        if entry.type != "blob" or not entry.name.endswith(".json"):
+            continue
+        try:
+            n = _comment_number_from_name(entry.name)
+        except ValueError:
+            continue
+        if n == comment_number:
+            return entry
+    return None
+
+
+def _splice_comments_into_top(
+    entries: list[_TreeEntry], new_subtree_sha: str
+) -> list[_TreeEntry]:
+    """Replace the comments/ entry in a top-level tree, preserving order."""
+    out: list[_TreeEntry] = []
+    seen = False
+    for entry in entries:
+        if entry.name == "comments":
+            out.append(
+                _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+            )
+            seen = True
+        else:
+            out.append(entry)
+    if not seen:
+        out.append(
+            _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+        )
+    return out
+
+
+def _comment_from_entry(repo: BareRepo, ref: str, name: str, doc: CommentDocument) -> Comment:
+    return Comment(
+        number=_comment_number_from_name(name),
+        body=doc.body,
+        author=doc.author,
+        created_at=_comment_created_at(repo, ref, name) or "",
+        provenance=doc.provenance,
+        gh_comment_id=doc.gh_comment_id,
+    )
+
+
 def _set_issue_state(
     repo: BareRepo,
     ref: str,

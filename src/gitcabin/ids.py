@@ -90,5 +90,35 @@ def decode_issue_id(node_id: str) -> IssueCoords | None:
 
 
 def comment_id(owner: str, name: str, issue_number: int, comment_number: int) -> str:
-    """ID for an issue comment. Opaque to gh; we never decode it back today."""
+    """ID for an issue comment. Reversible via `decode_comment_id`."""
     return _encode("IC", f"{owner}/{name}#{issue_number}.{comment_number}")
+
+
+@dataclass(frozen=True, slots=True)
+class CommentCoords:
+    owner: str
+    name: str
+    issue_number: int
+    number: int
+
+
+def decode_comment_id(node_id: str) -> CommentCoords | None:
+    """(owner, name, issue_number, comment_number) for a comment id."""
+    payload = _decode("IC", node_id)
+    if payload is None or "#" not in payload:
+        return None
+    repo_part, _, rest = payload.rpartition("#")
+    if "/" not in repo_part or "." not in rest:
+        return None
+    issue_str, _, number_str = rest.rpartition(".")
+    if not issue_str.isdigit() or not number_str.isdigit():
+        return None
+    owner, name = repo_part.split("/", 1)
+    if not owner or not name:
+        return None
+    return CommentCoords(
+        owner=owner,
+        name=name,
+        issue_number=int(issue_str),
+        number=int(number_str),
+    )

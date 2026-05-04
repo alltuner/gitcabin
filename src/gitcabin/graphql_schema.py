@@ -33,9 +33,12 @@ from gitcabin.storage.issues import (
 )
 from gitcabin.storage.issues import (
     create_issue,
+    delete_any_comment,
     get_any_issue,
     list_all_issues,
     list_any_comments,
+    update_any_comment,
+    update_any_issue,
 )
 from gitcabin.storage.prs import (
     Pr as StoragePr,
@@ -910,6 +913,50 @@ class AddCommentPayload:
     comment_edge: IssueCommentEdge
 
 
+@strawberry.input
+class UpdateIssueInput:
+    """Input for the updateIssue mutation. Mirrors gh's UpdateIssue selection."""
+
+    id: strawberry.ID
+    title: str | None = None
+    body: str | None = None
+    client_mutation_id: str | None = None
+
+
+@strawberry.type
+class UpdateIssuePayload:
+    issue: Issue
+
+
+@strawberry.input
+class UpdateIssueCommentInput:
+    """Input for the updateIssueComment mutation."""
+
+    id: strawberry.ID
+    body: str
+    client_mutation_id: str | None = None
+
+
+@strawberry.type
+class UpdateIssueCommentPayload:
+    issue_comment: IssueComment
+
+
+@strawberry.input
+class DeleteIssueCommentInput:
+    """Input for the deleteIssueComment mutation."""
+
+    id: strawberry.ID
+    client_mutation_id: str | None = None
+
+
+@strawberry.type
+class DeleteIssueCommentPayload:
+    """Return shape for deleteIssueComment. gh selects clientMutationId."""
+
+    client_mutation_id: str | None = None
+
+
 # ---- RepositoryConnection / RepositoryOwner ----------------------------- #
 
 
@@ -1187,6 +1234,136 @@ class Mutation:
                 ),
             ),
         )
+
+    @strawberry.mutation
+    def update_issue(
+        self, info: strawberry.Info, input: UpdateIssueInput
+    ) -> UpdateIssuePayload:
+        """Edit an issue's title and/or body. Author-only — non-authors get
+        a permission error regardless of repo role, because content edits
+        attribute words to whoever wrote them upstream."""
+        settings: Settings = info.context["settings"]
+        coords = ids.decode_issue_id(input.id)
+        if coords is None:
+            raise ValueError(f"Unknown issue id: {input.id!r}")
+
+        bare = _open_bare_or_none(settings, coords.owner, coords.name)
+        if bare is None:
+            raise ValueError(f"Unknown issue id: {input.id!r}")
+
+        existing = get_any_issue(bare, coords.number)
+        if existing is None:
+            raise ValueError(f"Unknown issue id: {input.id!r}")
+        viewer = settings.viewer_login
+        if not can_edit_issue(existing, viewer):
+            raise PermissionError(
+                f"viewer {viewer!r} cannot edit issue authored by {existing.author!r}"
+            )
+
+        stored = update_any_issue(
+            bare,
+            number=coords.number,
+            title=input.title if input.title is not None else existing.title,
+            body=input.body if input.body is not None else existing.body,
+            actor=viewer,
+        )
+        if stored is None:
+            raise ValueError(f"Unknown issue id: {input.id!r}")
+        return UpdateIssuePayload(
+            issue=_to_gql_issue(
+                stored, coords.owner, coords.name, viewer, _viewer_role(bare)
+            )
+        )
+
+    @strawberry.mutation
+    def update_issue_comment(
+        self, info: strawberry.Info, input: UpdateIssueCommentInput
+    ) -> UpdateIssueCommentPayload:
+        """Edit a comment's body. Author-only — same impersonation guard as
+        update_issue. Repo admins can DELETE other people's comments
+        (deleteIssueComment) but cannot edit them."""
+        settings: Settings = info.context["settings"]
+        coords = ids.decode_comment_id(input.id)
+        if coords is None:
+            raise ValueError(f"Unknown comment id: {input.id!r}")
+
+        bare = _open_bare_or_none(settings, coords.owner, coords.name)
+        if bare is None:
+            raise ValueError(f"Unknown comment id: {input.id!r}")
+
+        existing = next(
+            (c for c in list_any_comments(bare, coords.issue_number)
+             if c.number == coords.number),
+            None,
+        )
+        if existing is None:
+            raise ValueError(f"Unknown comment id: {input.id!r}")
+        viewer = settings.viewer_login
+        if not can_edit_comment(existing, viewer):
+            raise PermissionError(
+                f"viewer {viewer!r} cannot edit comment authored by {existing.author!r}"
+            )
+
+        stored = update_any_comment(
+            bare,
+            issue_number=coords.issue_number,
+            comment_number=coords.number,
+            body=input.body,
+            actor=viewer,
+        )
+        if stored is None:
+            raise ValueError(f"Unknown comment id: {input.id!r}")
+        return UpdateIssueCommentPayload(
+            issue_comment=_to_gql_comment(
+                stored,
+                coords.owner,
+                coords.name,
+                coords.issue_number,
+                viewer,
+                _viewer_role(bare),
+            ),
+        )
+
+    @strawberry.mutation
+    def delete_issue_comment(
+        self, info: strawberry.Info, input: DeleteIssueCommentInput
+    ) -> DeleteIssueCommentPayload:
+        """Delete a comment. Author can always delete their own; non-authors
+        need ADMIN role on the repo (per the moderation rule in
+        docs/github-sync.md). TRIAGE/WRITE/MAINTAIN can't delete others'."""
+        settings: Settings = info.context["settings"]
+        coords = ids.decode_comment_id(input.id)
+        if coords is None:
+            raise ValueError(f"Unknown comment id: {input.id!r}")
+
+        bare = _open_bare_or_none(settings, coords.owner, coords.name)
+        if bare is None:
+            raise ValueError(f"Unknown comment id: {input.id!r}")
+
+        existing = next(
+            (c for c in list_any_comments(bare, coords.issue_number)
+             if c.number == coords.number),
+            None,
+        )
+        if existing is None:
+            raise ValueError(f"Unknown comment id: {input.id!r}")
+        viewer = settings.viewer_login
+        role = _viewer_role(bare)
+        if not can_delete_comment(existing, viewer, role):
+            raise PermissionError(
+                f"viewer {viewer!r} (role {role.value}) cannot delete comment "
+                f"authored by {existing.author!r}"
+            )
+
+        ok = delete_any_comment(
+            bare,
+            issue_number=coords.issue_number,
+            comment_number=coords.number,
+            actor=viewer,
+        )
+        if not ok:
+            raise ValueError(f"Unknown comment id: {input.id!r}")
+        return DeleteIssueCommentPayload(client_mutation_id=input.client_mutation_id)
 
 
 # Strawberry doesn't auto-discover unused types reachable only via unions, so
