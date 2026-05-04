@@ -1,18 +1,28 @@
-# gitcabin
+<p align="center">
+  <img src="https://brand.alltuner.com/logos/gitcabin/horizontal.png" alt="gitcabin" width="500">
+</p>
+
+<p align="center">
+  <strong>A tiny self-hosted GitHub clone driven by the official <code>gh</code> CLI.</strong><br>
+  All metadata stored in git itself — no separate database.
+</p>
+
+<p align="center">
+  <a href="https://alltuner.com/sponsor">Sponsor</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/github/license/alltuner/gitcabin?color=5B2333" alt="License">
+  <img src="https://img.shields.io/github/stars/alltuner/gitcabin?color=5B2333" alt="Stars">
+</p>
 
 > [!WARNING]
 > **Pre-alpha sketch — not functional software yet.**
 > This repo is a working sketch of what gitcabin *could* be, not a tool you can rely on. Most of what's here is design notes and structural code; deployment recipes work in narrow conditions but will break in real use. Read for the ideas; don't deploy for production. Feedback on the direction is very welcome — see [`docs/`](docs/) for what's been thought through and what's still open.
 
-A tiny self-hosted GitHub clone driven by the official `gh` CLI, with all metadata stored in git itself — no separate database.
+---
 
-## Concept
-
-- gh has built-in support for arbitrary hosts via `GH_HOST`. The hostname `github.localhost` is special: gh sends to `http://api.github.localhost/` (REST) and `http://api.github.localhost/graphql` (GraphQL), so HTTPS is not required for local dev. For any other hostname gh forces HTTPS and uses the GitHub Enterprise URL shape (`https://<host>/api/v3/...` and `https://<host>/api/graphql`). gitcabin serves both shapes, so the same image works behind either path.
-- Issues, PRs, and counters live in side refs of the bare git repo (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`). Code lives in normal `refs/heads/*` and `refs/tags/*`. The two namespaces never collide.
-- The HTTP API server is the only writer of metadata refs. Plain `git clone`/`git push` only see code.
-
-## Quickstart
+## Get Started
 
 The default deploy is local-only over HTTP via `github.localhost`. One command brings it up:
 
@@ -22,7 +32,7 @@ docker compose watch
 
 Compose builds the image, runs the API container on `127.0.0.1:80` and the HTML dashboard on `127.0.0.1:8080`, and reloads on every source edit. Plain `docker compose up --build` works too if you don't want autoreload.
 
-Then point gh at it:
+Then point `gh` at it:
 
 ```sh
 echo "any-token" | gh auth login --hostname github.localhost --with-token
@@ -35,7 +45,7 @@ Stop with `docker compose down`.
 
 ### Port 80 is already in use
 
-gh hardcodes port 80 for `github.localhost`, so the proxy needs *some* port-80 binding to exist. If you already have something on `127.0.0.1:80`, give gitcabin a dedicated loopback IP:
+`gh` hardcodes port 80 for `github.localhost`, so the proxy needs *some* port-80 binding to exist. If you already have something on `127.0.0.1:80`, give gitcabin a dedicated loopback IP:
 
 ```sh
 # /etc/hosts (sudo required)
@@ -50,7 +60,19 @@ services:
       - "127.42.0.1:80:8000"
 ```
 
-`127/8` is all loopback on Linux and macOS, so `127.42.0.1` is essentially free real estate. Run `docker compose up -d` and gh will dial port 80 on `127.42.0.1` instead of `127.0.0.1`.
+`127/8` is all loopback on Linux and macOS, so `127.42.0.1` is essentially free real estate. Run `docker compose up -d` and `gh` will dial port 80 on `127.42.0.1` instead of `127.0.0.1`.
+
+---
+
+## What is gitcabin?
+
+A tiny self-hosted GitHub clone driven by the official `gh` CLI, with all metadata stored in git itself.
+
+### How it works
+
+- `gh` has built-in support for arbitrary hosts via `GH_HOST`. The hostname `github.localhost` is special: `gh` sends to `http://api.github.localhost/` (REST) and `http://api.github.localhost/graphql` (GraphQL), so HTTPS is not required for local dev. For any other hostname `gh` forces HTTPS and uses the GitHub Enterprise URL shape (`https://<host>/api/v3/...` and `https://<host>/api/graphql`). gitcabin serves both shapes, so the same image works behind either path.
+- Issues, PRs, and counters live in side refs of the bare git repo (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`). Code lives in normal `refs/heads/*` and `refs/tags/*`. The two namespaces never collide.
+- The HTTP API server is the only writer of metadata refs. Plain `git clone`/`git push` only see code.
 
 ## Browsing the data
 
@@ -81,7 +103,7 @@ See [`docs/installation.md`](docs/installation.md) for the TLS, Tailscale, and C
 uv run gitcabin
 ```
 
-Listens on `127.0.0.1:8000`. Useful for direct probing with curl / httpie, but gh won't reach it — gh dials port 80 (`github.localhost`) or 443 (anything else), never 8000.
+Listens on `127.0.0.1:8000`. Useful for direct probing with curl / httpie, but `gh` won't reach it — `gh` dials port 80 (`github.localhost`) or 443 (anything else), never 8000.
 
 ## Development
 
@@ -90,3 +112,20 @@ uv sync                                    # install deps + editable gitcabin
 uv run pytest                              # tests
 uv run ruff check . && uv run ruff format --check .
 ```
+
+## License
+
+[MIT](LICENSE)
+
+## Support the project
+
+gitcabin is an open source project built by [David Poblador i Garcia](https://davidpoblador.com/) through [All Tuner Labs](https://www.alltuner.com/).
+
+If this project was useful to you, [consider supporting its development](https://alltuner.com/sponsor).
+
+---
+
+<p align="center">
+  Built by <a href="https://davidpoblador.com">David Poblador i Garcia</a> with the support of <a href="https://alltuner.com">All Tuner Labs</a>.<br>
+  Made with ❤️ in Poblenou, Barcelona.
+</p>
