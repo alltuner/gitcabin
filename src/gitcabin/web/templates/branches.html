@@ -1,13 +1,15 @@
 {# ABOUTME: Branches and tags listing — every refs/heads/* and refs/tags/*. #}
 {% extends "_base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}Branches — {{ owner }}/{{ name }}{% endblock %}
 {% block content %}
 {% set active_tab = "branches" %}
 {% include "_repo_header.html" %}
 
 <h2 class="mb-3 text-lg font-semibold">Branches</h2>
+<div class="mb-8">
 {% if branches %}
-<div class="mb-8 divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+{% call ui.bordered_list() %}
   {% for ref in branches %}
   <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
     <a href="/{{ owner }}/{{ name }}/tree/{{ ref.name }}" class="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400">{{ ref.name }}</a>
@@ -23,14 +25,15 @@
     </div>
   </div>
   {% endfor %}
-</div>
+{% endcall %}
 {% else %}
-<div class="mb-8 rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">No branches.</div>
+{% call ui.empty_state() %}No branches.{% endcall %}
 {% endif %}
+</div>
 
 <h2 class="mb-3 text-lg font-semibold">Tags</h2>
 {% if tags %}
-<div class="divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+{% call ui.bordered_list() %}
   {% for ref in tags %}
   <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
     <a href="/{{ owner }}/{{ name }}/tree/{{ ref.name }}" class="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400">{{ ref.name }}</a>
@@ -41,8 +44,8 @@
     </div>
   </div>
   {% endfor %}
-</div>
+{% endcall %}
 {% else %}
-<div class="rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">No tags.</div>
+{% call ui.empty_state() %}No tags.{% endcall %}
 {% endif %}
 {% endblock %}

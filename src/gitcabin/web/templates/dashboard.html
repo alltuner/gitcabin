@@ -1,10 +1,11 @@
 {# ABOUTME: Landing page — owner cards. #}
 {% extends "_base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}gitcabin — owners{% endblock %}
 {% block content %}
 <h1 class="mb-4 text-2xl font-semibold">Owners</h1>
 {% if owners %}
-<div class="divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+{% call ui.bordered_list() %}
   {% for owner in owners %}
   <a href="/{{ owner.login }}" class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
     <div class="text-base font-semibold text-blue-600 dark:text-blue-400">{{ owner.login }}</div>
@@ -13,12 +14,12 @@
     </div>
   </a>
   {% endfor %}
-</div>
+{% endcall %}
 {% else %}
-<div class="rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
+{% call ui.empty_state() %}
   No owners yet. Create a bare repo at
   <code class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-900">data/repos/&lt;owner&gt;/&lt;repo&gt;.git</code>
   to get started.
-</div>
+{% endcall %}
 {% endif %}
 {% endblock %}

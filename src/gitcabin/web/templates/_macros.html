@@ -1,0 +1,28 @@
+{# ABOUTME: Shared Jinja macros — small UI primitives reused across templates. #}
+{# ABOUTME: Templates import via `{% import "_macros.html" as ui %}` then use `ui.<name>`. #}
+
+{# Bordered list container — outline + horizontal dividers between rows.
+   Usage:
+     {% call ui.bordered_list() %}
+       {% for ... %}
+         <div class="...row classes...">{{ row }}</div>
+       {% endfor %}
+     {% endcall %}
+   No item-template assumption; the caller decides each row's markup. #}
+{% macro bordered_list() %}
+<div class="divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{# Empty-state card — when a list has no items, render a centered note in the
+   same outlined container shape as the bordered list, so the page rhythm
+   stays consistent.
+   Usage:
+     {% call ui.empty_state() %}No issues.{% endcall %}
+   Caller content can include any markup (e.g., a <code> hint). #}
+{% macro empty_state() %}
+<div class="rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
+  {{ caller() }}
+</div>
+{% endmacro %}

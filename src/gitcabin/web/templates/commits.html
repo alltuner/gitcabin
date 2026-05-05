@@ -1,5 +1,6 @@
 {# ABOUTME: Commit log — newest-first, capped at 100 commits per page. #}
 {% extends "_base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}Commits on {{ ref }} — {{ owner }}/{{ name }}{% endblock %}
 {% block content %}
 {% set active_tab = "commits" %}
@@ -10,7 +11,7 @@
 </div>
 
 {% if commits %}
-<div class="divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+{% call ui.bordered_list() %}
   {% for c in commits %}
   <div class="flex items-start gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
     <div class="min-w-0 flex-1">
@@ -23,8 +24,8 @@
     <a href="/{{ owner }}/{{ name }}/commit/{{ c.sha }}" class="rounded border border-gray-300 px-2 py-1 font-mono text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{{ c.short_sha }}</a>
   </div>
   {% endfor %}
-</div>
+{% endcall %}
 {% else %}
-<div class="rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">No commits.</div>
+{% call ui.empty_state() %}No commits.{% endcall %}
 {% endif %}
 {% endblock %}

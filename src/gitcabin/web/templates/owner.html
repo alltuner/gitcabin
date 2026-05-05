@@ -1,5 +1,6 @@
 {# ABOUTME: Owner page — every repo belonging to a single login. #}
 {% extends "_base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}{{ owner }} — gitcabin{% endblock %}
 {% block content %}
 <nav class="mb-3 text-sm text-gray-500 dark:text-gray-400">
@@ -9,7 +10,7 @@
 </nav>
 <h1 class="mb-6 text-2xl font-semibold">{{ owner }}</h1>
 {% if repos %}
-<div class="divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+{% call ui.bordered_list() %}
   {% for repo in repos %}
   <a href="/{{ owner }}/{{ repo.name }}" class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
     <div class="font-semibold text-blue-600 dark:text-blue-400">{{ repo.name }}</div>
@@ -19,10 +20,8 @@
     <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">pushed {{ repo.pushed_at[:10] }}</div>
   </a>
   {% endfor %}
-</div>
+{% endcall %}
 {% else %}
-<div class="rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
-  No repositories under {{ owner }}.
-</div>
+{% call ui.empty_state() %}No repositories under {{ owner }}.{% endcall %}
 {% endif %}
 {% endblock %}

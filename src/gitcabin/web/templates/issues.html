@@ -1,5 +1,6 @@
 {# ABOUTME: Issue list page — filterable by state (open/closed/all). #}
 {% extends "_base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}Issues — {{ owner }}/{{ name }} — gitcabin{% endblock %}
 {% block content %}
 {% set active_tab = "issues" %}
@@ -9,7 +10,7 @@
 {% include "_issue_state_filter.html" %}
 
 {% if issues %}
-<div class="divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+{% call ui.bordered_list() %}
   {% for issue in issues %}
   <div class="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
     {% if issue.state.value == "OPEN" %}
@@ -28,8 +29,8 @@
     </div>
   </div>
   {% endfor %}
-</div>
+{% endcall %}
 {% else %}
-<div class="rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">No issues.</div>
+{% call ui.empty_state() %}No issues.{% endcall %}
 {% endif %}
 {% endblock %}
