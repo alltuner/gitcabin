@@ -126,6 +126,25 @@ def test_raw_404_for_missing_blob(
     assert response.status_code == 404
 
 
+def test_tree_root_on_default_branch_redirects_to_overview(
+    web_client: TestClient, history: tuple[BareRepo, str, str]
+) -> None:
+    # `/tree/main` (when main is HEAD) should canonicalise to the bare
+    # `/{owner}/{name}` URL so we don't have two URLs serving the same
+    # page. Non-default branches and non-root paths still render in place.
+    response = web_client.get(
+        "/octocat/hello/tree/main", follow_redirects=False
+    )
+    assert response.status_code == 302
+    assert response.headers["location"] == "/octocat/hello"
+
+    # A non-default branch at root: no redirect, renders directly.
+    response = web_client.get(
+        "/octocat/hello/tree/feature", follow_redirects=False
+    )
+    assert response.status_code == 200
+
+
 def test_tree_handles_slash_in_branch_name(
     web_client: TestClient, init_repo
 ) -> None:

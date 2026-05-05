@@ -546,8 +546,13 @@ def build_router(settings: Settings) -> APIRouter:
     @router.get("/{owner}/{name}/tree/{rest:path}", include_in_schema=False)
     def project_tree(
         request: Request, owner: str, name: str, rest: str
-    ) -> HTMLResponse:
-        _, ref, path = _resolve_ref_url(owner, name, rest, require_path=False)
+    ) -> Response:
+        bare, ref, path = _resolve_ref_url(owner, name, rest, require_path=False)
+        # Canonicalise the default branch's root view: `/tree/main` (when
+        # main is the default) renders identically to `/{owner}/{name}`,
+        # so redirect there to keep one URL per page.
+        if not path and ref == code.head_ref_name(bare):
+            return RedirectResponse(url=f"/{owner}/{name}", status_code=302)
         return _render_tree(request, project=owner, name=name, ref=ref, path=path)
 
     @router.get("/{owner}/{name}/blob/{rest:path}", include_in_schema=False)
