@@ -183,7 +183,7 @@ def test_repo_overview_handles_empty_repo(web_client: TestClient, init_repo, set
     init_repo("octocat", "scratch")
     response = web_client.get("/octocat/scratch")
     assert response.status_code == 200
-    assert "no commits yet" in response.text.lower()
+    assert "this repository is empty" in response.text.lower()
 
 
 def test_blob_viewer_handles_binary(web_client: TestClient, seeded: tuple[BareRepo, str]) -> None:

@@ -214,53 +214,14 @@ def build_router(settings: Settings) -> APIRouter:
     # `data/projects/<project>/<name>.git`; the URL shape mirrors that —
     # `/{owner}/{name}/...`.
 
-    def _render_repo_overview(
-        request: Request, project: str, name: str
-    ) -> HTMLResponse:
-        bare = _open_repo(settings, project, name)
-        default_branch = code.head_ref_name(bare)
-        head_commit = code.resolve_ref(bare, "HEAD") if default_branch else None
-        entries: list[code.TreeEntry] = []
-        readme_html: str | None = None
-        head_short_sha: str | None = None
-        if head_commit is not None:
-            entries = code.enrich_with_last_commits(
-                head_commit, code.list_tree_entries(head_commit.tree)
-            )
-            readme_blob = code.find_readme(head_commit.tree)
-            if readme_blob is not None:
-                raw = readme_blob.data_stream.read()
-                try:
-                    text = raw.decode()
-                except UnicodeDecodeError:
-                    text = ""
-                if readme_blob.name.lower().endswith((".md", ".markdown")):
-                    readme_html = code.render_markdown(text)
-                else:
-                    readme_html = f"<pre>{html_escape(text)}</pre>"
-            head_short_sha = head_commit.hexsha[:7]
-        return _render(
-            request,
-            settings,
-            "repo.html",
-            owner=project,
-            name=name,
-            description=None,
-            default_branch=default_branch,
-            entries=entries,
-            readme_html=readme_html,
-            head_short_sha=head_short_sha,
-            ref=default_branch or "HEAD",
-            crumb_segments=[],
-            path="",
-            branches=code.list_branches(bare),
-            tags=code.list_tags(bare),
-            **_repo_ctx(bare),
-        )
-
     def _render_tree(
         request: Request, project: str, name: str, ref: str, path: str = ""
     ) -> HTMLResponse:
+        """Render the tree listing at `ref`/`path`. At the repo root
+        (`path == ""`) we also surface the README and the HEAD short SHA
+        — same shape GitHub uses on every `/tree/<ref>` URL, so the
+        bare repo overview (`/{owner}/{name}`) and an explicit
+        `/{owner}/{name}/tree/<ref>` produce identical pages."""
         bare = _open_repo(settings, project, name)
         commit = code.resolve_ref(bare, ref)
         if commit is None:
@@ -280,6 +241,23 @@ def build_router(settings: Settings) -> APIRouter:
             raise HTTPException(status_code=404, detail="path not found")
         if node.type != "tree":
             raise HTTPException(status_code=404, detail="not a tree")
+
+        readme_html: str | None = None
+        head_short_sha: str | None = None
+        if not path:
+            readme_blob = code.find_readme(commit.tree)
+            if readme_blob is not None:
+                raw = readme_blob.data_stream.read()
+                try:
+                    text = raw.decode()
+                except UnicodeDecodeError:
+                    text = ""
+                if readme_blob.name.lower().endswith((".md", ".markdown")):
+                    readme_html = code.render_markdown(text)
+                else:
+                    readme_html = f"<pre>{html_escape(text)}</pre>"
+            head_short_sha = commit.hexsha[:7]
+
         return _render(
             request,
             settings,
@@ -295,6 +273,8 @@ def build_router(settings: Settings) -> APIRouter:
             branches=code.list_branches(bare),
             tags=code.list_tags(bare),
             default_branch=code.head_ref_name(bare),
+            readme_html=readme_html,
+            head_short_sha=head_short_sha,
             **_repo_ctx(bare),
         )
 
@@ -537,7 +517,13 @@ def build_router(settings: Settings) -> APIRouter:
     def project_overview(
         request: Request, owner: str, name: str
     ) -> HTMLResponse:
-        return _render_repo_overview(request, project=owner, name=name)
+        # The bare overview defers to _render_tree at the default branch
+        # so the URL `/{owner}/{name}` and `/{owner}/{name}/tree/<default>`
+        # produce the exact same view (and the empty-repo branch is
+        # shared between them).
+        bare = _open_repo(settings, owner, name)
+        ref = code.head_ref_name(bare) or "HEAD"
+        return _render_tree(request, project=owner, name=name, ref=ref, path="")
 
     def _resolve_ref_url(
         owner: str, name: str, rest: str, *, require_path: bool

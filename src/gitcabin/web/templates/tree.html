@@ -1,12 +1,20 @@
-{# ABOUTME: Subdirectory listing — file tree under a non-root path. #}
+{# ABOUTME: File tree listing — shared by the bare repo overview (`/{owner}/{name}`)
+   ABOUTME: and explicit `/tree/<ref>[/path]` URLs. README + HEAD short SHA only at root. #}
 {% extends "_base.html" %}
-{% block title %}{{ owner }}/{{ name }}: {{ path or ref }}{% endblock %}
+{% block title %}{{ owner }}/{{ name }}{% if path %}: {{ path }}{% endif %}{% endblock %}
 {% block header_breadcrumb %}{% include "_repo_breadcrumb.html" %}{% endblock %}
 {% block content %}
 {% set active_tab = "code" %}
 {% include "_repo_header.html" %}
 
-{% with view_kind = "tree" %}{% include "_ref_breadcrumb.html" %}{% endwith %}
+{% with view_kind = "repo" if not path else "tree" %}{% include "_ref_breadcrumb.html" %}{% endwith %}
 
 {% include "_tree_table.html" %}
+
+{% if not path and readme_html %}
+<div class="mt-8 rounded-md border border-gray-200 dark:border-gray-800">
+  <div class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold dark:border-gray-800 dark:bg-gray-900">README</div>
+  <div class="markdown-body px-6 py-4">{{ readme_html | safe }}</div>
+</div>
+{% endif %}
 {% endblock %}
