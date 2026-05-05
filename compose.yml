@@ -4,9 +4,12 @@
 # GraphQL API; everything else (browsers) hits the HTML dashboard. No
 # privileged ports anywhere; cab forwards via HTTP_PROXY to 8080.
 #
-# Use `docker compose watch` for the dev loop — Compose syncs source into
-# the container and restarts granian on every edit. Plain `docker compose up`
-# is fine for "I just want to run it" without live reload.
+# Use `docker compose up --watch` for the dev loop — Compose syncs source
+# into the container, restarts granian on every edit, AND streams the
+# container's stdout (so granian's access log entries show up in your
+# terminal). Plain `docker compose up` is fine for "I just want to run it"
+# without live reload. Bare `docker compose watch` only emits watch events
+# without container logs — not what you want for iterative work.
 
 name: gitcabin
 

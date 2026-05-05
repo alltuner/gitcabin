@@ -56,8 +56,10 @@ bun run watch                     # rebuild on every web-src/ change
 In another terminal:
 
 ```sh
-docker compose watch              # syncs ./src into the container
+docker compose up --watch         # streams logs AND syncs ./src into the container
 ```
+
+Use `up --watch`, not bare `compose watch`: the bare form only emits watcher events (file syncs, restarts, rebuilds). `up --watch` does the same plus streams container output, which is what you want when you're actively iterating — including granian's access log entries.
 
 Compose's watch rules sync `static/dist/` without restarting granian, since the manifest is re-read on every render. Python source changes still restart granian normally.
 

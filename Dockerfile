@@ -2,9 +2,10 @@
 #   stage 1 (assets) — bun bundles htmx + tailwind into hashed JS/CSS.
 #   stage 2 (runtime) — python:3.14-slim with the bundled assets and the app.
 #
-# `docker compose watch` reuses the runtime stage and bind-mounts ./src on top
-# for live reload. The bundler is run on the host during dev (bun run watch);
-# the image build is what produces the prod-shaped bundle.
+# `docker compose up --watch` reuses the runtime stage and syncs ./src on top
+# for live reload (and streams the container's stdout). The bundler is run on
+# the host during dev (bun run watch); the image build is what produces the
+# prod-shaped bundle.
 
 # ---- stage 1: assets ---------------------------------------------------- #
 #
@@ -84,8 +85,9 @@ EXPOSE 8000
 
 # Production-shaped CMD: no --reload. --access-log on so requests are
 # visible in `docker compose logs` (granian defaults to off). For dev
-# autoreload, use `docker compose watch` — Compose syncs source into the
-# container and restarts the service on each change without rebuilding.
+# autoreload, use `docker compose up --watch` — Compose syncs source into
+# the container, restarts the service on each change without rebuilding,
+# and streams stdout so the access log entries land in your terminal.
 CMD ["uv", "run", "--no-dev", "granian", \
      "--interface", "asgi", "--factory", \
      "--access-log", \

@@ -27,10 +27,10 @@
 The default deploy is local-only over HTTP via `github.localhost`. One command brings it up:
 
 ```sh
-docker compose watch
+docker compose up --watch
 ```
 
-Compose builds the image, runs a single `gitcabin` service bound to `127.0.0.1:18080`, and reloads on every source edit. Plain `docker compose up --build` works too if you don't want autoreload. The container fronts both the REST/GraphQL API and the HTML dashboard via Host-header dispatch — `cab`/`gh` traffic (Host: `api.github.localhost`) hits the API; browser traffic hits the dashboard. **One unprivileged port** — neither the host nor the daemon binds 80 or 443.
+Compose builds the image, runs a single `gitcabin` service bound to `127.0.0.1:18080`, streams its access logs to your terminal, and reloads on every source edit. Plain `docker compose up --build` works too if you don't want autoreload. (`docker compose watch` without `up` also works for the watcher, but only emits sync events — `up --watch` is what you want for active development because it streams container logs too.) The container fronts both the REST/GraphQL API and the HTML dashboard via Host-header dispatch — `cab`/`gh` traffic (Host: `api.github.localhost`) hits the API; browser traffic hits the dashboard. **One unprivileged port** — neither the host nor the daemon binds 80 or 443.
 
 `cab` is the wrapper that points `gh`'s HTTP traffic at gitcabin and registers the host with `gh` on first use. Two ways to invoke it:
 
