@@ -19,8 +19,8 @@ from gitcabin.storage.issues import (
     add_comment,
     close_issue,
     get_issue,
+    list_all_issues,
     list_comments,
-    list_issues,
     reopen_issue,
 )
 from gitcabin.storage import layout
@@ -64,10 +64,10 @@ def _repo_ctx(bare: BareRepo, issues: list | None = None) -> dict[str, object]:
     handler. Add more repo-wide facts here as they become widely useful.
 
     Pages that already loaded the issues list can pass it in to avoid a
-    second list_issues() walk.
+    second list_all_issues() walk.
     """
     if issues is None:
-        issues = list_issues(bare)
+        issues = list_all_issues(bare)
     return {
         "total_issue_count": len(issues),
         "open_issue_count": sum(i.state is IssueState.OPEN for i in issues),
@@ -447,7 +447,7 @@ def build_router(settings: Settings) -> APIRouter:
         request: Request, project: str, name: str, state: str = "open"
     ) -> HTMLResponse:
         bare = _open_repo(settings, project, name)
-        all_issues = list_issues(bare)
+        all_issues = list_all_issues(bare)
         open_count = sum(i.state is IssueState.OPEN for i in all_issues)
         closed_count = len(all_issues) - open_count
         if state == "open":
