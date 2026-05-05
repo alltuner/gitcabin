@@ -1,23 +1,36 @@
-{# ABOUTME: Commit log — newest-first, capped at 100 commits per page. #}
+{# ABOUTME: Commit log — newest-first, capped at 100 commits, grouped by date with a timeline rail. #}
 {% extends "_base.html" %}
-{% import "_macros.html" as ui %}
 {% block title %}Commits on {{ ref }} — {{ owner }}/{{ name }}{% endblock %}
 {% block header_breadcrumb %}{% include "_repo_breadcrumb.html" %}{% endblock %}
 {% block content %}
 {% set active_tab = "commits" %}
 {% include "_repo_header.html" %}
 
-<div class="mb-4 flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-  Commits on <span class="rounded border border-gray-300 px-2 py-1 font-mono text-xs dark:border-gray-700">{{ ref }}</span>
-</div>
+{% with view_kind = "commits" %}{% include "_ref_breadcrumb.html" %}{% endwith %}
 
-{% if commits %}
-{% call ui.bordered_list() %}
-  {% for c in commits %}
-  {% include "_commit_row.html" %}
+{% if commit_groups %}
+{# Vertical rail with a date dot at each group header. The rail is a
+   single 1px column drawn by the left border on the outer container;
+   each `.timeline-day` punches a circle over it via a positioned span. #}
+<div class="relative ml-2 border-l border-gray-200 pl-6 dark:border-gray-800">
+  {% for day, group_commits in commit_groups %}
+  <div class="relative pb-6">
+    <span class="absolute left-[-1.5rem] top-0.5 flex h-3 w-3 -translate-x-1/2 items-center justify-center rounded-full border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-950">
+      <span class="h-1.5 w-1.5 rounded-full bg-gray-400 dark:bg-gray-500"></span>
+    </span>
+    <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      Commits on {{ day | pretty_date }}
+    </h3>
+    <div class="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+      {% for c in group_commits %}
+        {% include "_commit_row.html" %}
+        {% if not loop.last %}<div class="border-t border-gray-200 dark:border-gray-800"></div>{% endif %}
+      {% endfor %}
+    </div>
+  </div>
   {% endfor %}
-{% endcall %}
+</div>
 {% else %}
-{% call ui.empty_state() %}No commits.{% endcall %}
+<div class="rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">No commits.</div>
 {% endif %}
 {% endblock %}

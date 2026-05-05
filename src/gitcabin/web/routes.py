@@ -27,7 +27,13 @@ from gitcabin.storage import layout
 from gitcabin.storage.repo import BareRepo
 from gitcabin.web import code
 from gitcabin.web.assets import AssetResolver
-from gitcabin.web.format import file_icon, relative_time, short_sha
+from gitcabin.web.format import (
+    file_icon,
+    pretty_date,
+    ref_label,
+    relative_time,
+    short_sha,
+)
 
 _WEB_DIR = Path(__file__).parent
 _DIST_DIR = _WEB_DIR / "static" / "dist"
@@ -42,6 +48,8 @@ _templates.env.globals["asset"] = AssetResolver(dist_dir=_DIST_DIR)
 _templates.env.filters["relative_time"] = relative_time
 _templates.env.filters["short_sha"] = short_sha
 _templates.env.filters["file_icon"] = file_icon
+_templates.env.filters["ref_label"] = ref_label
+_templates.env.filters["pretty_date"] = pretty_date
 
 
 def _repo_ctx(bare: BareRepo, issues: list | None = None) -> dict[str, object]:
@@ -366,6 +374,16 @@ def build_router(settings: Settings) -> APIRouter:
                     **_repo_ctx(bare),
                 )
             raise HTTPException(status_code=404, detail="ref not found")
+        commits = code.list_commits(commit, max_count=100)
+        # Group by authored date (ISO prefix), preserving the
+        # newest-first order list_commits already gives us.
+        commit_groups: list[tuple[str, list[code.CommitSummary]]] = []
+        for c in commits:
+            day = c.authored_at[:10]
+            if commit_groups and commit_groups[-1][0] == day:
+                commit_groups[-1][1].append(c)
+            else:
+                commit_groups.append((day, [c]))
         return _render(
             request,
             settings,
@@ -373,7 +391,10 @@ def build_router(settings: Settings) -> APIRouter:
             owner=project,
             name=name,
             ref=ref,
-            commits=code.list_commits(commit, max_count=100),
+            commit_groups=commit_groups,
+            branches=code.list_branches(bare),
+            tags=code.list_tags(bare),
+            default_branch=code.head_ref_name(bare),
             **_repo_ctx(bare),
         )
 

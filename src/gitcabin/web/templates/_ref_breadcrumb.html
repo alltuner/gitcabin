@@ -1,6 +1,6 @@
-{# ABOUTME: One-row ref switcher + path breadcrumb, used on repo / tree / blob / blame.
+{# ABOUTME: One-row ref switcher + path breadcrumb, used on repo / tree / blob / blame / commits.
    ABOUTME: Reads `owner`, `name`, `ref`, `path`, `crumb_segments`, `branches`, `tags`,
-   ABOUTME: `default_branch`, `view_kind` ("repo"|"tree"|"blob"|"blame"), optional `head_short_sha`. #}
+   ABOUTME: `default_branch`, `view_kind` ("repo"|"tree"|"blob"|"blame"|"commits"), optional `head_short_sha`. #}
 {% set _kind = view_kind | default("tree") %}
 {% set _path = path | default("") %}
 {% set _path_suffix = ("/" ~ _path) if _path else "" %}
@@ -16,7 +16,7 @@
       aria-haspopup="listbox"
       title="Switch branches/tags">
       {% with icon_class = "h-4 w-4 text-gray-500 dark:text-gray-400" %}{% include "icons/branch.html" %}{% endwith %}
-      <span>{{ ref }}</span>
+      <span>{{ ref | ref_label }}</span>
       {% with icon_class = "h-3 w-3 text-gray-500 dark:text-gray-400" %}{% include "icons/chevron_down.html" %}{% endwith %}
     </label>
     <div
@@ -69,6 +69,27 @@
     </div>
   </div>
 
+  {# Branch / tag count badges — clicking each lands on /branches, which
+     lists both. Hidden when the repo has neither (empty repo). #}
+  {% if branches or tags %}
+  <a
+    href="/{{ owner }}/{{ name }}/branches"
+    class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100">
+    {% with icon_class = "h-4 w-4" %}{% include "icons/branch.html" %}{% endwith %}
+    <span><strong class="font-semibold text-gray-900 dark:text-gray-100">{{ branches | length }}</strong> {{ "Branches" if (branches | length) != 1 else "Branch" }}</span>
+  </a>
+  <a
+    href="/{{ owner }}/{{ name }}/branches"
+    class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100">
+    {% with icon_class = "h-4 w-4" %}{% include "icons/tag.html" %}{% endwith %}
+    <span><strong class="font-semibold text-gray-900 dark:text-gray-100">{{ tags | length }}</strong> {{ "Tags" if (tags | length) != 1 else "Tag" }}</span>
+  </a>
+  {% endif %}
+
+  {# The path row is only meaningful for views over the repo's file tree.
+     Commits-list pages reuse this partial for the dropdown + badges but
+     don't have a path, so we suppress it. #}
+  {% if _kind != "commits" %}
   <div class="font-mono text-sm">
     <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
     {% for c in crumb_segments %}
@@ -80,6 +101,7 @@
       {% endif %}
     {% endfor %}
   </div>
+  {% endif %}
 
   {% if _kind == "repo" and head_short_sha %}
   <span class="ml-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ head_short_sha }}</span>

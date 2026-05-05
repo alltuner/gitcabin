@@ -55,6 +55,38 @@ def short_sha(sha: str | None, length: int = 7) -> str:
     return sha[:length]
 
 
+_HEX = set("0123456789abcdef")
+
+_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def pretty_date(iso: str | None) -> str:
+    """Format an ISO timestamp as 'Month D, YYYY' — used as a section
+    header on the commits page where coarse relative phrasing isn't
+    enough to anchor the day."""
+    if not iso:
+        return ""
+    try:
+        moment = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return iso
+    return f"{_MONTHS[moment.month - 1]} {moment.day}, {moment.year}"
+
+
+def ref_label(ref: str | None) -> str:
+    """Render a ref name for display — branches and tags pass through;
+    raw 40-char SHAs get shortened so the chrome doesn't blow up when a
+    URL pins to a specific commit (`/blob/<sha>/...`)."""
+    if not ref:
+        return ""
+    if len(ref) == 40 and all(c in _HEX for c in ref):
+        return ref[:7]
+    return ref
+
+
 # Filename → icon-template mapping. Order matters: full-name matches win
 # over extension matches, so e.g. "Dockerfile.dev" gets the Docker icon
 # rather than falling back. New file types: add an entry here and a
