@@ -1,4 +1,4 @@
-# ABOUTME: PR storage — synced pull requests live at refs/prs/<gh_number>.
+# ABOUTME: PR storage — synced PRs at refs/prs/<gh>; local drafts at refs/prs/local/<n>.
 # ABOUTME: Same shape as issues plus head/base/draft/merged; comment subtree shared.
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from git import Commit
 from git.exc import BadName
 from pydantic import BaseModel, ConfigDict
 
+from gitcabin.storage.counter import Counter
 from gitcabin.storage.issues import (
     Comment,
     CommentDocument,
@@ -28,11 +29,14 @@ from gitcabin.storage.issues import (
 )
 from gitcabin.storage.repo import BareRepo
 
-# Synced pull requests live under refs/prs/<gh_number>. There is no local
-# pull-request namespace because creating a PR locally requires the source
-# branch to exist locally too — that's a separate piece of work and lives
-# in a future commit.
+# Synced (GitHub-authoritative) PRs live under refs/prs/<gh_number>. PRs
+# drafted locally that haven't been pushed yet live under refs/prs/local/<n>
+# with a counter-allocated number; sync push renumbers them onto the
+# upstream-authoritative slot once GitHub assigns one. The two namespaces
+# never collide: refs/prs/<n> contains only synced PRs, refs/prs/local/<n>
+# only local ones.
 PR_REF_PREFIX = "refs/prs"
+LOCAL_PR_REF_PREFIX = "refs/prs/local"
 
 
 class PrState(StrEnum):
@@ -155,7 +159,12 @@ def get_synced_pr(repo: BareRepo, number: int) -> Pr | None:
 
 
 def list_synced_prs(repo: BareRepo) -> list[Pr]:
-    """Return every synced PR at refs/prs/<n>, sorted by number ascending."""
+    """Return every synced PR at refs/prs/<n>, sorted by number ascending.
+
+    Skips refs/prs/local/<n> entries — they're walked separately by
+    list_local_prs. The int(suffix) parse is what distinguishes them:
+    `local/3` doesn't parse as an int, so it falls out of this listing.
+    """
     out: list[Pr] = []
     prefix = f"{PR_REF_PREFIX}/"
     for ref in repo.repo.refs:
@@ -168,6 +177,100 @@ def list_synced_prs(repo: BareRepo) -> list[Pr]:
         out.append(_read_pr_at(ref.commit, number, repo))
     out.sort(key=lambda p: p.number)
     return out
+
+
+def create_local_pr(
+    repo: BareRepo,
+    *,
+    title: str,
+    body: str,
+    author: str,
+    head_ref: str,
+    base_ref: str,
+    is_draft: bool = False,
+) -> Pr:
+    """Persist a new local-only PR at refs/prs/local/<n>.
+
+    Number is allocated from the "prs" Counter ref — independent of the
+    issues counter, so a project can have local issue #3 and local PR #3
+    without collision until a sync renumbers them onto upstream slots.
+
+    `head_ref` and `base_ref` are the branch labels the PR points at.
+    gitcabin doesn't push code; the head branch must already exist on
+    GitHub before a sync push of this PR can succeed (GitHub returns 422
+    otherwise). That constraint is documented in docs/github-sync.md.
+    """
+    number = Counter(repo, "prs").next()
+    doc = PrDocument(
+        title=title,
+        body=body,
+        author=author,
+        state=PrState.OPEN,
+        head_ref=head_ref,
+        base_ref=base_ref,
+        is_draft=is_draft,
+        provenance=Provenance.LOCAL_ONLY,
+        gh_pr_id=None,
+    )
+    payload = doc.model_dump_json(indent=2)
+    blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
+    tree_sha = repo.run_git("mktree", input=f"100644 blob {blob_sha}\tpr.json\n").strip()
+
+    commit_sha = _commit(
+        repo,
+        tree_sha,
+        message=f"create pr: {title}",
+        author_name=author,
+        author_email=f"{author}@gitcabin.local",
+    )
+    ref = f"{LOCAL_PR_REF_PREFIX}/{number}"
+    # Zero-OID expected-old enforces "this ref must not yet exist"; the
+    # Counter's CAS already prevents number reuse but this is defense in
+    # depth, mirroring the create_issue pattern.
+    repo.run_git("update-ref", ref, commit_sha, "0000000000000000000000000000000000000000")
+    return _read_pr_at(repo.repo.commit(ref), number, repo)
+
+
+def list_local_prs(repo: BareRepo) -> list[Pr]:
+    """Return every local-only PR at refs/prs/local/<n>, sorted by number."""
+    out: list[Pr] = []
+    prefix = f"{LOCAL_PR_REF_PREFIX}/"
+    for ref in repo.repo.refs:
+        if not ref.path.startswith(prefix):
+            continue
+        try:
+            number = int(ref.path.removeprefix(prefix))
+        except ValueError:
+            continue
+        out.append(_read_pr_at(ref.commit, number, repo))
+    out.sort(key=lambda p: p.number)
+    return out
+
+
+def list_all_prs(repo: BareRepo) -> list[Pr]:
+    """Return every PR across both namespaces, synced first then local.
+
+    Mirrors list_all_issues' ordering: published items appear before drafts,
+    so the GraphQL Repository.pullRequests connection reads naturally for a
+    user looking at their PR queue.
+    """
+    return list_synced_prs(repo) + list_local_prs(repo)
+
+
+def get_any_pr(repo: BareRepo, number: int) -> Pr | None:
+    """Return the PR with `number`, preferring synced over local on collision.
+
+    Same dispatch as get_any_issue — synced wins because it carries upstream
+    provenance, while a local PR with the same number is a draft that hasn't
+    been pushed.
+    """
+    synced = get_synced_pr(repo, number)
+    if synced is not None:
+        return synced
+    commit = _load_commit(repo, f"{LOCAL_PR_REF_PREFIX}/{number}")
+    if commit is None:
+        return None
+    return _read_pr_at(commit, number, repo)
 
 
 def import_pr_comment(

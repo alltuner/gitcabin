@@ -16,7 +16,7 @@ This doc focuses specifically on **authorship attribution and edit affordances**
 | Pull issues + comments | `gitcabin.sync.pull` | done |
 | Pull PRs | `gitcabin.sync.pull` | done |
 | Push local-only issues + comments | `gitcabin.sync.push` | done |
-| Push PRs | — | not built ([#14](https://github.com/alltuner/gitcabin/issues/14)) |
+| Push local-only PRs | `gitcabin.sync.push` | done (head branch must already exist on GitHub — see prereq below) |
 | `can_edit` / `can_delete` rules | `gitcabin.permissions` | done |
 | Mutation enforcement (closeIssue) | `gitcabin.graphql_schema` | done |
 | Mutation enforcement (updateIssue, updateComment, deleteComment) | — | not built ([#15](https://github.com/alltuner/gitcabin/issues/15)) |
@@ -30,6 +30,19 @@ This doc focuses specifically on **authorship attribution and edit affordances**
 | `gh_author_id` for rename stability | — | not built ([#18](https://github.com/alltuner/gitcabin/issues/18)) |
 
 End-to-end smoke test verified at commit `9e6383d` against `alltuner/gitcabin-sync-smoke`: pull recovered both issues + the comment + the closed-state of issue 2; push of a local draft created issue 3 upstream (with its comment), renumbered locally from `refs/issues/local/1` to `refs/issues/3`, and stamped `provenance: SYNCED_BIDIR` + the upstream `gh_issue_id`.
+
+### PR push prerequisite
+
+`push_local_prs` POSTs to `/repos/<o>/<r>/pulls` with the local PR's `head` and `base` branch labels. **gitcabin doesn't push code** — only metadata. The head branch must already exist on the GitHub repo before push runs, or GitHub responds 422 ("head ref does not exist"). The simplest workflow today:
+
+```sh
+git push origin my-branch                    # push code first (your working tree)
+cab repo init me/cabin                       # ensure the local mirror exists
+# create a draft PR locally, e.g. via createPullRequest mutation in a future commit
+gitcabin sync push me/cabin                  # POST it to GitHub
+```
+
+A future commit could add a "push branches first" step to `gitcabin sync push` that walks `refs/prs/local/*`, identifies their head branches, and runs `git push` against the GitHub repo before posting the PR. Out of scope for #14; tracked separately.
 
 ---
 

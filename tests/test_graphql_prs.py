@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from gitcabin.storage.prs import (
     PrState,
+    create_local_pr,
     import_pr,
     import_pr_comment,
 )
@@ -237,3 +238,68 @@ def test_issue_or_pull_request_falls_back_to_issue_when_no_pr(
     item = payload["data"]["repository"]["issueOrPullRequest"]
     assert item["__typename"] == "Issue"
     assert item["title"] == "just an issue"
+
+
+# ---- local PR surfacing ------------------------------------------------ #
+
+
+def test_pull_requests_list_includes_local_drafts(
+    client: TestClient,
+    init_repo: Callable[[str, str], BareRepo],
+) -> None:
+    repo = init_repo("octocat", "hello")
+    create_local_pr(
+        repo,
+        title="local draft",
+        body="WIP",
+        author="david",
+        head_ref="david:wip",
+        base_ref="main",
+        is_draft=True,
+    )
+    import_pr(
+        repo,
+        number=42,
+        title="synced one",
+        body="",
+        author="alice",
+        state=PrState.OPEN,
+        head_ref="alice:f",
+        base_ref="main",
+        is_draft=False,
+        gh_pr_id=900,
+    )
+
+    payload = _post(client, PR_LIST, {"owner": "octocat", "name": "hello"})
+    assert "errors" not in payload, payload
+    prs = payload["data"]["repository"]["pullRequests"]
+    assert prs["totalCount"] == 2
+    by_title = {n["title"]: n for n in prs["nodes"]}
+    assert "synced one" in by_title and "local draft" in by_title
+    assert by_title["local draft"]["isDraft"] is True
+
+
+def test_pull_request_lookup_finds_local_pr_by_number(
+    client: TestClient,
+    init_repo: Callable[[str, str], BareRepo],
+) -> None:
+    repo = init_repo("octocat", "hello")
+    pr = create_local_pr(
+        repo,
+        title="my draft",
+        body="describe",
+        author="david",
+        head_ref="david:wip",
+        base_ref="main",
+    )
+    payload = _post(
+        client, PR_SINGLE, {"owner": "octocat", "name": "hello", "number": pr.number}
+    )
+    assert "errors" not in payload, payload
+    item = payload["data"]["repository"]["pullRequest"]
+    assert item["number"] == pr.number
+    assert item["author"]["login"] == "david"
+    # Author is the local viewer (default 'david' from Settings) so all
+    # affordances are open.
+    assert item["viewerDidAuthor"] is True
+    assert item["viewerCanCloseOrReopen"] is True

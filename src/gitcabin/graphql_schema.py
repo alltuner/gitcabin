@@ -45,9 +45,9 @@ from gitcabin.storage.prs import (
 )
 from gitcabin.storage.prs import (
     PrState,
-    get_synced_pr,
+    get_any_pr,
+    list_all_prs,
     list_synced_pr_comments,
-    list_synced_prs,
 )
 from gitcabin.storage.repo import BareRepo
 from gitcabin.sync.config import read_config as read_sync_config
@@ -789,19 +789,20 @@ class Repository:
             return None
         viewer = settings.viewer_login
         role = _viewer_role(bare)
-        pr = get_synced_pr(bare, number)
+        pr = get_any_pr(bare, number)
         if pr is not None:
             return _to_gql_pr(pr, self.owner.login, self.name, viewer, role)
         return self.issue(info, number)
 
     @strawberry.field
     def pull_request(self, info: strawberry.Info, number: int) -> PullRequest | None:
-        """Single-PR lookup by number. Returns None if not found."""
+        """Single-PR lookup by number. Checks both synced and local namespaces;
+        synced wins on collision (rare; only happens before push)."""
         settings: Settings = info.context["settings"]
         bare = _open_bare_or_none(settings, self.owner.login, self.name)
         if bare is None:
             return None
-        stored = get_synced_pr(bare, number)
+        stored = get_any_pr(bare, number)
         if stored is None:
             return None
         return _to_gql_pr(
@@ -816,12 +817,13 @@ class Repository:
         after: str | None = None,
         states: list[IssueState] | None = None,
     ) -> PullRequestConnection:
-        """List of synced PRs. State filter accepts gh's IssueState (OPEN/CLOSED);
-        merged PRs are filtered as CLOSED for wire compatibility."""
+        """List of synced + local PRs, synced first then local (matches the
+        list_all_issues ordering). State filter accepts gh's IssueState
+        (OPEN/CLOSED); merged PRs are filtered as CLOSED for wire compatibility."""
         _ = after
         settings: Settings = info.context["settings"]
         bare = _open_bare_or_none(settings, self.owner.login, self.name)
-        all_stored = list_synced_prs(bare) if bare is not None else []
+        all_stored = list_all_prs(bare) if bare is not None else []
 
         if states:
             wanted = {s.name for s in states}

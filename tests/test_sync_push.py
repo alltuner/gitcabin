@@ -20,10 +20,18 @@ from gitcabin.storage.issues import (
     get_synced_issue,
     list_synced_comments,
 )
+from gitcabin.storage.prs import (
+    LOCAL_PR_REF_PREFIX,
+    PR_REF_PREFIX,
+    PrState,
+    create_local_pr,
+    get_synced_pr,
+    list_local_prs,
+)
 from gitcabin.storage.repo import BareRepo
 from gitcabin.sync.config import SyncConfig
 from gitcabin.sync.gh import GhClient
-from gitcabin.sync.push import push_local_issues
+from gitcabin.sync.push import push_local_issues, push_local_prs
 
 
 @pytest.fixture
@@ -49,11 +57,20 @@ class FakeGh:
     sequence + payload shape.
     """
 
-    def __init__(self, *, gh_owner: str, gh_name: str, first_issue_number: int = 41) -> None:
+    def __init__(
+        self,
+        *,
+        gh_owner: str,
+        gh_name: str,
+        first_issue_number: int = 41,
+        first_pr_number: int = 51,
+    ) -> None:
         self.calls: list[tuple[list[str], str | None]] = []
         self._issues: dict[int, dict[str, object]] = {}
         self._next_number = first_issue_number
+        self._next_pr_number = first_pr_number
         self._next_issue_id = 9_000_000
+        self._next_pr_id = 7_000_000
         self._next_comment_id = 8_100_000_000
         self._comment_count_by_issue: dict[int, int] = {}
         self._gh_owner = gh_owner
@@ -67,6 +84,8 @@ class FakeGh:
 
         if method == "POST" and path == f"repos/{self._gh_owner}/{self._gh_name}/issues":
             return json.dumps(self._create_issue(body))
+        if method == "POST" and path == f"repos/{self._gh_owner}/{self._gh_name}/pulls":
+            return json.dumps(self._create_pr(body))
         if method == "POST" and "/issues/" in path and path.endswith("/comments"):
             issue_number = int(path.rsplit("/", 2)[-2])
             return json.dumps(self._create_comment(issue_number, body))
@@ -115,6 +134,26 @@ class FakeGh:
         record = self._issues[issue_number]
         record.update(body)
         return record
+
+    def _create_pr(self, body: dict[str, object]) -> dict[str, object]:
+        number = self._next_pr_number
+        self._next_pr_number += 1
+        gh_id = self._next_pr_id
+        self._next_pr_id += 1
+        return {
+            "number": number,
+            "id": gh_id,
+            "title": body.get("title", ""),
+            "body": body.get("body", ""),
+            "state": "open",
+            "draft": body.get("draft", False),
+            "merged": False,
+            "head": {"label": body.get("head", ""), "ref": body.get("head", "")},
+            "base": {"ref": body.get("base", "")},
+            "created_at": "2026-05-04T11:00:00Z",
+            "user": {"login": "alice-on-github"},
+            "pull_request": {"url": "x"},
+        }
 
 
 def _client_for(fake: FakeGh) -> GhClient:
@@ -256,4 +295,141 @@ def test_pushed_synced_ref_is_under_refs_issues_not_local(
     assert sha
     # Local ref is gone.
     listing = repo.run_git("for-each-ref", LOCAL_ISSUE_REF_PREFIX).strip()
+    assert listing == ""
+
+
+# ---- PR push ------------------------------------------------------------ #
+
+
+def test_push_local_pr_creates_upstream_and_renumbers(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    pr = create_local_pr(
+        repo,
+        title="add tests",
+        body="describe what was added",
+        author="david",
+        head_ref="david:tests",
+        base_ref="main",
+    )
+    assert pr.provenance is Provenance.LOCAL_ONLY
+    assert pr.number == 1  # first allocation from the prs counter
+
+    fake = FakeGh(gh_owner="octo", gh_name="hello", first_pr_number=51)
+    pushed = push_local_prs(repo, _client_for(fake), config)
+
+    assert len(pushed) == 1
+    assert pushed[0].number == 51
+    assert pushed[0].provenance is Provenance.SYNCED_BIDIR
+    assert pushed[0].author == "alice-on-github"
+    assert pushed[0].head_ref == "david:tests"
+    assert pushed[0].base_ref == "main"
+
+    # Synced ref written.
+    synced = get_synced_pr(repo, 51)
+    assert synced is not None
+    assert synced.gh_pr_id == 7_000_000
+
+    # Local ref deleted.
+    assert list_local_prs(repo) == []
+    listing = repo.run_git("for-each-ref", LOCAL_PR_REF_PREFIX).strip()
+    assert listing == ""
+
+
+def test_push_local_pr_post_payload_contains_head_base_draft(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    create_local_pr(
+        repo,
+        title="draft PR",
+        body="WIP",
+        author="david",
+        head_ref="david:wip",
+        base_ref="main",
+        is_draft=True,
+    )
+
+    fake = FakeGh(gh_owner="octo", gh_name="hello", first_pr_number=10)
+    push_local_prs(repo, _client_for(fake), config)
+
+    post = next(
+        c
+        for c in fake.calls
+        if "-X" in c[0]
+        and c[0][c[0].index("-X") + 1] == "POST"
+        and c[0][-1].endswith("/pulls")
+    )
+    payload = json.loads(post[1] or "{}")
+    assert payload == {
+        "title": "draft PR",
+        "body": "WIP",
+        "head": "david:wip",
+        "base": "main",
+        "draft": True,
+    }
+
+
+def test_push_local_pr_returns_empty_when_no_local_prs(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    fake = FakeGh(gh_owner="octo", gh_name="hello")
+    assert push_local_prs(repo, _client_for(fake), config) == []
+    assert fake.calls == []
+
+
+def test_push_local_pr_skips_already_synced_prs(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    # Create one local PR and one already-synced PR (using import_pr directly).
+    create_local_pr(
+        repo,
+        title="local one",
+        body="",
+        author="david",
+        head_ref="david:f1",
+        base_ref="main",
+    )
+
+    from gitcabin.storage.prs import import_pr as imp_pr
+
+    imp_pr(
+        repo,
+        number=99,
+        title="already synced",
+        body="",
+        author="alice-on-github",
+        state=PrState.OPEN,
+        head_ref="alice:f2",
+        base_ref="main",
+        is_draft=False,
+        gh_pr_id=12345,
+        provenance=Provenance.SYNCED_BIDIR,
+    )
+
+    fake = FakeGh(gh_owner="octo", gh_name="hello", first_pr_number=10)
+    pushed = push_local_prs(repo, _client_for(fake), config)
+
+    assert len(pushed) == 1
+    assert pushed[0].number == 10
+    assert get_synced_pr(repo, 99) is not None  # untouched
+
+
+def test_pushed_pr_synced_ref_is_under_refs_prs_not_local(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    create_local_pr(
+        repo,
+        title="t",
+        body="",
+        author="david",
+        head_ref="david:f",
+        base_ref="main",
+    )
+
+    fake = FakeGh(gh_owner="octo", gh_name="hello", first_pr_number=42)
+    push_local_prs(repo, _client_for(fake), config)
+
+    sha = repo.run_git("rev-parse", f"{PR_REF_PREFIX}/42").strip()
+    assert sha
+    listing = repo.run_git("for-each-ref", LOCAL_PR_REF_PREFIX).strip()
     assert listing == ""
