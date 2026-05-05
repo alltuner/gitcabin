@@ -16,16 +16,25 @@ The wrinkle: `gh` hardcodes port 80 for `github.localhost`, which would normally
 
 ### Setup
 
-`compose.yml` binds gitcabin to `127.0.0.1:8080` and the dashboard to `127.0.0.1:8081` (both unprivileged):
+`compose.yml` binds the gitcabin API to `127.0.0.1:8080` and the dashboard to `127.0.0.1:8081` (both unprivileged). Service names are `gitcabin-api` and `gitcabin-dashboard`:
 
 ```sh
 docker compose up -d
 ```
 
-Put `cab` on your PATH (one-time):
+Build `cab` and put it on your PATH (one-time):
 
 ```sh
-ln -s "$PWD/scripts/cab" /usr/local/bin/cab
+cd cab && go build -o /usr/local/bin/cab . && cd ..
+```
+
+Or alias it as a docker image (no Go toolchain on the host):
+
+```sh
+docker buildx build --platform linux/amd64,linux/arm64 -t alltuner/cab:dev cab/
+alias cab='docker run --rm --network gitcabin_default \
+  -v "$HOME/.config/gh:/home/cab/.config/gh" \
+  alltuner/cab:dev'
 ```
 
 ### Use it

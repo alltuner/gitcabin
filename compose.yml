@@ -11,9 +11,9 @@
 name: gitcabin
 
 services:
-  gitcabin:
+  gitcabin-api:
     build: .
-    container_name: gitcabin
+    container_name: gitcabin-api
     ports:
       # 127.0.0.1-bound on purpose: keeps gitcabin off the LAN. The host
       # port (8080) is the "well-known" cab proxy port — users invoke
@@ -44,9 +44,9 @@ services:
   # The HTML dashboard runs as its own granian process so the API and the
   # web UI keep separate routing concerns. Same image, same data volume,
   # different ASGI factory + port.
-  gitcabin-web:
+  gitcabin-dashboard:
     build: .
-    container_name: gitcabin-web
+    container_name: gitcabin-dashboard
     command:
       - "uv"
       - "run"

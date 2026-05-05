@@ -32,13 +32,24 @@ docker compose watch
 
 Compose builds the image, runs the API on `127.0.0.1:8080` and the HTML dashboard on `127.0.0.1:8081`, and reloads on every source edit. Plain `docker compose up --build` works too if you don't want autoreload. **No privileged ports anywhere** — neither the host nor the daemon needs to bind 80 or 443.
 
-Put the bundled `cab` wrapper on your PATH once:
+`cab` is the wrapper that points `gh`'s HTTP traffic at gitcabin and registers the host with `gh` on first use. Two ways to invoke it:
+
+**Build the Go binary (host-side):**
 
 ```sh
-ln -s "$PWD/scripts/cab" /usr/local/bin/cab        # or any directory on your PATH
+cd cab && go build -o /usr/local/bin/cab . && cd ..
 ```
 
-That's it. Your first `cab` command auto-registers `github.localhost` with `gh` (writes a placeholder token to `~/.config/gh/hosts.yml` — gitcabin doesn't verify tokens, anyone who can reach the port is the owner) and then runs whatever you asked:
+**Or alias the docker image (no Go toolchain needed):**
+
+```sh
+docker buildx build --platform linux/amd64,linux/arm64 -t alltuner/cab:dev cab/
+alias cab='docker run --rm --network gitcabin_default \
+  -v "$HOME/.config/gh:/home/cab/.config/gh" \
+  alltuner/cab:dev'
+```
+
+Either way, the very first `cab` command auto-registers `github.localhost` with `gh` (writes a placeholder token to `~/.config/gh/hosts.yml` — gitcabin doesn't verify tokens, anyone who can reach the port is the owner) and then runs whatever you asked:
 
 ```sh
 cab repo init me/cabin                             # init a fresh repo
@@ -46,7 +57,7 @@ cab issue create -R me/cabin --title "First issue" --body "Try things out"
 cab issue list -R me/cabin
 ```
 
-`cab` is a tiny shell wrapper that sets `HTTP_PROXY` to `127.0.0.1:8080` (gitcabin's unprivileged port) and `GH_HOST` to `github.localhost`, then forwards to `gh`. `gh` honors `HTTP_PROXY` for `http://...` URLs (its calls to real `github.com` over HTTPS are unaffected), so a single `cab issue create -R me/cabin --title ...` Just Works without ever touching a privileged port — no `vmnetd`, no port-80 conflicts, no `/etc/hosts` edits. See [`docs/cab.md`](docs/cab.md) for the design.
+`cab` sets `HTTP_PROXY` to `127.0.0.1:8080` (gitcabin's unprivileged port; or `gitcabin-api:8000` from inside the docker network) and `GH_HOST` to `github.localhost`, then `exec`s `gh`. `gh` honors `HTTP_PROXY` for `http://...` URLs (its calls to real `github.com` over HTTPS are unaffected), so a single `cab issue create -R me/cabin --title ...` Just Works without ever touching a privileged port — no `vmnetd`, no port-80 conflicts, no `/etc/hosts` edits. See [`docs/cab.md`](docs/cab.md) for the design.
 
 Stop with `docker compose down`.
 
