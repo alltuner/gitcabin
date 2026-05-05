@@ -1,5 +1,6 @@
 {# ABOUTME: Single-commit view — metadata + changed paths + unified diff. #}
 {% extends "_base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}{{ detail.short_sha }} — {{ owner }}/{{ name }}{% endblock %}
 {% block header_breadcrumb %}{% include "_repo_breadcrumb.html" %}{% endblock %}
 {% block content %}
@@ -13,17 +14,19 @@
     <pre class="mt-2 whitespace-pre-wrap break-words rounded bg-gray-50 p-3 font-mono text-xs text-gray-700 dark:bg-gray-900 dark:text-gray-300">{{ detail.body }}</pre>
     {% endif %}
   </div>
-  <div class="bg-gray-50 px-4 py-2 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-    <strong class="text-gray-700 dark:text-gray-300">{{ detail.author_name }}</strong>
-    &lt;{{ detail.author_email }}&gt; committed
-    <time datetime="{{ detail.authored_at }}" title="{{ detail.authored_at }}">{{ detail.authored_at | relative_time }}</time>
-    <span class="mx-2">·</span>
-    <span class="font-mono" title="{{ detail.sha }}">{{ detail.sha | short_sha }}</span>
+  <div class="flex flex-wrap items-center gap-x-2 gap-y-1 bg-gray-50 px-4 py-2 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+    <span>
+      <strong class="text-gray-700 dark:text-gray-300">{{ detail.author_name }}</strong>
+      &lt;{{ detail.author_email }}&gt; committed
+      <time datetime="{{ detail.authored_at }}" title="{{ detail.authored_at }}">{{ detail.authored_at | relative_time }}</time>
+    </span>
+    <span class="text-gray-300 dark:text-gray-600">·</span>
+    {{ ui.sha_chip(detail.sha, detail.sha | short_sha) }}
     {% if detail.parents %}
-    <span class="mx-2">·</span>
-    parent{% if detail.parents | length > 1 %}s{% endif %}
+    <span class="text-gray-300 dark:text-gray-600">·</span>
+    <span>parent{% if detail.parents | length > 1 %}s{% endif %}</span>
     {% for p in detail.parents %}
-    <a href="/{{ owner }}/{{ name }}/commit/{{ p }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400" title="{{ p }}">{{ p | short_sha }}</a>{% if not loop.last %}, {% endif %}
+    {{ ui.sha_chip(p, p | short_sha, "/" ~ owner ~ "/" ~ name ~ "/commit/" ~ p) }}
     {% endfor %}
     {% endif %}
   </div>

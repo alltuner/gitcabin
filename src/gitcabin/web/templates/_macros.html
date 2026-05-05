@@ -26,3 +26,16 @@
   {{ caller() }}
 </div>
 {% endmacro %}
+
+{# Short-SHA chip — bordered mono pill. Wraps a link when `href` is given,
+   plain span otherwise. Used wherever a commit's short hash appears
+   (commit rows, branch / tag tip, parent commits, blame run starts) so
+   every SHA on the page renders identically. Title carries the full
+   hash for hover-tooltip + copy-paste. #}
+{% macro sha_chip(sha, short_sha, href=None) -%}
+  {%- if href -%}
+  <a href="{{ href }}" title="{{ sha }}" class="inline-block rounded border border-gray-300 px-1.5 py-0.5 font-mono text-xs text-gray-700 hover:bg-gray-100 hover:text-blue-600 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-blue-400">{{ short_sha }}</a>
+  {%- else -%}
+  <span title="{{ sha }}" class="inline-block rounded border border-gray-300 px-1.5 py-0.5 font-mono text-xs text-gray-700 dark:border-gray-700 dark:text-gray-300">{{ short_sha }}</span>
+  {%- endif -%}
+{%- endmacro %}

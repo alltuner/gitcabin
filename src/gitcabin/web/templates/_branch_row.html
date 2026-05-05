@@ -1,14 +1,14 @@
 {# ABOUTME: Branch row — name + default badge + tip commit metadata. Reads `ref`, `owner`, `name`, `default_branch`. #}
+{% import "_macros.html" as ui %}
 <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
   <a href="/{{ owner }}/{{ name }}/tree/{{ ref.name }}" class="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400">{{ ref.name }}</a>
   {% if ref.name == default_branch %}
   <span class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200">default</span>
   {% endif %}
-  <div class="ml-auto text-xs text-gray-500 dark:text-gray-400">
-    <a href="/{{ owner }}/{{ name }}/commit/{{ ref.target_sha }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400" title="{{ ref.target_sha }}">{{ ref.target_short_sha }}</a>
-    <span class="mx-1">·</span>
-    {{ ref.target_subject }}
-    <span class="mx-1">·</span>
+  <div class="ml-auto flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+    {{ ui.sha_chip(ref.target_sha, ref.target_short_sha, "/" ~ owner ~ "/" ~ name ~ "/commit/" ~ ref.target_sha) }}
+    <span>{{ ref.target_subject }}</span>
+    <span class="text-gray-300 dark:text-gray-600">·</span>
     <time datetime="{{ ref.target_authored_at }}" title="{{ ref.target_authored_at }}">{{ ref.target_authored_at | relative_time }}</time>
   </div>
 </div>

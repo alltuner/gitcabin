@@ -2,16 +2,20 @@
 {# Caller sets `state` (the active filter), `open_count`, `closed_count`, `total_count`.
    Links use the bare query string so the partial works on any path that already
    reads ?state=... (issues page; PR list later if/when we add filter parity). #}
-<div class="mb-4 flex items-center gap-4 border-b border-gray-200 pb-3 text-sm dark:border-gray-800">
-  <a href="?state=open" class="flex items-center gap-1 {% if state == 'open' %}font-semibold text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100{% endif %}">
+{# Three filters, identical shape: <count> <label>. The "All" filter has
+   no state-icon (it's not a state), but renders with the same count-
+   first composition so the row reads consistently. Active filter bolds
+   the count + label and lifts the color; the others stay muted. #}
+<div class="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-gray-200 pb-3 text-sm dark:border-gray-800">
+  <a href="?state=open" class="inline-flex items-center gap-1.5 {% if state == 'open' %}font-semibold text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100{% endif %}">
     {% include "icons/issue_open.html" %}
-    {{ open_count }} Open
+    <span><strong class="font-semibold">{{ open_count }}</strong> Open</span>
   </a>
-  <a href="?state=closed" class="flex items-center gap-1 {% if state == 'closed' %}font-semibold text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100{% endif %}">
+  <a href="?state=closed" class="inline-flex items-center gap-1.5 {% if state == 'closed' %}font-semibold text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100{% endif %}">
     {% include "icons/issue_closed.html" %}
-    {{ closed_count }} Closed
+    <span><strong class="font-semibold">{{ closed_count }}</strong> Closed</span>
   </a>
-  <a href="?state=all" class="{% if state == 'all' %}font-semibold text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100{% endif %}">
-    All ({{ total_count }})
+  <a href="?state=all" class="inline-flex items-center {% if state == 'all' %}font-semibold text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100{% endif %}">
+    <span><strong class="font-semibold">{{ total_count }}</strong> All</span>
   </a>
 </div>
