@@ -38,11 +38,11 @@
   {% endfor %}
 </div>
 
-{% if detail.diff_html %}
+{% if detail.diff_files %}
 <h3 class="mb-2 text-sm font-semibold">Diff</h3>
-<div class="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-  {{ detail.diff_html | safe }}
-</div>
+{% for file in detail.diff_files %}
+{% include "_diff_file.html" %}
+{% endfor %}
 {% elif detail.diff_truncated %}
 <div class="rounded-md border border-gray-200 p-4 text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">Diff too large to render inline.</div>
 {% elif detail.parents %}

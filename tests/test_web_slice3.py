@@ -47,8 +47,9 @@ def test_commit_view_renders_unified_diff(
     response = web_client.get(f"/octocat/hello/commit/{second}")
     assert response.status_code == 200
     body = response.text
-    # Pygments diff lexer wraps +/- lines in spans we can spot generically.
-    assert "diff --git" in body or 'class="hl"' in body
+    # Diffs render as a structured table with diff-add / diff-remove rows.
+    assert 'class="diff-table"' in body
+    assert "diff-add" in body or "diff-remove" in body
     # The actual diff content is present somewhere in the page.
     assert "v2" in body
 

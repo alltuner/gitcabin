@@ -73,6 +73,35 @@ class CommitSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class DiffLine:
+    """One line in a hunk. `kind` is "context" / "add" / "remove" / "noeol"."""
+
+    kind: str
+    old_no: int | None
+    new_no: int | None
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class DiffHunk:
+    """A `@@ -a,b +c,d @@` block — header line plus its body."""
+
+    header: str
+    lines: tuple[DiffLine, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DiffFile:
+    """One file's worth of diff — old/new path, change type, hunks."""
+
+    change_type: str
+    old_path: str
+    new_path: str
+    hunks: tuple[DiffHunk, ...]
+    is_binary: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class CommitDetail:
     """Single-commit view — metadata + the names of changed files."""
 
@@ -85,7 +114,7 @@ class CommitDetail:
     authored_at: str
     parents: tuple[str, ...]
     changed_paths: tuple[tuple[str, str], ...]  # (change_type, path) pairs
-    diff_html: str | None = None
+    diff_files: tuple[DiffFile, ...] = ()
     diff_truncated: bool = False
 
 
@@ -344,11 +373,13 @@ def commit_detail(commit: Commit) -> CommitDetail:
     subject, _, body = msg.partition("\n")
 
     changed: list[tuple[str, str]] = []
-    diff_html: str | None = None
+    diff_files: tuple[DiffFile, ...] = ()
     diff_truncated = False
 
     if commit.parents:
         diffs = commit.parents[0].diff(commit, create_patch=True)
+        files: list[DiffFile] = []
+        running = 0
         for d in diffs:
             change_type = (
                 "added"
@@ -361,23 +392,28 @@ def commit_detail(commit: Commit) -> CommitDetail:
             )
             path = d.b_path or d.a_path or ""
             changed.append((change_type, path))
-        # Stitch every per-file patch together for a single highlighted block.
-        # Cap total size; oversized diffs (e.g. lockfile bumps) just print the
-        # changed-files list with a "diff omitted" notice.
-        chunks: list[bytes] = []
-        running = 0
-        for d in diffs:
+
             patch = d.diff if isinstance(d.diff, bytes) else (d.diff or b"")
             running += len(patch)
+            # Cap total patch size; oversized diffs (e.g. lockfile bumps) skip
+            # rendering and surface a "Diff too large" notice.
             if running > MAX_DIFF_RENDER_BYTES:
                 diff_truncated = True
                 break
-            if patch:
-                chunks.append(patch)
-        if chunks and not diff_truncated:
-            diff_html = _render_diff_html(b"\n".join(chunks).decode(errors="replace"))
-        elif diff_truncated:
-            diff_html = None
+
+            patch_text = patch.decode(errors="replace") if patch else ""
+            is_binary = "Binary files" in patch_text
+            files.append(
+                DiffFile(
+                    change_type=change_type,
+                    old_path=d.a_path or "",
+                    new_path=d.b_path or "",
+                    hunks=_parse_hunks(patch_text) if not is_binary else (),
+                    is_binary=is_binary,
+                )
+            )
+        if not diff_truncated:
+            diff_files = tuple(files)
     else:
         # Initial commit: every file in the tree was "added". No parent to
         # diff against, so we don't render a unified diff body.
@@ -395,16 +431,73 @@ def commit_detail(commit: Commit) -> CommitDetail:
         authored_at=commit.authored_datetime.isoformat(),
         parents=tuple(p.hexsha for p in commit.parents),
         changed_paths=tuple(changed),
-        diff_html=diff_html,
+        diff_files=diff_files,
         diff_truncated=diff_truncated,
     )
 
 
-def _render_diff_html(patch: str) -> str:
-    """Highlight a unified diff with Pygments' diff lexer."""
-    lexer = get_lexer_by_name("diff")
-    formatter = HtmlFormatter(cssclass="hl", wrapcode=True)
-    return highlight(patch, lexer, formatter)
+_HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
+def _parse_hunks(patch: str) -> tuple[DiffHunk, ...]:
+    """Parse a single file's patch body (no `diff --git`/`---`/`+++` headers).
+
+    GitPython's `Diff.diff` returns just the hunk content for one file —
+    walk it line-by-line, classifying each by its leading char and tracking
+    old/new line numbers from the most recent `@@ -a,b +c,d @@` header.
+    """
+    hunks: list[DiffHunk] = []
+    in_hunk = False
+    hunk_header = ""
+    hunk_lines: list[DiffLine] = []
+    old_no = 0
+    new_no = 0
+
+    def flush() -> None:
+        nonlocal hunk_lines, hunk_header, in_hunk
+        if in_hunk:
+            hunks.append(DiffHunk(header=hunk_header, lines=tuple(hunk_lines)))
+        hunk_lines = []
+        hunk_header = ""
+        in_hunk = False
+
+    for line in patch.splitlines():
+        match = _HUNK_HEADER_RE.match(line)
+        if match:
+            flush()
+            in_hunk = True
+            hunk_header = line
+            old_no = int(match.group(1))
+            new_no = int(match.group(3))
+            continue
+        if not in_hunk:
+            continue
+        if line.startswith("\\"):
+            # "\ No newline at end of file"
+            hunk_lines.append(
+                DiffLine(kind="noeol", old_no=None, new_no=None, text=line)
+            )
+            continue
+        if line.startswith("+"):
+            hunk_lines.append(
+                DiffLine(kind="add", old_no=None, new_no=new_no, text=line[1:])
+            )
+            new_no += 1
+        elif line.startswith("-"):
+            hunk_lines.append(
+                DiffLine(kind="remove", old_no=old_no, new_no=None, text=line[1:])
+            )
+            old_no += 1
+        else:
+            text = line[1:] if line.startswith(" ") else line
+            hunk_lines.append(
+                DiffLine(kind="context", old_no=old_no, new_no=new_no, text=text)
+            )
+            old_no += 1
+            new_no += 1
+
+    flush()
+    return tuple(hunks)
 
 
 def list_branches(bare: BareRepo) -> list[RefSummary]:
