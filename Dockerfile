@@ -23,10 +23,11 @@ RUN chown app:app /app
 USER app
 
 # Copy the bits uv_build needs to build the gitcabin wheel: pyproject (deps +
-# build config), README (referenced as project.readme), and the package source.
-# The src/ tree gets overlaid by a bind mount in compose for live reload, but
-# we still need it at build time so `uv sync` can install gitcabin editable.
-COPY --chown=app:app pyproject.toml README.md ./
+# build config), README (project.readme), LICENSE (project.license file), and
+# the package source. The src/ tree gets overlaid by a bind mount in compose
+# for live reload, but we still need it at build time so `uv sync` can install
+# gitcabin editable.
+COPY --chown=app:app pyproject.toml README.md LICENSE ./
 COPY --chown=app:app src/ ./src/
 
 # Pre-create the data directory so a host bind mount inherits its ownership
