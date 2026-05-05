@@ -1,9 +1,9 @@
-{# ABOUTME: Landing page — owner cards. #}
+{# ABOUTME: Landing page — project cards (each project may hold multiple repos). #}
 {% extends "_base.html" %}
 {% import "_macros.html" as ui %}
-{% block title %}gitcabin — owners{% endblock %}
+{% block title %}gitcabin — projects{% endblock %}
 {% block content %}
-<h1 class="mb-4 text-2xl font-semibold">Owners</h1>
+<h1 class="mb-4 text-2xl font-semibold">Projects</h1>
 {% if owners %}
 {% call ui.bordered_list() %}
   {% for owner in owners %}
@@ -12,8 +12,8 @@
 {% endcall %}
 {% else %}
 {% call ui.empty_state() %}
-  No owners yet. Create a bare repo at
-  <code class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-900">data/repos/&lt;owner&gt;/&lt;repo&gt;.git</code>
+  No projects yet. Create a bare repo at
+  <code class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-900">data/repos/&lt;project&gt;/&lt;repo&gt;.git</code>
   to get started.
 {% endcall %}
 {% endif %}

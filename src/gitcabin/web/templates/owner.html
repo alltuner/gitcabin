@@ -1,10 +1,10 @@
-{# ABOUTME: Owner page — every repo belonging to a single login. #}
+{# ABOUTME: Project page — every repo grouped under one project name. #}
 {% extends "_base.html" %}
 {% import "_macros.html" as ui %}
 {% block title %}{{ owner }} — gitcabin{% endblock %}
 {% block content %}
 <nav class="mb-3 text-sm text-gray-500 dark:text-gray-400">
-  <a href="/" class="hover:underline">owners</a>
+  <a href="/" class="hover:underline">projects</a>
   <span>/</span>
   <span class="text-gray-900 dark:text-gray-100">{{ owner }}</span>
 </nav>
