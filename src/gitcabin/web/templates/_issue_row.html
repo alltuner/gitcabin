@@ -1,9 +1,13 @@
 {# ABOUTME: Issue row — title + state icon + #number/author/date metadata. Reads `issue`, `owner`, `name`. #}
 <div class="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
   {% if issue.state.value == "OPEN" %}
-  <svg class="mt-1 h-4 w-4 flex-none text-green-600" viewBox="0 0 16 16" fill="currentColor"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill-rule="evenodd" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>
+    {% with icon_class = "mt-1 h-4 w-4 flex-none text-green-600" %}
+      {% include "icons/issue_open.html" %}
+    {% endwith %}
   {% else %}
-  <svg class="mt-1 h-4 w-4 flex-none text-purple-600" viewBox="0 0 16 16" fill="currentColor"><path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/><path fill-rule="evenodd" d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z"/></svg>
+    {% with icon_class = "mt-1 h-4 w-4 flex-none text-purple-600" %}
+      {% include "icons/issue_closed.html" %}
+    {% endwith %}
   {% endif %}
   <div class="min-w-0 flex-1">
     <a href="/{{ owner }}/{{ name }}/issues/{{ issue.number }}" class="font-semibold text-gray-900 hover:text-blue-600 dark:text-gray-100 dark:hover:text-blue-400">{{ issue.title }}</a>

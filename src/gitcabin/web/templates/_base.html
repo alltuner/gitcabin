@@ -66,14 +66,7 @@
          right. The bottom dot is dropped at this size — three nodes
          packed in 16 user units feels cramped; the larger 3-node
          variant is reserved for marketing / docs surfaces. #}
-      <svg viewBox="4 4 16 16" class="h-9 w-9 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M5.5 11.5 L12 7 L18.5 11.5"/>
-        <path d="M7 18 H17"/>
-        <circle cx="10.2" cy="14" r="1.15"/>
-        <circle cx="14.2" cy="15.2" r="1.15"/>
-        <path d="M10.2 18 V14"/>
-        <path d="M10.2 14 L14.2 15.2"/>
-      </svg>
+      {% include "icons/cabin.html" %}
       <span class="text-[1.65rem] leading-none tracking-tight">gitcabin</span>
     </a>
 
@@ -97,29 +90,21 @@
         title="Light"
         aria-label="Light mode">
         <input type="radio" name="theme" value="light" class="theme-controller sr-only">
-        <svg viewBox="0 0 20 20" class="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-          <circle cx="10" cy="10" r="3.5"/>
-          <path d="M10 2 V4 M10 16 V18 M2 10 H4 M16 10 H18 M4.4 4.4 L5.8 5.8 M14.2 14.2 L15.6 15.6 M4.4 15.6 L5.8 14.2 M14.2 5.8 L15.6 4.4"/>
-        </svg>
+        {% include "icons/theme_sun.html" %}
       </label>
       <label
         class="cursor-pointer rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 has-[input:checked]:bg-gray-100 has-[input:checked]:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100 dark:has-[input:checked]:bg-gray-700 dark:has-[input:checked]:text-gray-100"
         title="System"
         aria-label="Match system">
         <input type="radio" name="theme" value="system" class="sr-only" checked>
-        <svg viewBox="0 0 20 20" class="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
-          <rect x="2.5" y="3.5" width="15" height="11" rx="1.5"/>
-          <path d="M7 17.5 H13 M10 14.5 V17.5"/>
-        </svg>
+        {% include "icons/theme_system.html" %}
       </label>
       <label
         class="cursor-pointer rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 has-[input:checked]:bg-gray-100 has-[input:checked]:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100 dark:has-[input:checked]:bg-gray-700 dark:has-[input:checked]:text-gray-100"
         title="Dark"
         aria-label="Dark mode">
         <input type="radio" name="theme" value="dark" class="theme-controller sr-only">
-        <svg viewBox="0 0 20 20" class="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
-          <path d="M16.5 11.5 a7 7 0 1 1 -8 -8 a5.5 5.5 0 0 0 8 8 Z"/>
-        </svg>
+        {% include "icons/theme_moon.html" %}
       </label>
     </div>
   </div>
