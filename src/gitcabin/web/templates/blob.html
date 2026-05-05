@@ -39,6 +39,10 @@
   </div>
   {% if rendered.is_too_large %}
   <div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">File too large to render inline.</div>
+  {% elif rendered.is_image %}
+  <div class="flex items-center justify-center bg-gray-50 p-8 dark:bg-gray-900">
+    <img src="/{{ owner }}/{{ name }}/raw/{{ ref }}/{{ path }}" alt="{{ path }}" class="max-w-full">
+  </div>
   {% elif rendered.is_binary %}
   <div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Binary file — preview not available.</div>
   {% elif rendered.is_empty %}

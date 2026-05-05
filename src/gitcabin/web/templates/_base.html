@@ -31,53 +31,23 @@
 
 {% block head_extra %}{% endblock %}
 </head>
-{# Three htmx attributes work together to make navigation feel instant:
+{# We lean on browser-native navigation rather than htmx hx-boost:
+   the preload extension fires an XHR on hover (~100 ms in), the
+   response lands in the browser's HTTP cache, and the click ~200 ms
+   later is just a normal navigation served from cache. That keeps the
+   "instant" feel without inheriting hx-boost's history pitfalls — back
+   navigation under hx-boost would intermittently lose the page chrome
+   because htmx's history-restore path replaced the body inconsistently
+   with our partial-swap setup.
 
-   hx-boost="true"          intercept anchor clicks and POST/GET via htmx
-                            instead of a full browser navigation. URL still
-                            pushes via history.pushState (default).
-   hx-target/select/swap    swap only <main> rather than the whole body, so
-                            the header doesn't flicker. We GET the new page,
-                            pick out its <main>, and outerHTML-swap ours.
-   hx-select-oob="header-breadcrumb"
-                            also pluck the breadcrumb container out of the
-                            response and OOB-swap the matching #header-
-                            breadcrumb in the current DOM. Without it the
-                            in-header crumb stays frozen on the page first
-                            loaded, since hx-select="main" doesn't reach
-                            the navbar.
-   show:window:top          scroll to top after the swap, mimicking what a
-                            real navigation would do.
-   hx-history="false"       disable htmx's localStorage history cache. Asset
-                            bundle filenames are content-hashed and flip
-                            across server restarts, so a restored snapshot
-                            would reference dead CSS/JS URLs and render
-                            unstyled. Back navigation now does a fresh GET
-                            and picks up the current asset hashes.
-
-   preload="mouseover" needs to land on the actual swap targets — htmx-
-   ext-preload's `htmx:afterProcessNode` handler only inits anchors
-   under nodes that have `preload` themselves (or contain children with
-   it). On initial page load that means body works (the extension finds
-   <main> + #header-breadcrumb via the `[preload]` querySelectorAll on
-   body), but on subsequent hx-boost swaps htmx processes only the new
-   <main> in isolation — which without its own `preload` attribute
-   leaves every replaced anchor uninstrumented. Same trap for the OOB
-   header-breadcrumb swap. Putting `preload="mouseover"` on each swap
-   target keeps preload alive across navigations. The extension fires
-   an XHR on hover (~100 ms after the mouse enters); the response lands
-   in the browser HTTP cache. When the user clicks ~200 ms later,
-   htmx's GET under hx-boost reads from cache and the swap is
-   essentially free.
+   `preload="mouseover"` is set on each swap target (main +
+   #header-breadcrumb) so htmx-ext-preload's `htmx:afterProcessNode`
+   handler can find the anchors to instrument on initial load. Cache-
+   Control: private, max-age=10 on _render lets the prefetched response
+   be reused.
 #}
 <body
   class="flex min-h-screen flex-col bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100 font-sans"
-  hx-boost="true"
-  hx-target="main"
-  hx-select="main"
-  hx-select-oob="header-breadcrumb"
-  hx-swap="outerHTML show:window:top"
-  hx-history="false"
   hx-ext="preload">
 <header class="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
   <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
@@ -95,10 +65,6 @@
            variant is reserved for marketing / docs surfaces. #}
         {% include "icons/cabin.html" %}
       </a>
-      {# id-tagged so htmx's `hx-select-oob` (set on body) can pluck the
-         updated breadcrumb out of every nav response and swap it in
-         alongside the <main> swap. Without that, only <main> swaps and
-         the breadcrumb stays frozen on whichever page first loaded. #}
       <div id="header-breadcrumb" preload="mouseover" class="min-w-0 text-xl font-semibold tracking-tight">{% block header_breadcrumb %}{% endblock %}</div>
     </div>
 

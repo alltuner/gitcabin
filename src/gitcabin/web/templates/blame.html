@@ -39,10 +39,13 @@
       </a>
     </div>
   </div>
+  {% if is_binary %}
+  <div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Binary file — line attribution doesn't apply.</div>
+  {% else %}
   <table class="blame">
     <tbody>
       {% for line in lines %}
-      <tr>
+      <tr class="blame-run blame-run-{{ 'odd' if line.run_index % 2 else 'even' }}{% if line.is_run_start and not loop.first %} blame-run-start{% endif %}">
         {% if line.is_run_start %}
         <td class="commit">
           <a href="/{{ owner }}/{{ name }}/commit/{{ line.commit_sha }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400">{{ line.short_sha }}</a>
@@ -52,11 +55,12 @@
         {% else %}
         <td class="commit empty"></td>
         {% endif %}
-        <td class="lineno">{{ line.line_number }}</td>
-        <td class="content"><pre>{{ line.text }}</pre></td>
+        <td class="linenum"><a href="#L{{ line.line_number }}" id="L{{ line.line_number }}">{{ line.line_number }}</a></td>
+        <td class="code hl"><pre>{% if line.highlighted_html %}{{ line.highlighted_html | safe }}{% else %}{{ line.text }}{% endif %}</pre></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  {% endif %}
 </div>
 {% endblock %}

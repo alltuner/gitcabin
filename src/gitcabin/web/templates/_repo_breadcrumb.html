@@ -1,8 +1,9 @@
 {# ABOUTME: Header breadcrumb for every repo page — owner / name.
-   ABOUTME: The logo to the left already links to the dashboard, so the
-   ABOUTME: `projects` root crumb is dropped. Reads `owner` and `name`
-   ABOUTME: from context. Drop into `header_breadcrumb`. #}
-{% with crumbs = [
-  {"label": owner, "href": "/" ~ owner},
-  {"label": name},
-] %}{% include "_breadcrumb.html" %}{% endwith %}
+   ABOUTME: Both segments are always links (owner → owner page, name →
+   ABOUTME: repo overview). The repo-name link works as a "back to repo
+   ABOUTME: home" affordance from any deeper view. #}
+<nav class="flex min-w-0 flex-wrap items-center gap-x-2">
+  <a href="/{{ owner }}" class="truncate text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ owner }}</a>
+  <span class="text-gray-300 dark:text-gray-600">/</span>
+  <a href="/{{ owner }}/{{ name }}" class="truncate text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400">{{ name }}</a>
+</nav>

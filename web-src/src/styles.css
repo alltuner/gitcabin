@@ -285,7 +285,11 @@ html { scrollbar-gutter: stable; }
 .diff-blank { background: transparent; }
 
 /* Blame table — needs a custom multi-column layout that Tailwind utility
-   classes alone don't make obvious. */
+   classes alone don't make obvious. Rows alternate by *run* (a contiguous
+   block of lines from the same commit), not by row, so the eye can see
+   which lines belong together at a glance. The inter-row border only
+   draws on `.blame-run-start` (every commit boundary), so lines within
+   a run flow as one block. */
 table.blame {
   width: 100%;
   border-collapse: collapse;
@@ -295,16 +299,29 @@ table.blame {
 table.blame td {
   vertical-align: top;
   padding: 0 8px;
-  border-bottom: 1px solid var(--color-base-300);
+}
+tr.blame-run-start td { border-top: 1px solid var(--color-base-300); }
+tr.blame-run-even { background: var(--color-base-100); }
+tr.blame-run-odd  { background: var(--color-base-200); }
+:where([data-theme=dark]) tr.blame-run-even,
+:where(:root:has(input.theme-controller[value=dark]:checked)) tr.blame-run-even {
+  background: color-mix(in srgb, var(--color-base-100) 92%, transparent);
+}
+:where([data-theme=dark]) tr.blame-run-odd,
+:where(:root:has(input.theme-controller[value=dark]:checked)) tr.blame-run-odd {
+  background: color-mix(in srgb, var(--color-base-200) 88%, transparent);
 }
 table.blame td.commit {
   width: 280px;
-  background: var(--color-base-200);
   border-right: 1px solid var(--color-base-300);
   font-size: 11px;
   padding: 4px 8px;
 }
-table.blame td.commit.empty { background: transparent; }
+table.blame td.commit.empty {
+  /* Inherit run bg from <tr>; an empty cell still belongs visually to
+     the run, so the metadata above continues to "own" these lines. */
+  background: transparent;
+}
 table.blame td.commit .subject {
   font-size: 11px;
   font-weight: 600;
@@ -326,5 +343,15 @@ table.blame td.linenum {
   user-select: none;
   border-right: 1px solid var(--color-base-300);
 }
-table.blame td.code { padding: 0 12px; }
+table.blame td.linenum a {
+  color: inherit;
+  text-decoration: none;
+  display: block;
+}
+table.blame td.linenum a:hover { color: var(--color-base-content); }
+table.blame td.code { padding: 0 12px; background: transparent; }
 table.blame td.code pre { margin: 0; padding: 0; background: transparent; }
+/* `.hl` (pygments) carries its own light background — override so the
+   blame run-stripe on <tr> shows through the code column too. */
+table.blame td.code.hl,
+table.blame td.code.hl pre { background: transparent !important; }

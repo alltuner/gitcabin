@@ -9,7 +9,10 @@
 
 <div class="mb-4 rounded-md border border-gray-200 dark:border-gray-800">
   <div class="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-    <h2 class="font-semibold">{{ detail.subject }}</h2>
+    <div class="flex items-start justify-between gap-3">
+      <h2 class="font-semibold">{{ detail.subject }}</h2>
+      {{ ui.sha_chip(detail.sha, detail.sha | short_sha) }}
+    </div>
     {% if detail.body %}
     <pre class="mt-2 whitespace-pre-wrap break-words rounded bg-gray-50 p-3 font-mono text-xs text-gray-700 dark:bg-gray-900 dark:text-gray-300">{{ detail.body }}</pre>
     {% endif %}
@@ -20,8 +23,6 @@
       &lt;{{ detail.author_email }}&gt; committed
       <time datetime="{{ detail.authored_at }}" title="{{ detail.authored_at }}">{{ detail.authored_at | relative_time }}</time>
     </span>
-    <span class="text-gray-300 dark:text-gray-600">·</span>
-    {{ ui.sha_chip(detail.sha, detail.sha | short_sha) }}
     {% if detail.parents %}
     <span class="text-gray-300 dark:text-gray-600">·</span>
     <span>parent{% if detail.parents | length > 1 %}s{% endif %}</span>

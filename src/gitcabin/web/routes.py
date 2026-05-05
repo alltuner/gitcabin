@@ -415,17 +415,24 @@ def build_router(settings: Settings) -> APIRouter:
         request: Request, project: str, name: str, ref: str, path: str
     ) -> HTMLResponse:
         bare = _open_repo(settings, project, name)
-        lines = code.blame_blob(bare, ref, path)
-        if lines is None:
-            raise HTTPException(status_code=404, detail="blob not found")
-        # Pull the blob's size so the blame chrome can match the blob page —
-        # same code-panel header (`<bytes> | nav-links`).
-        blob_size: int | None = None
         commit = code.resolve_ref(bare, ref)
-        if commit is not None:
-            node = code.walk_tree_at_path(commit, path)
-            if node is not None and node.type == "blob":
-                blob_size = node.size
+        if commit is None:
+            raise HTTPException(status_code=404, detail="ref not found")
+        node = code.walk_tree_at_path(commit, path)
+        if node is None or node.type != "blob":
+            raise HTTPException(status_code=404, detail="blob not found")
+        # Skip the blame walk for binary blobs — line attribution doesn't
+        # make sense for a sequence of bytes. Detect via the same NUL-byte
+        # heuristic git uses internally.
+        sample = node.data_stream.read(8192)
+        is_binary = b"\x00" in sample
+        if is_binary:
+            lines: list[code.BlameLine] = []
+        else:
+            blame_lines = code.blame_blob(bare, ref, path)
+            if blame_lines is None:
+                raise HTTPException(status_code=404, detail="blob not found")
+            lines = blame_lines
         return _render(
             request,
             settings,
@@ -435,7 +442,8 @@ def build_router(settings: Settings) -> APIRouter:
             ref=ref,
             path=path,
             lines=lines,
-            blob_size=blob_size,
+            blob_size=node.size,
+            is_binary=is_binary,
             crumb_segments=_path_crumbs(path),
             branches=code.list_branches(bare),
             tags=code.list_tags(bare),

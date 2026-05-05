@@ -56,6 +56,7 @@ class RenderedBlob:
     is_binary: bool
     is_too_large: bool
     is_empty: bool
+    is_image: bool
     highlighted_html: str | None
     raw_text: str | None
 
@@ -134,7 +135,14 @@ class RefSummary:
 @dataclass(frozen=True, slots=True)
 class BlameLine:
     """One line of blame output. The first line of any run-of-same-commit lines
-    keeps the commit metadata; subsequent contiguous lines reuse it."""
+    keeps the commit metadata; subsequent contiguous lines reuse it.
+
+    `run_index` increments at every commit boundary so the template can
+    alternate row backgrounds and make runs visually distinct.
+    `highlighted_html` is the pygments-rendered HTML for this line's
+    code (or None when the file's lexer wasn't found, in which case the
+    template falls back to `text`).
+    """
 
     line_number: int
     text: str
@@ -144,6 +152,8 @@ class BlameLine:
     authored_at: str
     subject: str
     is_run_start: bool
+    run_index: int
+    highlighted_html: str | None
 
 
 def head_ref_name(bare: BareRepo) -> str | None:
@@ -356,6 +366,19 @@ def render_markdown(text: str) -> str:
     return md.convert(text)
 
 
+_IMAGE_EXTENSIONS = frozenset(
+    [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".bmp", ".avif"]
+)
+
+
+def _is_image(name: str) -> bool:
+    """File-extension check — used by render_blob so an image binary blob
+    can be previewed inline (via the /raw/ endpoint) instead of falling
+    back to the generic 'binary file' card."""
+    lower = name.lower()
+    return any(lower.endswith(ext) for ext in _IMAGE_EXTENSIONS)
+
+
 def render_blob(blob: Blob) -> RenderedBlob:
     """Decode and syntax-highlight a blob, with size, empty, and binary fallbacks."""
     raw = blob.data_stream.read()
@@ -368,6 +391,7 @@ def render_blob(blob: Blob) -> RenderedBlob:
             is_binary=False,
             is_too_large=False,
             is_empty=True,
+            is_image=False,
             highlighted_html=None,
             raw_text="",
         )
@@ -378,6 +402,7 @@ def render_blob(blob: Blob) -> RenderedBlob:
             is_binary=False,
             is_too_large=True,
             is_empty=False,
+            is_image=False,
             highlighted_html=None,
             raw_text=None,
         )
@@ -390,6 +415,7 @@ def render_blob(blob: Blob) -> RenderedBlob:
             is_binary=True,
             is_too_large=False,
             is_empty=False,
+            is_image=_is_image(blob.name),
             highlighted_html=None,
             raw_text=None,
         )
@@ -403,6 +429,7 @@ def render_blob(blob: Blob) -> RenderedBlob:
             is_binary=True,
             is_too_large=False,
             is_empty=False,
+            is_image=_is_image(blob.name),
             highlighted_html=None,
             raw_text=None,
         )
@@ -435,6 +462,7 @@ def render_blob(blob: Blob) -> RenderedBlob:
         is_binary=False,
         is_too_large=False,
         is_empty=False,
+        is_image=False,
         highlighted_html=html,
         raw_text=text,
     )
@@ -708,6 +736,22 @@ def _summarize_refs(bare: BareRepo, refs) -> list[RefSummary]:  # type: ignore[n
     return out
 
 
+def _highlight_per_line(filename: str, text: str) -> list[str] | None:
+    """Highlight `text` with pygments and return one HTML string per line.
+
+    `nowrap=True` strips the `<div><pre>` wrapper so callers can splice
+    the colored spans into their own per-line cells. Returns None if no
+    lexer matches the filename — caller falls back to plain text.
+    """
+    try:
+        lexer = guess_lexer_for_filename(filename, text)
+    except ClassNotFound:
+        return None
+    formatter = HtmlFormatter(nowrap=True)
+    body = highlight(text, lexer, formatter)
+    return body.split("\n")
+
+
 def blame_blob(bare: BareRepo, ref: str, path: str) -> list[BlameLine] | None:
     """Run `git blame` and return per-line attribution. None if path absent."""
     commit = resolve_ref(bare, ref)
@@ -719,9 +763,21 @@ def blame_blob(bare: BareRepo, ref: str, path: str) -> list[BlameLine] | None:
     blame = bare.repo.blame(ref, path)
     if blame is None:
         return []
+
+    # Pygments-highlight the file once so each blame line can reuse the
+    # tokenization in its own cell. Done outside the per-line loop because
+    # tokenization is file-level (a string can span lines, etc).
+    raw = node.data_stream.read()
+    try:
+        decoded = raw.decode()
+    except UnicodeDecodeError:
+        decoded = raw.decode("utf-8", errors="replace")
+    highlighted_lines = _highlight_per_line(path.rsplit("/", 1)[-1], decoded)
+
     out: list[BlameLine] = []
     last_sha: str | None = None
     line_no = 0
+    run_index = -1
     for blame_commit, lines in blame:
         msg = (
             blame_commit.message
@@ -733,6 +789,13 @@ def blame_blob(bare: BareRepo, ref: str, path: str) -> list[BlameLine] | None:
             line_no += 1
             text = content if isinstance(content, str) else content.decode(errors="replace")
             is_run_start = blame_commit.hexsha != last_sha
+            if is_run_start:
+                run_index += 1
+            highlighted = (
+                highlighted_lines[line_no - 1]
+                if highlighted_lines is not None and line_no - 1 < len(highlighted_lines)
+                else None
+            )
             out.append(
                 BlameLine(
                     line_number=line_no,
@@ -743,6 +806,8 @@ def blame_blob(bare: BareRepo, ref: str, path: str) -> list[BlameLine] | None:
                     authored_at=blame_commit.authored_datetime.isoformat(),
                     subject=subject,
                     is_run_start=is_run_start,
+                    run_index=run_index,
+                    highlighted_html=highlighted,
                 )
             )
             last_sha = blame_commit.hexsha
