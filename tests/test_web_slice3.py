@@ -125,6 +125,34 @@ def test_raw_404_for_missing_blob(
     assert response.status_code == 404
 
 
+def test_tree_handles_slash_in_branch_name(
+    web_client: TestClient, init_repo
+) -> None:
+    # Branches like `feature/widget-update` are common — clicking them
+    # in the branches list shouldn't 404. The route splits the URL tail
+    # via longest-prefix matching so the slash doesn't get parsed as a
+    # path separator.
+    bare = init_repo("octocat", "hello")
+    _seed_repo(bare, {"README.md": "# v1\n"})
+    bare.run_git("update-ref", "refs/heads/feature/widget-update", "main")
+
+    response = web_client.get("/octocat/hello/tree/feature/widget-update")
+    assert response.status_code == 200
+    assert "README.md" in response.text
+
+
+def test_blob_handles_slash_in_branch_name(
+    web_client: TestClient, init_repo
+) -> None:
+    bare = init_repo("octocat", "hello")
+    _seed_repo(bare, {"src/main.py": "print('a')\n"})
+    bare.run_git("update-ref", "refs/heads/release/1.0", "main")
+
+    response = web_client.get("/octocat/hello/blob/release/1.0/src/main.py")
+    assert response.status_code == 200
+    assert "print" in response.text
+
+
 def test_diff_truncates_when_oversized(web_client: TestClient, init_repo) -> None:
     bare = init_repo("octocat", "huge")
     # Initial commit so there's a parent for the second commit.

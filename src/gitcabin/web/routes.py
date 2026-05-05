@@ -155,6 +155,25 @@ def _open_repo(settings: Settings, project: str, name: str) -> BareRepo:
     return bare
 
 
+def _split_ref_path(bare: BareRepo, rest: str) -> tuple[str, str] | None:
+    """Disambiguate `<ref>/<path>` where the ref itself may contain slashes.
+
+    Tree / blob / blame / raw / download URLs all use `<ref>/<path>` after
+    the verb. Branches like `feature/widget-update` or `release/2.0` are
+    common, so we can't pin the ref to a single segment. Mirror GitHub's
+    parsing: walk the rest from longest to shortest prefix, returning the
+    first prefix that resolves to a git ref. Empty `rest` returns None.
+    """
+    if not rest:
+        return None
+    segments = rest.split("/")
+    for i in range(len(segments), 0, -1):
+        candidate = "/".join(segments[:i])
+        if code.resolve_ref(bare, candidate) is not None:
+            return candidate, "/".join(segments[i:])
+    return None
+
+
 def _path_crumbs(path: str) -> list[dict[str, str]]:
     """Build breadcrumb segments for a slash-separated path.
 
@@ -496,34 +515,53 @@ def build_router(settings: Settings) -> APIRouter:
     ) -> HTMLResponse:
         return _render_repo_overview(request, project=owner, name=name)
 
-    @router.get("/{owner}/{name}/tree/{ref}", include_in_schema=False)
-    @router.get("/{owner}/{name}/tree/{ref}/{path:path}", include_in_schema=False)
+    def _resolve_ref_url(
+        owner: str, name: str, rest: str, *, require_path: bool
+    ) -> tuple[BareRepo, str, str]:
+        """Open the repo and split `<ref>/<path>` from the URL tail.
+
+        404s if the ref doesn't resolve, or if `require_path` is set and
+        the URL didn't include a path after the ref (blob / blame / raw /
+        download all need a path; tree doesn't).
+        """
+        bare = _open_repo(settings, owner, name)
+        pair = _split_ref_path(bare, rest)
+        if pair is None:
+            raise HTTPException(status_code=404, detail="ref not found")
+        ref, path = pair
+        if require_path and not path:
+            raise HTTPException(status_code=404, detail="path required")
+        return bare, ref, path
+
+    @router.get("/{owner}/{name}/tree/{rest:path}", include_in_schema=False)
     def project_tree(
-        request: Request, owner: str, name: str, ref: str, path: str = ""
+        request: Request, owner: str, name: str, rest: str
     ) -> HTMLResponse:
+        _, ref, path = _resolve_ref_url(owner, name, rest, require_path=False)
         return _render_tree(request, project=owner, name=name, ref=ref, path=path)
 
-    @router.get("/{owner}/{name}/blob/{ref}/{path:path}", include_in_schema=False)
+    @router.get("/{owner}/{name}/blob/{rest:path}", include_in_schema=False)
     def project_blob(
-        request: Request, owner: str, name: str, ref: str, path: str
+        request: Request, owner: str, name: str, rest: str
     ) -> HTMLResponse:
+        _, ref, path = _resolve_ref_url(owner, name, rest, require_path=True)
         return _render_blob(request, project=owner, name=name, ref=ref, path=path)
 
-    @router.get("/{owner}/{name}/raw/{ref}/{path:path}", include_in_schema=False)
-    def project_raw(owner: str, name: str, ref: str, path: str) -> Response:
+    @router.get("/{owner}/{name}/raw/{rest:path}", include_in_schema=False)
+    def project_raw(owner: str, name: str, rest: str) -> Response:
+        _, ref, path = _resolve_ref_url(owner, name, rest, require_path=True)
         return _serve_blob_bytes(
             project=owner, name=name, ref=ref, path=path, attachment=False
         )
 
-    @router.get(
-        "/{owner}/{name}/download/{ref}/{path:path}", include_in_schema=False
-    )
-    def project_download(owner: str, name: str, ref: str, path: str) -> Response:
+    @router.get("/{owner}/{name}/download/{rest:path}", include_in_schema=False)
+    def project_download(owner: str, name: str, rest: str) -> Response:
+        _, ref, path = _resolve_ref_url(owner, name, rest, require_path=True)
         return _serve_blob_bytes(
             project=owner, name=name, ref=ref, path=path, attachment=True
         )
 
-    @router.get("/{owner}/{name}/commits/{ref}", include_in_schema=False)
+    @router.get("/{owner}/{name}/commits/{ref:path}", include_in_schema=False)
     def project_commits(
         request: Request, owner: str, name: str, ref: str
     ) -> HTMLResponse:
@@ -539,10 +577,11 @@ def build_router(settings: Settings) -> APIRouter:
     def project_branches(request: Request, owner: str, name: str) -> HTMLResponse:
         return _render_branches(request, project=owner, name=name)
 
-    @router.get("/{owner}/{name}/blame/{ref}/{path:path}", include_in_schema=False)
+    @router.get("/{owner}/{name}/blame/{rest:path}", include_in_schema=False)
     def project_blame(
-        request: Request, owner: str, name: str, ref: str, path: str
+        request: Request, owner: str, name: str, rest: str
     ) -> HTMLResponse:
+        _, ref, path = _resolve_ref_url(owner, name, rest, require_path=True)
         return _render_blame(request, project=owner, name=name, ref=ref, path=path)
 
     @router.get("/{owner}/{name}/issues", include_in_schema=False)
