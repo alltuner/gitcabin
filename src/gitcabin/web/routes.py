@@ -97,10 +97,17 @@ def _list_owners(settings: Settings) -> list[dict[str, object]]:
 
 
 def _list_repos(settings: Settings, owner: str) -> list[dict[str, object]]:
-    """List repos under data_dir/repos/<owner>/, sorted by pushed_at desc."""
+    """List repos under data_dir/repos/<owner>/, sorted by pushed_at desc.
+
+    Each entry carries an optional `upstream` dict ({"owner", "name"}) when
+    the repo has a sync config — surfaced on the card so the user can see
+    at a glance which repos mirror a GitHub upstream.
+    """
     owner_dir = settings.data_dir / "repos" / owner
     if not owner_dir.is_dir():
         return []
+    from gitcabin.sync.config import read_config as read_sync_config
+
     out: list[dict[str, object]] = []
     for entry in sorted(owner_dir.iterdir()):
         if not entry.name.endswith(".git"):
@@ -108,11 +115,16 @@ def _list_repos(settings: Settings, owner: str) -> list[dict[str, object]]:
         bare = BareRepo.open(entry)
         if bare is None:
             continue
+        sync = read_sync_config(bare)
+        upstream = (
+            {"owner": sync.gh_owner, "name": sync.gh_name} if sync is not None else None
+        )
         out.append(
             {
                 "name": entry.name[:-4],
                 "description": None,
                 "pushed_at": _repo_pushed_at(bare),
+                "upstream": upstream,
             }
         )
     out.sort(key=lambda r: r["pushed_at"], reverse=True)

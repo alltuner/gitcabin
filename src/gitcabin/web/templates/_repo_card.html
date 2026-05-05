@@ -1,6 +1,14 @@
 {# ABOUTME: Repo card row — shown in the owner page repo list. Reads `owner` (login string) and `repo`. #}
 <a href="/{{ owner }}/{{ repo.name }}" class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
-  <div class="font-semibold text-blue-600 dark:text-blue-400">{{ repo.name }}</div>
+  <div class="flex items-center gap-2">
+    <span class="font-semibold text-blue-600 dark:text-blue-400">{{ repo.name }}</span>
+    {% if repo.upstream %}
+    <span class="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-400" title="Mirrors {{ repo.upstream.owner }}/{{ repo.upstream.name }} on github.com">
+      {% include "icons/upstream.html" %}
+      {{ repo.upstream.owner }}/{{ repo.upstream.name }}
+    </span>
+    {% endif %}
+  </div>
   {% if repo.description %}
   <div class="mt-1 text-sm text-gray-600 dark:text-gray-300">{{ repo.description }}</div>
   {% endif %}
