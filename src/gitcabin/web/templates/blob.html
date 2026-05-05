@@ -1,7 +1,6 @@
 {# ABOUTME: File viewer — Pygments-highlighted source, with binary/too-large fallbacks. #}
 {% extends "_base.html" %}
 {% block title %}{{ path }} — {{ owner }}/{{ name }}{% endblock %}
-{% block head_extra %}<link rel="stylesheet" href="/highlight.css">{% endblock %}
 {% block content %}
 {% set active_tab = "code" %}
 {% include "_repo_header.html" %}

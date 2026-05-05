@@ -36,6 +36,18 @@ if (!jsResult.success) {
   process.exit(1);
 }
 
+// ---- pygments: regenerate highlight.css before the CSS bundle runs ----- //
+
+// pygments owns the syntax-highlighting token rules (.hl .kn { color: ... }
+// and friends). The Python helper dumps them to stdout; we bundle the CSS
+// via @import in styles.css. Generated, not tracked — see .gitignore.
+const highlightOut = resolve(ROOT, "src/highlight.css");
+const projectRoot = resolve(ROOT, "..");
+const dumped = await $`uv run --no-dev python ${projectRoot}/scripts/dump_pygments_css.py`
+  .cwd(projectRoot)
+  .text();
+await writeFile(highlightOut, dumped);
+
 // ---- CSS: Tailwind 4 CLI ------------------------------------------------ //
 
 // Tailwind's bun integration is still experimental; running the CLI keeps the
