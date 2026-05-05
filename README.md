@@ -74,7 +74,76 @@ A tiny self-hosted GitHub clone driven by the official `gh` CLI, with all metada
 - Issues, PRs, and counters live in side refs of the bare git repo (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`). Code lives in normal `refs/heads/*` and `refs/tags/*`. The two namespaces never collide.
 - The HTTP API server is the only writer of metadata refs. Plain `git clone`/`git push` only see code.
 
-## Browsing the data
+## Using gitcabin
+
+Once it's running and `gh` is authenticated, everything goes through the regular `gh` commands. Set `GH_HOST=github.localhost` for the session (or pass `-h github.localhost` per call) and the rest looks like talking to GitHub.
+
+### Working with issues
+
+Repos are created on first use — there's no separate `gh repo create` step yet. Just create an issue and gitcabin will initialize the bare repo on disk.
+
+```sh
+export GH_HOST=github.localhost
+
+# Create an issue. The repo is initialized lazily.
+gh issue create -R me/cabin --title "First issue" --body "Try things out"
+
+# List issues. State filters work; ordering options are accepted but ignored.
+gh issue list -R me/cabin
+gh issue list -R me/cabin --state closed
+
+# View one, optionally with its comments.
+gh issue view 1 -R me/cabin
+gh issue view 1 -R me/cabin --comments
+
+# Edit your own issue. Title or body, separately or together.
+gh issue edit 1 -R me/cabin --title "Renamed"
+gh issue edit 1 -R me/cabin --body "Updated body"
+
+# Close. Reopening locally isn't wired up yet; manage state with edit.
+gh issue close 1 -R me/cabin
+```
+
+### Comments
+
+```sh
+gh issue comment 1 -R me/cabin --body "A reply"
+
+# Edit your own comment.
+gh api graphql -f query='
+  mutation U($id: ID!, $body: String!) {
+    updateIssueComment(input: {id: $id, body: $body}) {
+      issueComment { body }
+    }
+  }
+' -F id=<comment-id> -F body="Edited reply"
+
+# Delete your own comment (or any comment if you have ADMIN on a synced repo).
+gh api graphql -f query='
+  mutation D($id: ID!) {
+    deleteIssueComment(input: {id: $id}) { clientMutationId }
+  }
+' -F id=<comment-id>
+```
+
+`gh issue comment --edit-last` and `gh issue comment --delete` are the friendlier wrappers — both work as soon as gh's version supports `updateIssueComment` / `deleteIssueComment` (gh 2.92+).
+
+### Editability — who can change what
+
+The same rules GitHub uses, enforced by the API:
+
+| Action | When viewer == author | When viewer != author |
+|---|---|---|
+| Edit issue title / body | yes | **no, never** — even ADMIN. Editing someone else's words is impersonation. |
+| Close / reopen issue | yes | only with TRIAGE / WRITE / MAINTAIN / ADMIN role |
+| Edit comment body | yes | **no, never** — same rule |
+| Delete comment | yes | only with ADMIN (moderation) |
+
+These checks fire in the API layer, so they hold whether you go through `gh`, raw GraphQL, or the dashboard. The GraphQL types also expose the booleans (`viewerCanUpdate`, `viewerCanCloseOrReopen`, `viewerCanDelete`) so a UI can hide affordances ahead of time.
+
+For repos that have never been linked to a GitHub upstream, the viewer is implicitly ADMIN — you own the bare repo on your disk. For [linked repos](#mirroring-a-github-repo), the role is the one cached in the sync config (which mirrors GitHub's repo permission for that user).
+
+### Browsing the data
 
 The compose stack runs an HTML dashboard alongside the API on `127.0.0.1:8080`:
 
@@ -83,6 +152,57 @@ open http://localhost:8080/
 ```
 
 The dashboard reads the same bare repos as the API and lets you browse issues, refs, commits, blames, and tree views. Code refs (`refs/heads/*`) and metadata refs (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`) are presented separately.
+
+### Mirroring a GitHub repo
+
+gitcabin can pull issues, PRs, and comments from a real GitHub repository, and push back local-only issues you drafted in gitcabin. The sync subsystem is opt-in per repo.
+
+**Identity check first.** gitcabin's `viewer_login` (defaults to `david`) must match the GitHub login `gh` is authenticated as on `github.com`. Mismatch surfaces a hint:
+
+```sh
+$ gitcabin sync identity
+gitcabin viewer_login: david
+github.com gh login:   davidpoblador
+
+these differ. for sync, set GITCABIN_VIEWER_LOGIN to the gh value,
+or pass --login on `gitcabin sync link` to override per repo.
+```
+
+Set `GITCABIN_VIEWER_LOGIN=davidpoblador` in your environment (or `compose.override.yml`) so identity matches the gh-side login.
+
+**Link a local repo to its GitHub counterpart.** The role (READ / TRIAGE / WRITE / MAINTAIN / ADMIN) is fetched from GitHub automatically; pass `--role` to override.
+
+```sh
+gitcabin sync link me/cabin --gh alice/cabin
+# linked me/cabin -> alice/cabin (role=ADMIN, login=davidpoblador)
+```
+
+Linking writes a sync config to `refs/meta/sync` inside the local bare repo.
+
+**Pull from GitHub.** Pulls issues into `refs/issues/<gh-number>`, PRs into `refs/prs/<gh-number>`, and comments under each ref's `comments/` subtree. Re-pulls overwrite — GitHub wins when there's a conflict.
+
+```sh
+gitcabin sync pull me/cabin
+# pulled 12 issues, 3 PRs, 47 comments
+```
+
+**Push local-only issues to GitHub.** Walks `refs/issues/local/*`, posts each to GitHub, gets back the upstream number, and renumbers the ref to match. The local ref is dropped only after the new synced ref is fully populated.
+
+```sh
+gitcabin sync push me/cabin
+# pushed 1 issues
+```
+
+After push, the issue's `provenance` becomes `SYNCED_BIDIR` and its author is rewritten to the gh-side login (whoever gh authenticated as on github.com). The original local number is gone — `gh issue view 41` works, `gh issue view <old-local>` doesn't.
+
+**Sync mode trade-offs you should know:**
+
+- *Re-pull clobbers local edits on synced items.* If you close a synced issue locally and then run `pull` again, GitHub's open state will overwrite yours. A push-then-pull orchestration is tracked at [#13](https://github.com/alltuner/gitcabin/issues/13).
+- *Push isn't crash-safe yet.* If `push` dies between the upstream POST and the local renumbering, retrying creates a duplicate issue on GitHub. Tracked at [#12](https://github.com/alltuner/gitcabin/issues/12).
+- *PR push isn't built.* You can pull PRs to read them, but creating a PR from gitcabin needs local-branch infrastructure that doesn't exist yet ([#14](https://github.com/alltuner/gitcabin/issues/14)).
+- *`gh_author_id` isn't tracked.* If a GitHub user renames, items they authored on synced issues will keep their old login locally until the next pull updates the display ([#18](https://github.com/alltuner/gitcabin/issues/18)).
+
+The full design and outstanding gaps live in [`docs/github-sync.md`](docs/github-sync.md).
 
 ## Other deployment modes
 
