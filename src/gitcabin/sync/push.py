@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import subprocess
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from gitcabin.storage.issues import (
     LOCAL_ISSUE_REF_PREFIX,
@@ -25,6 +25,20 @@ from gitcabin.storage.prs import (
 from gitcabin.storage.repo import BareRepo
 from gitcabin.sync.config import SyncConfig
 from gitcabin.sync.gh import GhClient
+
+
+def _expect_dict(value: object, what: str) -> dict[str, Any]:
+    """Narrow a JSON-decoded response to a dict, raising if it isn't one.
+
+    GhClient returns `object` because json.loads is duck-typed at runtime,
+    but every endpoint we hit responds with a JSON object — narrowing to
+    `dict[str, Any]` lets call sites index into it without fighting the
+    type checker over each value's shape. The cast is required because
+    isinstance(x, dict) only narrows to `dict[Unknown, Unknown]`.
+    """
+    if not isinstance(value, dict):
+        raise RuntimeError(f"unexpected {what}: {value!r}")
+    return cast(dict[str, Any], value)
 
 
 def push_local_issues(repo: BareRepo, client: GhClient, config: SyncConfig) -> list[Issue]:
@@ -67,12 +81,13 @@ def _push_one(
     base = f"repos/{config.gh_owner}/{config.gh_name}"
 
     # 1. Create the issue upstream.
-    created = client.post_json(
-        f"{base}/issues",
-        {"title": issue.title, "body": issue.body},
+    created = _expect_dict(
+        client.post_json(
+            f"{base}/issues",
+            {"title": issue.title, "body": issue.body},
+        ),
+        "POST /issues response",
     )
-    if not isinstance(created, dict):
-        raise RuntimeError(f"unexpected POST /issues response: {created!r}")
     gh_number = int(created["number"])
     gh_id = int(created["id"])
     issue_authored_at = str(created.get("created_at") or "") or None
@@ -81,12 +96,13 @@ def _push_one(
     pushed_comment_ids: list[tuple[int, str | None, str, str]] = []
     # Each tuple: (gh_comment_id, authored_at, original_body, original_author).
     for comment in local_comments:
-        cresp = client.post_json(
-            f"{base}/issues/{gh_number}/comments",
-            {"body": comment.body},
+        cresp = _expect_dict(
+            client.post_json(
+                f"{base}/issues/{gh_number}/comments",
+                {"body": comment.body},
+            ),
+            "POST .../comments response",
         )
-        if not isinstance(cresp, dict):
-            raise RuntimeError(f"unexpected POST .../comments response: {cresp!r}")
         pushed_comment_ids.append(
             (
                 int(cresp["id"]),
@@ -281,18 +297,19 @@ def _push_one_pr(
 
     # 1. POST the PR upstream. GitHub's response carries the assigned number,
     # id, and timestamps we want on the SYNCED_BIDIR re-import.
-    created = client.post_json(
-        f"{base}/pulls",
-        {
-            "title": pr.title,
-            "body": pr.body,
-            "head": pr.head_ref,
-            "base": pr.base_ref,
-            "draft": pr.is_draft,
-        },
+    created = _expect_dict(
+        client.post_json(
+            f"{base}/pulls",
+            {
+                "title": pr.title,
+                "body": pr.body,
+                "head": pr.head_ref,
+                "base": pr.base_ref,
+                "draft": pr.is_draft,
+            },
+        ),
+        "POST /pulls response",
     )
-    if not isinstance(created, dict):
-        raise RuntimeError(f"unexpected POST /pulls response: {created!r}")
     gh_number = int(created["number"])
     gh_id = int(created["id"])
     pr_authored_at = str(created.get("created_at") or "") or None
