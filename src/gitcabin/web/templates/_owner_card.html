@@ -1,0 +1,7 @@
+{# ABOUTME: Owner card row — shown in the dashboard owner list. Reads `owner.login`, `owner.repo_count`. #}
+<a href="/{{ owner.login }}" class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
+  <div class="text-base font-semibold text-blue-600 dark:text-blue-400">{{ owner.login }}</div>
+  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+    {{ owner.repo_count }} repositor{{ "y" if owner.repo_count == 1 else "ies" }}
+  </div>
+</a>
