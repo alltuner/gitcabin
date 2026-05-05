@@ -4,5 +4,8 @@
   {% if repo.description %}
   <div class="mt-1 text-sm text-gray-600 dark:text-gray-300">{{ repo.description }}</div>
   {% endif %}
-  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">pushed {{ repo.pushed_at[:10] }}</div>
+  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+    pushed
+    <time datetime="{{ repo.pushed_at }}" title="{{ repo.pushed_at }}">{{ repo.pushed_at | relative_time }}</time>
+  </div>
 </a>

@@ -12,9 +12,10 @@
   <div class="min-w-0 flex-1">
     <a href="/{{ owner }}/{{ name }}/issues/{{ issue.number }}" class="font-semibold text-gray-900 hover:text-blue-600 dark:text-gray-100 dark:hover:text-blue-400">{{ issue.title }}</a>
     <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-      #{{ issue.number }} opened by <strong class="text-gray-700 dark:text-gray-300">{{ issue.author }}</strong> on {{ issue.created_at[:10] }}
+      #{{ issue.number }} opened by <strong class="text-gray-700 dark:text-gray-300">{{ issue.author }}</strong>
+      <time datetime="{{ issue.created_at }}" title="{{ issue.created_at }}">{{ issue.created_at | relative_time }}</time>
       {% if issue.updated_at != issue.created_at %}
-      · updated {{ issue.updated_at[:10] }}
+      · updated <time datetime="{{ issue.updated_at }}" title="{{ issue.updated_at }}">{{ issue.updated_at | relative_time }}</time>
       {% endif %}
     </div>
   </div>

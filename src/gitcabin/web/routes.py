@@ -24,6 +24,7 @@ from gitcabin.storage.issues import (
 from gitcabin.storage.repo import BareRepo
 from gitcabin.web import code
 from gitcabin.web.assets import AssetResolver
+from gitcabin.web.format import relative_time, short_sha
 
 _WEB_DIR = Path(__file__).parent
 _DIST_DIR = _WEB_DIR / "static" / "dist"
@@ -32,6 +33,9 @@ _templates = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
 # Reading the manifest happens on every call (the file is tiny and rebuilds while
 # the server runs pick up new hashes without a restart).
 _templates.env.globals["asset"] = AssetResolver(dist_dir=_DIST_DIR)
+# Filters for git-metadata polish — see gitcabin.web.format.
+_templates.env.filters["relative_time"] = relative_time
+_templates.env.filters["short_sha"] = short_sha
 
 
 def _repo_ctx(bare: BareRepo, issues: list | None = None) -> dict[str, object]:

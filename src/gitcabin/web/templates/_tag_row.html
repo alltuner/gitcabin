@@ -2,7 +2,7 @@
 <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
   <a href="/{{ owner }}/{{ name }}/tree/{{ ref.name }}" class="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400">{{ ref.name }}</a>
   <div class="ml-auto text-xs text-gray-500 dark:text-gray-400">
-    <a href="/{{ owner }}/{{ name }}/commit/{{ ref.target_sha }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400">{{ ref.target_short_sha }}</a>
+    <a href="/{{ owner }}/{{ name }}/commit/{{ ref.target_sha }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400" title="{{ ref.target_sha }}">{{ ref.target_short_sha }}</a>
     <span class="mx-1">·</span>
     {{ ref.target_subject }}
   </div>

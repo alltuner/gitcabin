@@ -14,14 +14,15 @@
   </div>
   <div class="bg-gray-50 px-4 py-2 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
     <strong class="text-gray-700 dark:text-gray-300">{{ detail.author_name }}</strong>
-    &lt;{{ detail.author_email }}&gt; committed on {{ detail.authored_at[:19] }}
+    &lt;{{ detail.author_email }}&gt; committed
+    <time datetime="{{ detail.authored_at }}" title="{{ detail.authored_at }}">{{ detail.authored_at | relative_time }}</time>
     <span class="mx-2">·</span>
-    <span class="font-mono">{{ detail.sha }}</span>
+    <span class="font-mono" title="{{ detail.sha }}">{{ detail.sha | short_sha }}</span>
     {% if detail.parents %}
     <span class="mx-2">·</span>
     parent{% if detail.parents | length > 1 %}s{% endif %}
     {% for p in detail.parents %}
-    <a href="/{{ owner }}/{{ name }}/commit/{{ p }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400">{{ p[:7] }}</a>{% if not loop.last %}, {% endif %}
+    <a href="/{{ owner }}/{{ name }}/commit/{{ p }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400" title="{{ p }}">{{ p | short_sha }}</a>{% if not loop.last %}, {% endif %}
     {% endfor %}
     {% endif %}
   </div>

@@ -23,14 +23,16 @@
   {% endif %}
   <span class="text-sm text-gray-500 dark:text-gray-400">
     <strong class="text-gray-700 dark:text-gray-300">{{ issue.author }}</strong>
-    opened this issue on {{ issue.created_at[:10] }}
+    opened this issue
+    <time datetime="{{ issue.created_at }}" title="{{ issue.created_at }}">{{ issue.created_at | relative_time }}</time>
   </span>
 </div>
 
 <div class="mb-4 overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
   <div class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
     <strong class="text-gray-900 dark:text-gray-100">{{ issue.author }}</strong>
-    commented on {{ issue.created_at[:10] }}
+    commented
+    <time datetime="{{ issue.created_at }}" title="{{ issue.created_at }}">{{ issue.created_at | relative_time }}</time>
   </div>
   <div class="px-4 py-3">
     {% if issue.body %}
@@ -45,7 +47,8 @@
 <div class="mb-4 overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
   <div class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
     <strong class="text-gray-900 dark:text-gray-100">{{ c.author }}</strong>
-    commented on {{ c.created_at[:10] }}
+    commented
+    <time datetime="{{ c.created_at }}" title="{{ c.created_at }}">{{ c.created_at | relative_time }}</time>
   </div>
   <div class="whitespace-pre-wrap break-words px-4 py-3 text-sm">{{ c.body }}</div>
 </div>
