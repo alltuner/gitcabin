@@ -243,7 +243,6 @@ def build_router(settings: Settings) -> APIRouter:
             raise HTTPException(status_code=404, detail="not a tree")
 
         readme_html: str | None = None
-        head_short_sha: str | None = None
         if not path:
             readme_blob = code.find_readme(commit.tree)
             if readme_blob is not None:
@@ -256,7 +255,6 @@ def build_router(settings: Settings) -> APIRouter:
                     readme_html = code.render_markdown(text)
                 else:
                     readme_html = f"<pre>{html_escape(text)}</pre>"
-            head_short_sha = commit.hexsha[:7]
 
         return _render(
             request,
@@ -274,7 +272,6 @@ def build_router(settings: Settings) -> APIRouter:
             tags=code.list_tags(bare),
             default_branch=code.head_ref_name(bare),
             readme_html=readme_html,
-            head_short_sha=head_short_sha,
             **_repo_ctx(bare),
         )
 

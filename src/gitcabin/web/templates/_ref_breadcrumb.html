@@ -1,6 +1,6 @@
 {# ABOUTME: One-row ref switcher + path breadcrumb, used on repo / tree / blob / blame / commits.
    ABOUTME: Reads `owner`, `name`, `ref`, `path`, `crumb_segments`, `branches`, `tags`,
-   ABOUTME: `default_branch`, `view_kind` ("repo"|"tree"|"blob"|"blame"|"commits"), optional `head_short_sha`. #}
+   ABOUTME: `default_branch`, `view_kind` ("repo"|"tree"|"blob"|"blame"|"commits"). #}
 {% set _kind = view_kind | default("tree") %}
 {% set _path = path | default("") %}
 {% set _path_suffix = ("/" ~ _path) if _path else "" %}
@@ -90,14 +90,13 @@
   </a>
   {% endif %}
 
-  {# The path row is only meaningful for views over the repo's file tree.
-     Commits-list pages reuse this partial for the dropdown + badges but
-     don't have a path, so we suppress it. #}
-  {% if _kind != "commits" %}
+  {# Path crumbs — only shown when we're below the repo root. At root
+     the row would just say the repo name, which the header breadcrumb
+     already carries. Commits-list views never have a path. #}
+  {% if crumb_segments %}
   <div class="font-mono text-sm">
-    <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
     {% for c in crumb_segments %}
-      <span class="text-gray-400">/</span>
+      {% if not loop.first %}<span class="text-gray-400">/</span>{% endif %}
       {% if loop.last %}
       <span class="text-gray-900 dark:text-gray-100">{{ c.name }}</span>
       {% else %}
@@ -105,9 +104,5 @@
       {% endif %}
     {% endfor %}
   </div>
-  {% endif %}
-
-  {% if _kind == "repo" and head_short_sha %}
-  <span class="ml-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ head_short_sha }}</span>
   {% endif %}
 </nav>
