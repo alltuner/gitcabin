@@ -50,7 +50,7 @@
    under hx-boost reads from cache and the swap is essentially free.
 #}
 <body
-  class="bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100 font-sans"
+  class="flex min-h-screen flex-col bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100 font-sans"
   hx-boost="true"
   hx-target="main"
   hx-select="main"
@@ -109,8 +109,9 @@
     </div>
   </div>
 </header>
-<main class="mx-auto max-w-6xl px-4 py-6">
+<main class="mx-auto w-full max-w-6xl px-4 py-6">
 {% block content %}{% endblock %}
 </main>
+{% include "_footer.html" %}
 </body>
 </html>
