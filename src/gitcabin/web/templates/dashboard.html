@@ -1,19 +1,34 @@
-{# ABOUTME: Landing page — project cards (each project may hold multiple repos). #}
+{# ABOUTME: Landing page — root-level repos at top, then projects (each holds repos). #}
 {% extends "_base.html" %}
 {% import "_macros.html" as ui %}
 {% block title %}gitcabin — projects{% endblock %}
 {% block content %}
 {% with crumbs = [{"label": "projects"}] %}{% include "_breadcrumb.html" %}{% endwith %}
+
+{% if root_repos %}
+<h2 class="mb-3 mt-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Repositories</h2>
+{% set owner = "" %}
+{% call ui.bordered_list() %}
+  {% for repo in root_repos %}
+  {% include "_repo_card.html" %}
+  {% endfor %}
+{% endcall %}
+{% endif %}
+
 {% if owners %}
+{% if root_repos %}
+<h2 class="mb-3 mt-6 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Projects</h2>
+{% endif %}
 {% call ui.bordered_list() %}
   {% for owner in owners %}
   {% include "_owner_card.html" %}
   {% endfor %}
 {% endcall %}
-{% else %}
+{% elif not root_repos %}
 {% call ui.empty_state() %}
   No projects yet. Create a bare repo at
-  <code class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-900">data/repos/&lt;project&gt;/&lt;repo&gt;.git</code>
+  <code class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-900">data/projects/&lt;project&gt;/&lt;repo&gt;.git</code>
+  (or a projectless one at <code class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-900">data/repos/&lt;repo&gt;.git</code>)
   to get started.
 {% endcall %}
 {% endif %}

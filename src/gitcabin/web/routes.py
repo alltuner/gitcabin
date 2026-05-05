@@ -157,9 +157,14 @@ def _repo_pushed_at(bare: BareRepo) -> str:
     return max(c.authored_datetime for c in commits).isoformat()
 
 
-def _open_repo(settings: Settings, owner: str, name: str) -> BareRepo:
-    """Resolve a (project, name) URL segment pair to a BareRepo or 404."""
-    bare = layout.open_repo(settings.data_dir, owner, name)
+def _open_repo(settings: Settings, project: str, name: str) -> BareRepo:
+    """Resolve a (project, name) pair to a BareRepo or 404.
+
+    `project=""` (empty string) means a projectless repo at
+    `data/repos/<name>.git`. Any non-empty project name resolves to
+    `data/projects/<project>/<name>.git`.
+    """
+    bare = layout.open_repo(settings.data_dir, project or None, name)
     if bare is None:
         raise HTTPException(status_code=404, detail="repo not found")
     return bare
@@ -188,42 +193,19 @@ def build_router(settings: Settings) -> APIRouter:
 
     # /static is mounted via the parent app; here we register only data routes.
 
-    @router.get("/", include_in_schema=False)
-    def root(request: Request) -> HTMLResponse:
-        return _render(
-            request,
-            settings,
-            "dashboard.html",
-            owners=_list_owners(settings),
-        )
+    # ---- view-body helpers (parameterized on project) ------------------- #
+    # Each existing page is a `_<view>(request, project, name, ...)` body
+    # called by both project (`/<project>/<name>/...`) and projectless
+    # (`/<name>/...`) route handlers. project="" means the repo lives at
+    # `data/repos/<name>.git`; project=<dir> means `data/projects/<project>/<name>.git`.
+    # Templates use `{{ repo_url_prefix(owner, name) }}` so the same markup
+    # works for both shapes.
 
-    @router.get("/highlight.css", include_in_schema=False)
-    def pygments_css() -> Response:
-        # Registered before `/{owner}` so the catch-all doesn't swallow it
-        # (FastAPI matches in declaration order). Single shared stylesheet for
-        # syntax-highlighted blob views; cached cheaply by the browser.
-        return Response(content=code.pygments_stylesheet(), media_type="text/css")
-
-    @router.get("/{owner}", include_in_schema=False)
-    def owner_page(request: Request, owner: str) -> HTMLResponse:
-        project_dir = layout.projects_dir(settings.data_dir) / owner
-        if not project_dir.is_dir():
-            raise HTTPException(status_code=404, detail="project not found")
-        return _render(
-            request,
-            settings,
-            "owner.html",
-            owner=owner,
-            repos=_list_repos(settings, owner),
-        )
-
-    @router.get("/{owner}/{name}", include_in_schema=False)
-    def repo_page(request: Request, owner: str, name: str) -> HTMLResponse:
-        bare = _open_repo(settings, owner, name)
+    def _render_repo_overview(
+        request: Request, project: str, name: str
+    ) -> HTMLResponse:
+        bare = _open_repo(settings, project, name)
         default_branch = code.head_ref_name(bare)
-
-        # Repo overview shows the file tree at HEAD plus a rendered README
-        # (when one exists). With no commits yet, both are absent.
         head_commit = code.resolve_ref(bare, "HEAD") if default_branch else None
         entries: list[code.TreeEntry] = []
         readme_html: str | None = None
@@ -244,12 +226,11 @@ def build_router(settings: Settings) -> APIRouter:
                 else:
                     readme_html = f"<pre>{html_escape(text)}</pre>"
             head_short_sha = head_commit.hexsha[:7]
-
         return _render(
             request,
             settings,
             "repo.html",
-            owner=owner,
+            owner=project,
             name=name,
             description=None,
             default_branch=default_branch,
@@ -264,22 +245,18 @@ def build_router(settings: Settings) -> APIRouter:
             **_repo_ctx(bare),
         )
 
-    @router.get("/{owner}/{name}/tree/{ref}", include_in_schema=False)
-    @router.get("/{owner}/{name}/tree/{ref}/{path:path}", include_in_schema=False)
-    def tree_page(
-        request: Request, owner: str, name: str, ref: str, path: str = ""
+    def _render_tree(
+        request: Request, project: str, name: str, ref: str, path: str = ""
     ) -> HTMLResponse:
-        bare = _open_repo(settings, owner, name)
+        bare = _open_repo(settings, project, name)
         commit = code.resolve_ref(bare, ref)
         if commit is None:
-            # Empty repo (no commits at all) — render the empty overview
-            # rather than a hard 404, so users land somewhere useful.
             if code.is_empty_repo(bare):
                 return _render(
                     request,
                     settings,
                     "empty_repo.html",
-                    owner=owner,
+                    owner=project,
                     name=name,
                     section="tree",
                     **_repo_ctx(bare),
@@ -288,14 +265,13 @@ def build_router(settings: Settings) -> APIRouter:
         node = code.walk_tree_at_path(commit, path)
         if node is None:
             raise HTTPException(status_code=404, detail="path not found")
-        # Hitting /tree/ on a blob path is a 404; gh.com mirrors this.
         if node.type != "tree":
             raise HTTPException(status_code=404, detail="not a tree")
         return _render(
             request,
             settings,
             "tree.html",
-            owner=owner,
+            owner=project,
             name=name,
             ref=ref,
             path=path,
@@ -309,9 +285,10 @@ def build_router(settings: Settings) -> APIRouter:
             **_repo_ctx(bare),
         )
 
-    @router.get("/{owner}/{name}/blob/{ref}/{path:path}", include_in_schema=False)
-    def blob_page(request: Request, owner: str, name: str, ref: str, path: str) -> HTMLResponse:
-        bare = _open_repo(settings, owner, name)
+    def _render_blob(
+        request: Request, project: str, name: str, ref: str, path: str
+    ) -> HTMLResponse:
+        bare = _open_repo(settings, project, name)
         commit = code.resolve_ref(bare, ref)
         if commit is None:
             raise HTTPException(status_code=404, detail="ref not found")
@@ -323,7 +300,7 @@ def build_router(settings: Settings) -> APIRouter:
             request,
             settings,
             "blob.html",
-            owner=owner,
+            owner=project,
             name=name,
             ref=ref,
             path=path,
@@ -335,9 +312,10 @@ def build_router(settings: Settings) -> APIRouter:
             **_repo_ctx(bare),
         )
 
-    @router.get("/{owner}/{name}/commits/{ref}", include_in_schema=False)
-    def commits_page(request: Request, owner: str, name: str, ref: str) -> HTMLResponse:
-        bare = _open_repo(settings, owner, name)
+    def _render_commits(
+        request: Request, project: str, name: str, ref: str
+    ) -> HTMLResponse:
+        bare = _open_repo(settings, project, name)
         commit = code.resolve_ref(bare, ref)
         if commit is None:
             if code.is_empty_repo(bare):
@@ -345,7 +323,7 @@ def build_router(settings: Settings) -> APIRouter:
                     request,
                     settings,
                     "empty_repo.html",
-                    owner=owner,
+                    owner=project,
                     name=name,
                     section="commits",
                     **_repo_ctx(bare),
@@ -355,16 +333,17 @@ def build_router(settings: Settings) -> APIRouter:
             request,
             settings,
             "commits.html",
-            owner=owner,
+            owner=project,
             name=name,
             ref=ref,
             commits=code.list_commits(commit, max_count=100),
             **_repo_ctx(bare),
         )
 
-    @router.get("/{owner}/{name}/commit/{sha}", include_in_schema=False)
-    def commit_page(request: Request, owner: str, name: str, sha: str) -> HTMLResponse:
-        bare = _open_repo(settings, owner, name)
+    def _render_commit(
+        request: Request, project: str, name: str, sha: str
+    ) -> HTMLResponse:
+        bare = _open_repo(settings, project, name)
         commit = code.resolve_ref(bare, sha)
         if commit is None:
             raise HTTPException(status_code=404, detail="commit not found")
@@ -372,20 +351,21 @@ def build_router(settings: Settings) -> APIRouter:
             request,
             settings,
             "commit.html",
-            owner=owner,
+            owner=project,
             name=name,
             detail=code.commit_detail(commit),
             **_repo_ctx(bare),
         )
 
-    @router.get("/{owner}/{name}/branches", include_in_schema=False)
-    def branches_page(request: Request, owner: str, name: str) -> HTMLResponse:
-        bare = _open_repo(settings, owner, name)
+    def _render_branches(
+        request: Request, project: str, name: str
+    ) -> HTMLResponse:
+        bare = _open_repo(settings, project, name)
         return _render(
             request,
             settings,
             "branches.html",
-            owner=owner,
+            owner=project,
             name=name,
             branches=code.list_branches(bare),
             tags=code.list_tags(bare),
@@ -393,9 +373,10 @@ def build_router(settings: Settings) -> APIRouter:
             **_repo_ctx(bare),
         )
 
-    @router.get("/{owner}/{name}/blame/{ref}/{path:path}", include_in_schema=False)
-    def blame_page(request: Request, owner: str, name: str, ref: str, path: str) -> HTMLResponse:
-        bare = _open_repo(settings, owner, name)
+    def _render_blame(
+        request: Request, project: str, name: str, ref: str, path: str
+    ) -> HTMLResponse:
+        bare = _open_repo(settings, project, name)
         lines = code.blame_blob(bare, ref, path)
         if lines is None:
             raise HTTPException(status_code=404, detail="blob not found")
@@ -403,7 +384,7 @@ def build_router(settings: Settings) -> APIRouter:
             request,
             settings,
             "blame.html",
-            owner=owner,
+            owner=project,
             name=name,
             ref=ref,
             path=path,
@@ -415,9 +396,10 @@ def build_router(settings: Settings) -> APIRouter:
             **_repo_ctx(bare),
         )
 
-    @router.get("/{owner}/{name}/issues", include_in_schema=False)
-    def issues_page(request: Request, owner: str, name: str, state: str = "open") -> HTMLResponse:
-        bare = _open_repo(settings, owner, name)
+    def _render_issues(
+        request: Request, project: str, name: str, state: str = "open"
+    ) -> HTMLResponse:
+        bare = _open_repo(settings, project, name)
         all_issues = list_issues(bare)
         open_count = sum(i.state is IssueState.OPEN for i in all_issues)
         closed_count = len(all_issues) - open_count
@@ -428,13 +410,12 @@ def build_router(settings: Settings) -> APIRouter:
         else:
             state = "all"
             shown = list(all_issues)
-        # Newest first matches gh's default and feels right for issue lists.
         shown.sort(key=lambda i: i.updated_at, reverse=True)
         return _render(
             request,
             settings,
             "issues.html",
-            owner=owner,
+            owner=project,
             name=name,
             issues=shown,
             state=state,
@@ -444,9 +425,10 @@ def build_router(settings: Settings) -> APIRouter:
             **_repo_ctx(bare, all_issues),
         )
 
-    @router.get("/{owner}/{name}/issues/{number}", include_in_schema=False)
-    def issue_page(request: Request, owner: str, name: str, number: int) -> HTMLResponse:
-        bare = _open_repo(settings, owner, name)
+    def _render_issue(
+        request: Request, project: str, name: str, number: int
+    ) -> HTMLResponse:
+        bare = _open_repo(settings, project, name)
         issue = get_issue(bare, number)
         if issue is None:
             raise HTTPException(status_code=404, detail="issue not found")
@@ -455,40 +437,236 @@ def build_router(settings: Settings) -> APIRouter:
             request,
             settings,
             "issue.html",
-            owner=owner,
+            owner=project,
             name=name,
             issue=issue,
             comments=comments,
             **_repo_ctx(bare),
         )
 
-    @router.post("/{owner}/{name}/issues/{number}/comments", include_in_schema=False)
-    def add_comment_action(
+    # ---- top-level routes ----------------------------------------------- #
+
+    @router.get("/", include_in_schema=False)
+    def root(request: Request) -> HTMLResponse:
+        root_repos: list[dict[str, object]] = []
+        for loc in layout.list_root_repos(settings.data_dir):
+            bare = BareRepo.open(loc.path)
+            if bare is None:
+                continue
+            from gitcabin.sync.config import read_config as read_sync_config
+
+            sync = read_sync_config(bare)
+            upstream = (
+                {"owner": sync.gh_owner, "name": sync.gh_name}
+                if sync is not None
+                else None
+            )
+            root_repos.append(
+                {
+                    "name": loc.name,
+                    "description": None,
+                    "pushed_at": _repo_pushed_at(bare),
+                    "upstream": upstream,
+                }
+            )
+        root_repos.sort(key=lambda r: r["pushed_at"], reverse=True)
+        return _render(
+            request,
+            settings,
+            "dashboard.html",
+            owners=_list_owners(settings),
+            root_repos=root_repos,
+        )
+
+    @router.get("/highlight.css", include_in_schema=False)
+    def pygments_css() -> Response:
+        # Registered before `/{owner}` so the catch-all doesn't swallow it.
+        return Response(content=code.pygments_stylesheet(), media_type="text/css")
+
+    # ---- 1-segment dispatcher ------------------------------------------ #
+    # `/{seg}` could be a project page or a projectless repo overview.
+    # Resolve at request time via storage lookup.
+
+    @router.get("/{seg}", include_in_schema=False)
+    def one_seg(request: Request, seg: str) -> HTMLResponse:
+        kind = layout.resolve_segment(settings.data_dir, seg)
+        if kind == "project":
+            return _render(
+                request,
+                settings,
+                "owner.html",
+                owner=seg,
+                repos=_list_repos(settings, seg),
+            )
+        if kind == "root_repo":
+            return _render_repo_overview(request, project="", name=seg)
+        raise HTTPException(status_code=404, detail="not found")
+
+    # ---- 2-segment dispatcher ------------------------------------------ #
+    # `/{seg1}/{seg2}` is normally a project repo overview. But when seg1
+    # is a projectless repo and seg2 is a known sub-route name (issues,
+    # branches), the URL means a sub-route on that root repo.
+
+    _ROOT_SUB_TWO_SEG: set[str] = {"issues", "branches"}
+
+    @router.get("/{seg1}/{seg2}", include_in_schema=False)
+    def two_seg(
+        request: Request, seg1: str, seg2: str, state: str = "open"
+    ) -> HTMLResponse:
+        kind = layout.resolve_segment(settings.data_dir, seg1)
+        if kind == "root_repo" and seg2 in _ROOT_SUB_TWO_SEG:
+            if seg2 == "issues":
+                return _render_issues(request, project="", name=seg1, state=state)
+            if seg2 == "branches":
+                return _render_branches(request, project="", name=seg1)
+        # Default: project repo overview (project=seg1, name=seg2).
+        return _render_repo_overview(request, project=seg1, name=seg2)
+
+    # ---- project-shape routes (`/{owner}/{name}/...`) ----------------- #
+
+    @router.get("/{owner}/{name}/tree/{ref}", include_in_schema=False)
+    @router.get("/{owner}/{name}/tree/{ref}/{path:path}", include_in_schema=False)
+    def project_tree(
+        request: Request, owner: str, name: str, ref: str, path: str = ""
+    ) -> HTMLResponse:
+        return _render_tree(request, project=owner, name=name, ref=ref, path=path)
+
+    @router.get("/{owner}/{name}/blob/{ref}/{path:path}", include_in_schema=False)
+    def project_blob(
+        request: Request, owner: str, name: str, ref: str, path: str
+    ) -> HTMLResponse:
+        return _render_blob(request, project=owner, name=name, ref=ref, path=path)
+
+    @router.get("/{owner}/{name}/commits/{ref}", include_in_schema=False)
+    def project_commits(
+        request: Request, owner: str, name: str, ref: str
+    ) -> HTMLResponse:
+        return _render_commits(request, project=owner, name=name, ref=ref)
+
+    @router.get("/{owner}/{name}/commit/{sha}", include_in_schema=False)
+    def project_commit(
+        request: Request, owner: str, name: str, sha: str
+    ) -> HTMLResponse:
+        return _render_commit(request, project=owner, name=name, sha=sha)
+
+    @router.get("/{owner}/{name}/branches", include_in_schema=False)
+    def project_branches(request: Request, owner: str, name: str) -> HTMLResponse:
+        return _render_branches(request, project=owner, name=name)
+
+    @router.get("/{owner}/{name}/blame/{ref}/{path:path}", include_in_schema=False)
+    def project_blame(
+        request: Request, owner: str, name: str, ref: str, path: str
+    ) -> HTMLResponse:
+        return _render_blame(request, project=owner, name=name, ref=ref, path=path)
+
+    @router.get("/{owner}/{name}/issues", include_in_schema=False)
+    def project_issues(
+        request: Request, owner: str, name: str, state: str = "open"
+    ) -> HTMLResponse:
+        return _render_issues(request, project=owner, name=name, state=state)
+
+    @router.get("/{owner}/{name}/issues/{number}", include_in_schema=False)
+    def project_issue(
+        request: Request, owner: str, name: str, number: int
+    ) -> HTMLResponse:
+        return _render_issue(request, project=owner, name=name, number=number)
+
+    # ---- root-shape routes (`/{name}/...`, projectless) ---------------- #
+
+    @router.get("/{name}/tree/{ref}", include_in_schema=False)
+    @router.get("/{name}/tree/{ref}/{path:path}", include_in_schema=False)
+    def root_tree(
+        request: Request, name: str, ref: str, path: str = ""
+    ) -> HTMLResponse:
+        return _render_tree(request, project="", name=name, ref=ref, path=path)
+
+    @router.get("/{name}/blob/{ref}/{path:path}", include_in_schema=False)
+    def root_blob(
+        request: Request, name: str, ref: str, path: str
+    ) -> HTMLResponse:
+        return _render_blob(request, project="", name=name, ref=ref, path=path)
+
+    @router.get("/{name}/commits/{ref}", include_in_schema=False)
+    def root_commits(request: Request, name: str, ref: str) -> HTMLResponse:
+        return _render_commits(request, project="", name=name, ref=ref)
+
+    @router.get("/{name}/commit/{sha}", include_in_schema=False)
+    def root_commit(request: Request, name: str, sha: str) -> HTMLResponse:
+        return _render_commit(request, project="", name=name, sha=sha)
+
+    @router.get("/{name}/blame/{ref}/{path:path}", include_in_schema=False)
+    def root_blame(
+        request: Request, name: str, ref: str, path: str
+    ) -> HTMLResponse:
+        return _render_blame(request, project="", name=name, ref=ref, path=path)
+
+    @router.get("/{name}/issues/{number}", include_in_schema=False)
+    def root_issue(request: Request, name: str, number: int) -> HTMLResponse:
+        return _render_issue(request, project="", name=name, number=number)
+
+    # ---- POST actions (project + root) --------------------------------- #
+
+    def _comment_redirect(project: str, name: str, number: int) -> RedirectResponse:
+        return RedirectResponse(
+            url=f"{_build_repo_url_prefix(project, name)}/issues/{number}",
+            status_code=303,
+        )
+
+    @router.post(
+        "/{owner}/{name}/issues/{number}/comments", include_in_schema=False
+    )
+    def project_add_comment(
         owner: str, name: str, number: int, body: str = Form(...)
     ) -> RedirectResponse:
         bare = _open_repo(settings, owner, name)
         if body.strip():
-            # Empty bodies are silently ignored — the form's required attribute
-            # already covers the common case; this handles paste-and-trim.
-            if add_comment(bare, number=number, body=body, author=settings.viewer_login) is None:
+            if (
+                add_comment(bare, number=number, body=body, author=settings.viewer_login)
+                is None
+            ):
                 raise HTTPException(status_code=404, detail="issue not found")
-        # POST/redirect/GET so a refresh doesn't re-submit. 303 ensures the
-        # follow-up request is a GET regardless of the original method.
-        return RedirectResponse(url=f"{_build_repo_url_prefix(owner, name)}/issues/{number}", status_code=303)
+        return _comment_redirect(owner, name, number)
+
+    @router.post("/{name}/issues/{number}/comments", include_in_schema=False)
+    def root_add_comment(
+        name: str, number: int, body: str = Form(...)
+    ) -> RedirectResponse:
+        bare = _open_repo(settings, "", name)
+        if body.strip():
+            if (
+                add_comment(bare, number=number, body=body, author=settings.viewer_login)
+                is None
+            ):
+                raise HTTPException(status_code=404, detail="issue not found")
+        return _comment_redirect("", name, number)
 
     @router.post("/{owner}/{name}/issues/{number}/close", include_in_schema=False)
-    def close_action(owner: str, name: str, number: int) -> RedirectResponse:
+    def project_close(owner: str, name: str, number: int) -> RedirectResponse:
         bare = _open_repo(settings, owner, name)
         if close_issue(bare, number=number, actor=settings.viewer_login) is None:
             raise HTTPException(status_code=404, detail="issue not found")
-        return RedirectResponse(url=f"{_build_repo_url_prefix(owner, name)}/issues/{number}", status_code=303)
+        return _comment_redirect(owner, name, number)
+
+    @router.post("/{name}/issues/{number}/close", include_in_schema=False)
+    def root_close(name: str, number: int) -> RedirectResponse:
+        bare = _open_repo(settings, "", name)
+        if close_issue(bare, number=number, actor=settings.viewer_login) is None:
+            raise HTTPException(status_code=404, detail="issue not found")
+        return _comment_redirect("", name, number)
 
     @router.post("/{owner}/{name}/issues/{number}/reopen", include_in_schema=False)
-    def reopen_action(owner: str, name: str, number: int) -> RedirectResponse:
+    def project_reopen(owner: str, name: str, number: int) -> RedirectResponse:
         bare = _open_repo(settings, owner, name)
         if reopen_issue(bare, number=number, actor=settings.viewer_login) is None:
             raise HTTPException(status_code=404, detail="issue not found")
-        return RedirectResponse(url=f"{_build_repo_url_prefix(owner, name)}/issues/{number}", status_code=303)
+        return _comment_redirect(owner, name, number)
+
+    @router.post("/{name}/issues/{number}/reopen", include_in_schema=False)
+    def root_reopen(name: str, number: int) -> RedirectResponse:
+        bare = _open_repo(settings, "", name)
+        if reopen_issue(bare, number=number, actor=settings.viewer_login) is None:
+            raise HTTPException(status_code=404, detail="issue not found")
+        return _comment_redirect("", name, number)
 
     return router
 

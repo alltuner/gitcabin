@@ -27,11 +27,11 @@
       <ul class="menu menu-sm w-full p-0">
         {% for b in branches %}
         {% if _kind == "blob" %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blob/" ~ b.name ~ _path_suffix %}
+          {% set _href = repo_url_prefix(owner, name) ~ "/blob/" ~ b.name ~ _path_suffix %}
         {% elif _kind == "blame" %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blame/" ~ b.name ~ _path_suffix %}
+          {% set _href = repo_url_prefix(owner, name) ~ "/blame/" ~ b.name ~ _path_suffix %}
         {% else %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/tree/" ~ b.name ~ _path_suffix %}
+          {% set _href = repo_url_prefix(owner, name) ~ "/tree/" ~ b.name ~ _path_suffix %}
         {% endif %}
         <li>
           <a href="{{ _href }}" class="flex items-center justify-between gap-2 font-mono text-xs {% if b.name == ref %}font-semibold text-blue-600 dark:text-blue-400{% endif %}">
@@ -49,11 +49,11 @@
       <ul class="menu menu-sm w-full p-0">
         {% for t in tags %}
         {% if _kind == "blob" %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blob/" ~ t.name ~ _path_suffix %}
+          {% set _href = repo_url_prefix(owner, name) ~ "/blob/" ~ t.name ~ _path_suffix %}
         {% elif _kind == "blame" %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blame/" ~ t.name ~ _path_suffix %}
+          {% set _href = repo_url_prefix(owner, name) ~ "/blame/" ~ t.name ~ _path_suffix %}
         {% else %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/tree/" ~ t.name ~ _path_suffix %}
+          {% set _href = repo_url_prefix(owner, name) ~ "/tree/" ~ t.name ~ _path_suffix %}
         {% endif %}
         <li>
           <a href="{{ _href }}" class="font-mono text-xs {% if t.name == ref %}font-semibold text-blue-600 dark:text-blue-400{% endif %}">

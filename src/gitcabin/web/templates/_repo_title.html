@@ -1,7 +1,9 @@
-{# ABOUTME: Repo title line — owner/name as breadcrumb-style links + optional description. #}
+{# ABOUTME: Repo title line — project/name breadcrumb (project segment dropped for root repos) + optional description. #}
 <div class="mb-2 flex items-center gap-3 text-xl">
+  {% if owner %}
   <a href="/{{ owner }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ owner }}</a>
   <span class="text-gray-400">/</span>
+  {% endif %}
   <a href="{{ repo_url_prefix(owner, name) }}" class="font-semibold text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
 </div>
 {% if description %}
