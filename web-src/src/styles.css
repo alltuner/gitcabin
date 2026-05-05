@@ -48,6 +48,14 @@
   }
 }
 
+/* Reserve the vertical scrollbar gutter so short pages and long pages
+   render at the same x-position. Without this, long pages lose
+   `scrollbar-width` worth of viewport, which shifts the centered max-w
+   container left when the scrollbar appears. Supported in every modern
+   browser; on overlay-scrollbar systems (macOS by default) it's a no-op
+   so there's no visible side-effect there either. */
+html { scrollbar-gutter: stable; }
+
 /* Pygments syntax-highlighting tokens — generated from
    `HtmlFormatter(cssclass="hl").get_style_defs(".hl")` and written to
    ./highlight.css by build.ts. Imported here so the tokens land in the
