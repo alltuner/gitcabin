@@ -38,18 +38,6 @@ _templates = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
 _templates.env.globals["asset"] = AssetResolver(dist_dir=_DIST_DIR)
 
 
-def _build_repo_url_prefix(owner: str, name: str) -> str:
-    """`/{owner}/{name}` for project repos, `/{name}` for projectless ones.
-
-    Templates call it as `{{ repo_url_prefix(owner, name) }}` to build
-    sub-route URLs (issues, commits, tree/<ref>, …) without caring
-    whether the repo lives under a project or at the root. owner="" or
-    None means projectless.
-    """
-    return f"/{owner}/{name}" if owner else f"/{name}"
-
-
-_templates.env.globals["repo_url_prefix"] = _build_repo_url_prefix
 # Filters for git-metadata polish — see gitcabin.web.format.
 _templates.env.filters["relative_time"] = relative_time
 _templates.env.filters["short_sha"] = short_sha
@@ -160,13 +148,8 @@ def _repo_pushed_at(bare: BareRepo) -> str:
 
 
 def _open_repo(settings: Settings, project: str, name: str) -> BareRepo:
-    """Resolve a (project, name) pair to a BareRepo or 404.
-
-    `project=""` (empty string) means a projectless repo at
-    `data/repos/<name>.git`. Any non-empty project name resolves to
-    `data/projects/<project>/<name>.git`.
-    """
-    bare = layout.open_repo(settings.data_dir, project or None, name)
+    """Resolve a (project, name) pair to a BareRepo or 404."""
+    bare = layout.open_repo(settings.data_dir, project, name)
     if bare is None:
         raise HTTPException(status_code=404, detail="repo not found")
     return bare
@@ -196,12 +179,10 @@ def build_router(settings: Settings) -> APIRouter:
     # /static is mounted via the parent app; here we register only data routes.
 
     # ---- view-body helpers (parameterized on project) ------------------- #
-    # Each existing page is a `_<view>(request, project, name, ...)` body
-    # called by both project (`/<project>/<name>/...`) and projectless
-    # (`/<name>/...`) route handlers. project="" means the repo lives at
-    # `data/repos/<name>.git`; project=<dir> means `data/projects/<project>/<name>.git`.
-    # Templates use `{{ repo_url_prefix(owner, name) }}` so the same markup
-    # works for both shapes.
+    # Each page is a `_<view>(request, project, name, ...)` body called by
+    # the route handlers below. Repos always live at
+    # `data/projects/<project>/<name>.git`; the URL shape mirrors that —
+    # `/{owner}/{name}/...`.
 
     def _render_repo_overview(
         request: Request, project: str, name: str
@@ -485,34 +466,11 @@ def build_router(settings: Settings) -> APIRouter:
 
     @router.get("/", include_in_schema=False)
     def root(request: Request) -> HTMLResponse:
-        root_repos: list[dict[str, object]] = []
-        for loc in layout.list_root_repos(settings.data_dir):
-            bare = BareRepo.open(loc.path)
-            if bare is None:
-                continue
-            from gitcabin.sync.config import read_config as read_sync_config
-
-            sync = read_sync_config(bare)
-            upstream = (
-                {"owner": sync.gh_owner, "name": sync.gh_name}
-                if sync is not None
-                else None
-            )
-            root_repos.append(
-                {
-                    "name": loc.name,
-                    "description": None,
-                    "pushed_at": _repo_pushed_at(bare),
-                    "upstream": upstream,
-                }
-            )
-        root_repos.sort(key=lambda r: r["pushed_at"], reverse=True)
         return _render(
             request,
             settings,
             "dashboard.html",
             owners=_list_owners(settings),
-            root_repos=root_repos,
         )
 
     @router.get("/highlight.css", include_in_schema=False)
@@ -520,46 +478,23 @@ def build_router(settings: Settings) -> APIRouter:
         # Registered before `/{owner}` so the catch-all doesn't swallow it.
         return Response(content=code.pygments_stylesheet(), media_type="text/css")
 
-    # ---- 1-segment dispatcher ------------------------------------------ #
-    # `/{seg}` could be a project page or a projectless repo overview.
-    # Resolve at request time via storage lookup.
+    @router.get("/{owner}", include_in_schema=False)
+    def owner_page(request: Request, owner: str) -> HTMLResponse:
+        if not (layout.projects_dir(settings.data_dir) / owner).is_dir():
+            raise HTTPException(status_code=404, detail="not found")
+        return _render(
+            request,
+            settings,
+            "owner.html",
+            owner=owner,
+            repos=_list_repos(settings, owner),
+        )
 
-    @router.get("/{seg}", include_in_schema=False)
-    def one_seg(request: Request, seg: str) -> HTMLResponse:
-        kind = layout.resolve_segment(settings.data_dir, seg)
-        if kind == "project":
-            return _render(
-                request,
-                settings,
-                "owner.html",
-                owner=seg,
-                repos=_list_repos(settings, seg),
-            )
-        if kind == "root_repo":
-            return _render_repo_overview(request, project="", name=seg)
-        raise HTTPException(status_code=404, detail="not found")
-
-    # ---- 2-segment dispatcher ------------------------------------------ #
-    # `/{seg1}/{seg2}` is normally a project repo overview. But when seg1
-    # is a projectless repo and seg2 is a known sub-route name (issues,
-    # branches), the URL means a sub-route on that root repo.
-
-    _ROOT_SUB_TWO_SEG: set[str] = {"issues", "branches"}
-
-    @router.get("/{seg1}/{seg2}", include_in_schema=False)
-    def two_seg(
-        request: Request, seg1: str, seg2: str, state: str = "open"
+    @router.get("/{owner}/{name}", include_in_schema=False)
+    def project_overview(
+        request: Request, owner: str, name: str
     ) -> HTMLResponse:
-        kind = layout.resolve_segment(settings.data_dir, seg1)
-        if kind == "root_repo" and seg2 in _ROOT_SUB_TWO_SEG:
-            if seg2 == "issues":
-                return _render_issues(request, project="", name=seg1, state=state)
-            if seg2 == "branches":
-                return _render_branches(request, project="", name=seg1)
-        # Default: project repo overview (project=seg1, name=seg2).
-        return _render_repo_overview(request, project=seg1, name=seg2)
-
-    # ---- project-shape routes (`/{owner}/{name}/...`) ----------------- #
+        return _render_repo_overview(request, project=owner, name=name)
 
     @router.get("/{owner}/{name}/tree/{ref}", include_in_schema=False)
     @router.get("/{owner}/{name}/tree/{ref}/{path:path}", include_in_schema=False)
@@ -622,52 +557,7 @@ def build_router(settings: Settings) -> APIRouter:
     ) -> HTMLResponse:
         return _render_issue(request, project=owner, name=name, number=number)
 
-    # ---- root-shape routes (`/{name}/...`, projectless) ---------------- #
-
-    @router.get("/{name}/tree/{ref}", include_in_schema=False)
-    @router.get("/{name}/tree/{ref}/{path:path}", include_in_schema=False)
-    def root_tree(
-        request: Request, name: str, ref: str, path: str = ""
-    ) -> HTMLResponse:
-        return _render_tree(request, project="", name=name, ref=ref, path=path)
-
-    @router.get("/{name}/blob/{ref}/{path:path}", include_in_schema=False)
-    def root_blob(
-        request: Request, name: str, ref: str, path: str
-    ) -> HTMLResponse:
-        return _render_blob(request, project="", name=name, ref=ref, path=path)
-
-    @router.get("/{name}/raw/{ref}/{path:path}", include_in_schema=False)
-    def root_raw(name: str, ref: str, path: str) -> Response:
-        return _serve_blob_bytes(
-            project="", name=name, ref=ref, path=path, attachment=False
-        )
-
-    @router.get("/{name}/download/{ref}/{path:path}", include_in_schema=False)
-    def root_download(name: str, ref: str, path: str) -> Response:
-        return _serve_blob_bytes(
-            project="", name=name, ref=ref, path=path, attachment=True
-        )
-
-    @router.get("/{name}/commits/{ref}", include_in_schema=False)
-    def root_commits(request: Request, name: str, ref: str) -> HTMLResponse:
-        return _render_commits(request, project="", name=name, ref=ref)
-
-    @router.get("/{name}/commit/{sha}", include_in_schema=False)
-    def root_commit(request: Request, name: str, sha: str) -> HTMLResponse:
-        return _render_commit(request, project="", name=name, sha=sha)
-
-    @router.get("/{name}/blame/{ref}/{path:path}", include_in_schema=False)
-    def root_blame(
-        request: Request, name: str, ref: str, path: str
-    ) -> HTMLResponse:
-        return _render_blame(request, project="", name=name, ref=ref, path=path)
-
-    @router.get("/{name}/issues/{number}", include_in_schema=False)
-    def root_issue(request: Request, name: str, number: int) -> HTMLResponse:
-        return _render_issue(request, project="", name=name, number=number)
-
-    # ---- POST actions (project + root) --------------------------------- #
+    # ---- POST actions --------------------------------------------------- #
 
     def _post_action_response(
         request: Request, project: str, name: str, number: int
@@ -689,18 +579,14 @@ def build_router(settings: Settings) -> APIRouter:
         page — the browser-cache staleness is acceptable there since the
         round-trip already drops them on a fresh URL.
         """
+        url = f"/{project}/{name}/issues/{number}"
         if request.headers.get("HX-Request") == "true":
             response = _render_issue(
                 request, project=project, name=name, number=number
             )
-            response.headers["HX-Push-Url"] = (
-                f"{_build_repo_url_prefix(project, name)}/issues/{number}"
-            )
+            response.headers["HX-Push-Url"] = url
             return response
-        return RedirectResponse(
-            url=f"{_build_repo_url_prefix(project, name)}/issues/{number}",
-            status_code=303,
-        )
+        return RedirectResponse(url=url, status_code=303)
 
     def _do_add_comment(
         request: Request, project: str, name: str, number: int, body: str
@@ -742,31 +628,17 @@ def build_router(settings: Settings) -> APIRouter:
     ) -> Response:
         return _do_add_comment(request, owner, name, number, body)
 
-    @router.post("/{name}/issues/{number}/comments", include_in_schema=False)
-    def root_add_comment(
-        request: Request, name: str, number: int, body: str = Form(...)
-    ) -> Response:
-        return _do_add_comment(request, "", name, number, body)
-
     @router.post("/{owner}/{name}/issues/{number}/close", include_in_schema=False)
     def project_close(
         request: Request, owner: str, name: str, number: int
     ) -> Response:
         return _do_close(request, owner, name, number)
 
-    @router.post("/{name}/issues/{number}/close", include_in_schema=False)
-    def root_close(request: Request, name: str, number: int) -> Response:
-        return _do_close(request, "", name, number)
-
     @router.post("/{owner}/{name}/issues/{number}/reopen", include_in_schema=False)
     def project_reopen(
         request: Request, owner: str, name: str, number: int
     ) -> Response:
         return _do_reopen(request, owner, name, number)
-
-    @router.post("/{name}/issues/{number}/reopen", include_in_schema=False)
-    def root_reopen(request: Request, name: str, number: int) -> Response:
-        return _do_reopen(request, "", name, number)
 
     return router
 

@@ -1,4 +1,4 @@
-# ABOUTME: One-shot seed script: produces a diverse set of demo repos under ./data/repos.
+# ABOUTME: One-shot seed script: produces a diverse set of demo repos under ./data/projects.
 # ABOUTME: Run with `uv run python scripts/seed_demo.py [--reset]` from the project root.
 
 from __future__ import annotations
@@ -17,8 +17,6 @@ from gitcabin.storage.repo import BareRepo
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 PROJECTS_DIR = DATA_DIR / "projects"
-# Legacy alias kept while the seed script still says `REPOS_DIR / repo.owner / …`.
-REPOS_DIR = PROJECTS_DIR
 
 
 # ---- low-level helpers -------------------------------------------------- #
@@ -453,9 +451,9 @@ Usually a forgotten `from .x import y` after a refactor. Run pytest before
 pushing.
 """
 
-RUNBOOK_RECOVERY = """# Recovery: restoring data/repos
+RUNBOOK_RECOVERY = """# Recovery: restoring data/projects
 
-The bare repos under `data/repos/` are the ground truth for everything —
+The bare repos under `data/projects/` are the ground truth for everything —
 code, issues (`refs/issues/local/*`), counters (`refs/meta/counters`).
 Recovery means recovering that directory.
 
@@ -767,7 +765,7 @@ def _all_repos() -> list[Repo]:
 
 
 def _seed_repo(repo: Repo, *, reset: bool) -> str:
-    bare_path = (REPOS_DIR / repo.owner / repo.name).with_suffix(".git")
+    bare_path = (PROJECTS_DIR / repo.owner / repo.name).with_suffix(".git")
     if bare_path.exists():
         if not reset:
             return f"skip {repo.owner}/{repo.name} (already exists)"
@@ -831,7 +829,7 @@ def main(argv: Iterable[str] | None = None) -> None:
     )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    REPOS_DIR.mkdir(parents=True, exist_ok=True)
+    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
     for repo in _all_repos():
         print(_seed_repo(repo, reset=args.reset))
 

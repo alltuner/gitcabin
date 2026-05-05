@@ -37,7 +37,7 @@ def test_repository_resolver_returns_owner_and_name(client: TestClient, init_rep
 
 
 def test_repository_resolver_returns_null_for_absent_repo(client: TestClient) -> None:
-    # No init_repo call: data_dir/repos/octocat/hello.git doesn't exist on
+    # No init_repo call: data/projects/octocat/hello.git doesn't exist on
     # disk. Strict mode means Repository.repository must return null, not
     # invent a fixture. gh's IssueRepoInfo treats null as NOT_FOUND.
     payload = post_graphql(client, ISSUE_REPO_INFO_QUERY, {"owner": "octocat", "name": "hello"})

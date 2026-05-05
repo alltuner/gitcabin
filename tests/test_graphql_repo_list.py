@@ -1,5 +1,5 @@
 # ABOUTME: Tests for the repositoryOwner GraphQL resolver (gh repo list).
-# ABOUTME: Walks data_dir/repos/<owner>/*.git on disk; mirrors the query gh repo list sends.
+# ABOUTME: Walks data/projects/<owner>/*.git on disk; mirrors the query gh repo list sends.
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _post(client: TestClient, query: str, variables: dict) -> dict:
 
 
 def test_repository_owner_returns_null_for_absent_owner(client: TestClient) -> None:
-    # No repos under data_dir/repos/ghost/ — strict mode says null, same
+    # No repos under data/projects/ghost/ — strict mode says null, same
     # contract as Query.repository on a missing repo.
     payload = _post(client, REPO_LIST_QUERY, {"owner": "ghost", "perPage": 30})
     assert "errors" not in payload, payload
@@ -147,7 +147,7 @@ def test_viewer_repositories_lists_repos_under_viewer_login(client: TestClient, 
 
 
 def test_viewer_repositories_empty_when_viewer_dir_absent(client: TestClient) -> None:
-    # No data_dir/repos/david/ — viewer still resolves (it's the configured
+    # No data/projects/david/ — viewer still resolves (it's the configured
     # login), the connection is just empty.
     payload = _post(client, VIEWER_REPO_LIST_QUERY, {"perPage": 30})
     assert "errors" not in payload, payload
@@ -159,7 +159,7 @@ def test_viewer_repositories_empty_when_viewer_dir_absent(client: TestClient) ->
 def test_repository_owner_ignores_non_bare_directories(
     client: TestClient, init_repo, settings
 ) -> None:
-    # data_dir/repos/<owner>/ may grow non-repo entries (logs, lockfiles, etc.)
+    # data/projects/<owner>/ may grow non-repo entries (logs, lockfiles, etc.)
     # over time. Only directories ending in `.git` and verifying as bare repos
     # should appear in the connection.
     init_repo("octocat", "hello")

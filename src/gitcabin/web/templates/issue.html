@@ -61,7 +61,7 @@
 <form
   id="comment-form"
   method="post"
-  action="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/comments"
+  action="/{{ owner }}/{{ name }}/issues/{{ issue.number }}/comments"
   class="mt-6"
 >
   <label for="comment-body" class="mb-2 block text-sm font-semibold">Add a comment</label>
@@ -84,7 +84,7 @@
   {% if issue.state.value == "OPEN" %}
   <form
     method="post"
-    action="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/close"
+    action="/{{ owner }}/{{ name }}/issues/{{ issue.number }}/close"
   >
     <button
       type="submit"
@@ -96,7 +96,7 @@
   {% else %}
   <form
     method="post"
-    action="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/reopen"
+    action="/{{ owner }}/{{ name }}/issues/{{ issue.number }}/reopen"
   >
     <button
       type="submit"

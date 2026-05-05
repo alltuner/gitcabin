@@ -1,5 +1,5 @@
 {# ABOUTME: Repo card row — shown in the owner page repo list. Reads `owner` (login string) and `repo`. #}
-<a href="{{ repo_url_prefix(owner, repo.name) }}" class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
+<a href="/{{ owner }}/{{ repo.name }}" class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
   <div class="flex items-center gap-2">
     <span class="font-semibold text-blue-600 dark:text-blue-400">{{ repo.name }}</span>
     {% if repo.upstream %}

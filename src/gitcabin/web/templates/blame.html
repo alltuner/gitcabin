@@ -8,7 +8,7 @@
 {% with view_kind = "blame" %}{% include "_ref_breadcrumb.html" %}{% endwith %}
 
 <div class="mb-4 flex items-center justify-end text-sm">
-  <a href="{{ repo_url_prefix(owner, name) }}/blob/{{ ref }}/{{ path }}" class="text-blue-600 hover:underline dark:text-blue-400">view raw</a>
+  <a href="/{{ owner }}/{{ name }}/blob/{{ ref }}/{{ path }}" class="text-blue-600 hover:underline dark:text-blue-400">view raw</a>
 </div>
 
 <div class="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
@@ -18,7 +18,7 @@
       <tr>
         {% if line.is_run_start %}
         <td class="commit">
-          <a href="{{ repo_url_prefix(owner, name) }}/commit/{{ line.commit_sha }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400">{{ line.short_sha }}</a>
+          <a href="/{{ owner }}/{{ name }}/commit/{{ line.commit_sha }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400">{{ line.short_sha }}</a>
           <span>{{ line.author_name }} · {{ line.authored_at[:10] }}</span>
           <div class="subject">{{ line.subject }}</div>
         </td>

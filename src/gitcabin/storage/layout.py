@@ -1,11 +1,10 @@
-# ABOUTME: Disk-layout resolvers — maps URL segments to bare-repo paths.
-# ABOUTME: Two trees coexist: data/repos/<name>.git for root, data/projects/<project>/<name>.git for nested.
+# ABOUTME: Disk-layout resolvers — every repo lives under data/projects/<owner>/<name>.git.
+# ABOUTME: Mirrors GitHub's user/org model: a repo always has an owner segment.
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from gitcabin.storage.repo import BareRepo
 
@@ -14,30 +13,23 @@ from gitcabin.storage.repo import BareRepo
 class RepoLocation:
     """A bare repo's identity in the storage tree.
 
-    `project` is None for repos at `data/repos/<name>.git` (root, projectless)
-    and the project directory name otherwise. `name` is the .git dir name
-    minus the suffix. `path` is the absolute path to the .git directory.
+    `project` is the owner directory under data/projects/. `name` is the
+    .git dir name minus the suffix. `path` is the absolute path to the
+    .git directory.
     """
 
-    project: str | None
+    project: str
     name: str
     path: Path
 
     @property
     def url_path(self) -> str:
-        """The URL fragment after the leading slash — `<repo>` or `<project>/<repo>`."""
-        if self.project is None:
-            return self.name
+        """The URL fragment after the leading slash — `<project>/<repo>`."""
         return f"{self.project}/{self.name}"
 
 
-def root_repos_dir(data_dir: Path) -> Path:
-    """Where projectless repos live — flat directory of `<name>.git` entries."""
-    return data_dir / "repos"
-
-
 def projects_dir(data_dir: Path) -> Path:
-    """Where project-grouped repos live — `<project>/<name>.git`, one project per subdir."""
+    """Where repos live — `<project>/<name>.git`, one project per subdir."""
     return data_dir / "projects"
 
 
@@ -48,22 +40,6 @@ def _git_dir_to_repo_name(entry: Path) -> str | None:
     if BareRepo.open(entry) is None:
         return None
     return entry.name[: -len(".git")]
-
-
-def list_root_repos(data_dir: Path) -> list[RepoLocation]:
-    """Every `<name>.git` directly under data/repos/, sorted by name."""
-    base = root_repos_dir(data_dir)
-    if not base.is_dir():
-        return []
-    out: list[RepoLocation] = []
-    for entry in sorted(base.iterdir(), key=lambda e: e.name):
-        if not entry.is_dir():
-            continue
-        name = _git_dir_to_repo_name(entry)
-        if name is None:
-            continue
-        out.append(RepoLocation(project=None, name=name, path=entry))
-    return out
 
 
 def list_projects(data_dir: Path) -> list[str]:
@@ -90,41 +66,17 @@ def list_repos_in_project(data_dir: Path, project: str) -> list[RepoLocation]:
     return out
 
 
-def find_repo(
-    data_dir: Path, project: str | None, name: str
-) -> RepoLocation | None:
+def find_repo(data_dir: Path, project: str, name: str) -> RepoLocation | None:
     """Locate a single repo by (project, name); None if absent."""
-    if project is None:
-        path = (root_repos_dir(data_dir) / name).with_suffix(".git")
-    else:
-        path = (projects_dir(data_dir) / project / name).with_suffix(".git")
+    path = (projects_dir(data_dir) / project / name).with_suffix(".git")
     if BareRepo.open(path) is None:
         return None
     return RepoLocation(project=project, name=name, path=path)
 
 
-def open_repo(data_dir: Path, project: str | None, name: str) -> BareRepo | None:
+def open_repo(data_dir: Path, project: str, name: str) -> BareRepo | None:
     """Resolve a (project, name) pair to a BareRepo handle, or None."""
     location = find_repo(data_dir, project, name)
     if location is None:
         return None
     return BareRepo.open(location.path)
-
-
-def resolve_segment(
-    data_dir: Path, segment: str
-) -> Literal["root_repo", "project"] | None:
-    """What does a single URL segment refer to?
-
-    - "root_repo": `data/repos/<segment>.git` exists (a projectless repo)
-    - "project":   `data/projects/<segment>/` exists (a project directory)
-    - None:        neither — caller raises 404
-
-    Calling code uses this to dispatch `/{seg}` requests between the
-    root-repo overview and the project page without an extra route.
-    """
-    if find_repo(data_dir, project=None, name=segment) is not None:
-        return "root_repo"
-    if (projects_dir(data_dir) / segment).is_dir():
-        return "project"
-    return None

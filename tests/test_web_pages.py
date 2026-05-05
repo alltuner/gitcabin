@@ -53,25 +53,6 @@ def test_dashboard_lists_owners_and_repo_counts(web_client: TestClient, init_rep
     assert "1 repository" in body
 
 
-def test_dashboard_root_repo_card_links_to_clean_url(
-    web_client: TestClient, settings
-) -> None:
-    # Projectless repo at data/repos/<name>.git should render with a
-    # `/runbook` link, not `//runbook` — `_repo_card.html` builds the
-    # href from the empty `owner`, which used to slip through as
-    # `/{owner}/{name}` and produce a doubled slash that 404'd.
-    from gitcabin.storage import layout
-    from gitcabin.storage.repo import BareRepo
-
-    BareRepo.open_or_init(
-        (layout.root_repos_dir(settings.data_dir) / "runbook").with_suffix(".git")
-    )
-
-    body = web_client.get("/").text
-    assert 'href="/runbook"' in body
-    assert "//runbook" not in body
-
-
 def test_owner_page_lists_repos(web_client: TestClient, init_repo) -> None:
     init_repo("octocat", "hello")
     init_repo("octocat", "world")
