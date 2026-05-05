@@ -16,12 +16,30 @@
 
 {% block head_extra %}{% endblock %}
 </head>
-{# hx-ext opts the whole tree into the preload extension. preload="mouseover"
-   on body inherits down to every anchor via the extension's getClosestAttribute
-   walk — every internal link prefetches on hover (~100ms after entering)
-   without per-link annotation. #}
+{# Three htmx attributes work together to make navigation feel instant:
+
+   hx-boost="true"          intercept anchor clicks and POST/GET via htmx
+                            instead of a full browser navigation. URL still
+                            pushes via history.pushState (default).
+   hx-target/select/swap    swap only <main> rather than the whole body, so
+                            the header doesn't flicker. We GET the new page,
+                            pick out its <main>, and outerHTML-swap ours.
+   show:window:top          scroll to top after the swap, mimicking what a
+                            real navigation would do.
+
+   preload + preload="mouseover" on body opts every descendant <a href>
+   into the preload extension. htmx-ext-preload's getClosestAttribute walk
+   inherits the value down without per-link annotation. The extension fires
+   an XHR on hover (~100 ms after the mouse enters); the response lands in
+   the browser HTTP cache. When the user clicks ~200 ms later, htmx's GET
+   under hx-boost reads from cache and the swap is essentially free.
+#}
 <body
   class="bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100 font-sans"
+  hx-boost="true"
+  hx-target="main"
+  hx-select="main"
+  hx-swap="outerHTML show:window:top"
   hx-ext="preload"
   preload="mouseover">
 <header class="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">

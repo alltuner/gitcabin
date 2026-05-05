@@ -35,12 +35,24 @@ _templates.env.globals["asset"] = AssetResolver(dist_dir=_DIST_DIR)
 
 
 def _render(request: Request, settings: Settings, template: str, **ctx: object) -> HTMLResponse:
-    """Render a template with the always-needed context (request, viewer)."""
-    return _templates.TemplateResponse(
+    """Render a template with the always-needed context (request, viewer).
+
+    `Cache-Control: private, max-age=10` lets htmx-ext-preload's prefetched
+    response actually be reused on the subsequent click — without any
+    Cache-Control header the browser won't keep the prefetched body in cache,
+    and the click triggers a fresh network round-trip. 10 seconds is long
+    enough to bridge a hover → click and short enough that mutations the user
+    just made (close issue, post comment) don't render as stale on the next
+    page view. `private` keeps shared caches (proxies) from holding the
+    response, since gitcabin doesn't yet have a per-user identity model.
+    """
+    response = _templates.TemplateResponse(
         request,
         template,
         {"viewer_login": settings.viewer_login, **ctx},
     )
+    response.headers["Cache-Control"] = "private, max-age=10"
+    return response
 
 
 def _list_owners(settings: Settings) -> list[dict[str, object]]:
