@@ -76,25 +76,58 @@ Three letters, mnemonic of the project name (gitcabin → cab), free of common U
 
 ## Why a shell script and not a binary / Python entry point
 
-`cab` does almost nothing — clear two env vars, set two more, `exec gh`. Anything heavier than POSIX shell pays overhead for no benefit:
+`cab` does almost nothing — clear two env vars, set two more, `exec gh`. The choice of implementation language matters only insofar as it affects cold-start time. Measured on macOS (Python 3.14, gh 2.92, M-series CPU; 20-run averages):
 
-| Option | Cold start | Footprint | Why we passed |
-|---|---|---|---|
-| **POSIX shell (current)** | ~10ms | ~90 lines of `sh` | nothing simpler exists |
-| Python entry-point | ~80ms | depends on gitcabin install | Python startup is felt on every interactive call |
-| Single-file Python script | ~80ms | one `.py` file | no speed gain over the shell version, larger code |
-| Native Go / Rust binary | ~5ms | 1–3 MB binary + cross-lang build pipeline | fastest, but a build pipeline for 90 lines of logic is a bad trade |
-| `uvx` / `pipx` distributable | ~80–150ms | runtime resolver overhead | same speed cost as the Python entry-point, more layers |
+| Variant | Wall time | Overhead vs raw `gh` |
+|---|---|---|
+| Raw `gh --version` (no wrapper) | 29ms | — |
+| Bare shell wrapper (`exec env … gh`) | 55ms | +26ms |
+| **Current `cab` (shell + auto-register check)** | 85ms | +56ms |
+| Python wrapper (no auto-register) | 47ms | +18ms |
+| Hypothetical Go binary (estimated, ~3ms cold start) | ~32ms | +3ms |
+| Hypothetical Rust binary (estimated, ~2ms cold start) | ~31ms | +2ms |
+| Hypothetical C binary | ~30ms | +1ms |
 
-The five-millisecond difference between shell and a static binary doesn't matter for an interactive wrapper today. The seventy-millisecond gap to anything that boots a Python interpreter does — typing `cab issue list` and feeling a beat of latency before `gh` even starts is exactly the user-perceptible drag we're trying to remove from the project.
+Two real findings shifted my expectations:
 
-A **native Rust or Go rewrite** is on the table once the surface area justifies it. It would buy us:
+1. **Python beats bare-shell by ~8ms**, because Python 3.14 starts faster than the shell `env` + exec dance does in `sh`. The "shell is always faster" priors were wrong.
 
-- ~5 ms cold start (matches `gh` itself).
-- A single static binary that's trivial to drop on `$PATH` or ship via Homebrew / scoop / Cargo / go install.
-- Strong typing for the pieces the shell version fakes (proxy URL parsing, JSON-aware status checks, future `cab status` output formatting).
+2. **The biggest cost in `cab` today is the `gh auth status` check inside `ensure_auth`** (~30ms per invocation). The wrapper itself is ~26ms; the auto-register check more than doubles that. Caching the registration state after first successful call would drop `cab` to ~55ms — same speed as Python, half the gap to a native binary.
 
-Tracked as a follow-up; the cost isn't justified at 90 lines of plumbing, and the shell version is already correct. When `cab` grows interactive prompts, JSON manipulation, structured config, or anything that's awkward in `sh`, we move.
+So the order-of-magnitude question isn't "shell vs binary" — it's "how often do we re-check auth?"
+
+### The optimization path
+
+1. **Cache the auth check** (cheapest win, ~10 lines of shell): write `~/.cache/cab/<host>.registered` after first successful `gh auth login`; subsequent invocations skip the check. Brings `cab` to ~55ms. **Tracked at [#22](https://github.com/alltuner/gitcabin/issues/22) once filed.**
+
+2. **Native binary** (Rust or Go, see #19): drops to ~30–35ms, indistinguishable from raw `gh`. Worth it once the surface justifies — see decision criteria below.
+
+### Rust vs Go for a future native cab
+
+| Dimension | Rust | Go |
+|---|---|---|
+| Cold start | ~1–3ms | ~3–5ms |
+| Binary size (release, stripped) | ~500KB–1MB | ~3–5MB |
+| Build complexity | Cargo, well-trodden | go build, well-trodden |
+| Cross-compilation | `cargo build --target=…` (rustup adds targets) | `GOOS=linux GOARCH=arm64 go build` (built in) |
+| Distribution (Homebrew, scoop, GitHub Releases) | trivial | trivial |
+| Async / concurrency story | Tokio if needed | goroutines, no extra runtime |
+| Memory safety | guaranteed | GC + memory-safe-by-default |
+| **Integration with gh's own code** | would have to reimplement HTTP plumbing | **could `import` cli/cli/internal/* directly** if Go modules permit, eventually skipping the gh subprocess entirely |
+
+For *this* tool, the integration angle is what tilts the scales toward Go — even though Rust would be a hair faster.
+
+The "skip the gh subprocess" option (Go embedding gh's transport directly) takes the latency floor below 30ms because we no longer pay `gh`'s own cold start (~29ms). Best case: cab does what gh would have done, in-process, in ~5ms. That's the actual ceiling of what's possible without rearchitecting gitcabin's API to be reachable directly (which would defeat the purpose — gh's special-casing of `github.localhost` is what we're piggybacking on).
+
+### Decision criteria
+
+We move to a native binary when one of these is true:
+
+- `cab` grows beyond pure passthrough (interactive prompts, JSON manipulation, structured `cab status` output, multi-host management).
+- We start shipping `cab` independently of the gitcabin clone (curl-installer, Homebrew tap).
+- Measured user-visible latency becomes a persistent complaint.
+
+Until then, the shell version is the right answer — small, readable, debuggable with `set -x`, and within ~50ms of the theoretical ceiling.
 
 ## Distribution
 
