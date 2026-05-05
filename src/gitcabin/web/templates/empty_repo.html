@@ -10,6 +10,6 @@
   <p class="text-sm text-gray-500 dark:text-gray-400">
     Push something and then come back. To create the bare repo locally:
   </p>
-  <pre class="mx-auto mt-4 inline-block rounded bg-gray-50 px-4 py-2 text-left font-mono text-xs dark:bg-gray-900">git push http://github.localhost/{{ owner }}/{{ name }}.git main</pre>
+  <pre class="mx-auto mt-4 inline-block rounded bg-gray-50 px-4 py-2 text-left font-mono text-xs dark:bg-gray-900">git push http://github.localhost{{ repo_url_prefix(owner, name) }}.git main</pre>
 </div>
 {% endblock %}

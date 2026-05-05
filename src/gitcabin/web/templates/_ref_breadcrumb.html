@@ -70,13 +70,13 @@
   </div>
 
   <div class="font-mono text-sm">
-    <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
+    <a href="{{ repo_url_prefix(owner, name) }}/tree/{{ ref }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
     {% for c in crumb_segments %}
       <span class="text-gray-400">/</span>
       {% if loop.last %}
       <span class="text-gray-900 dark:text-gray-100">{{ c.name }}</span>
       {% else %}
-      <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ c.path }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ c.name }}</a>
+      <a href="{{ repo_url_prefix(owner, name) }}/tree/{{ ref }}/{{ c.path }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ c.name }}</a>
       {% endif %}
     {% endfor %}
   </div>

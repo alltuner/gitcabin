@@ -22,7 +22,7 @@
     <span class="mx-2">·</span>
     parent{% if detail.parents | length > 1 %}s{% endif %}
     {% for p in detail.parents %}
-    <a href="/{{ owner }}/{{ name }}/commit/{{ p }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400" title="{{ p }}">{{ p | short_sha }}</a>{% if not loop.last %}, {% endif %}
+    <a href="{{ repo_url_prefix(owner, name) }}/commit/{{ p }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400" title="{{ p }}">{{ p | short_sha }}</a>{% if not loop.last %}, {% endif %}
     {% endfor %}
     {% endif %}
   </div>
@@ -33,7 +33,7 @@
   {% for change_type, path in detail.changed_paths %}
   <div class="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-900">
     <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ change_type }}</span>
-    <a href="/{{ owner }}/{{ name }}/blob/{{ detail.sha }}/{{ path }}" class="font-mono text-sm text-blue-600 hover:underline dark:text-blue-400">{{ path }}</a>
+    <a href="{{ repo_url_prefix(owner, name) }}/blob/{{ detail.sha }}/{{ path }}" class="font-mono text-sm text-blue-600 hover:underline dark:text-blue-400">{{ path }}</a>
   </div>
   {% endfor %}
 </div>

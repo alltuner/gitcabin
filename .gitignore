@@ -23,3 +23,4 @@ web-src/src/highlight.css
 
 # Claude Code harness state
 .claude/scheduled_tasks.lock
+.claude-screenshots/

@@ -1,12 +1,12 @@
 {# ABOUTME: Commit row — subject + author/date + short SHA pill. Reads `c` (commit), `owner`, `name`. #}
 <div class="flex items-start gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
   <div class="min-w-0 flex-1">
-    <a href="/{{ owner }}/{{ name }}/commit/{{ c.sha }}" class="font-semibold text-gray-900 hover:text-blue-600 dark:text-gray-100 dark:hover:text-blue-400">{{ c.subject }}</a>
+    <a href="{{ repo_url_prefix(owner, name) }}/commit/{{ c.sha }}" class="font-semibold text-gray-900 hover:text-blue-600 dark:text-gray-100 dark:hover:text-blue-400">{{ c.subject }}</a>
     <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
       <strong class="text-gray-700 dark:text-gray-300">{{ c.author_name }}</strong>
       committed
       <time datetime="{{ c.authored_at }}" title="{{ c.authored_at }}">{{ c.authored_at | relative_time }}</time>
     </div>
   </div>
-  <a href="/{{ owner }}/{{ name }}/commit/{{ c.sha }}" class="rounded border border-gray-300 px-2 py-1 font-mono text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{{ c.short_sha }}</a>
+  <a href="{{ repo_url_prefix(owner, name) }}/commit/{{ c.sha }}" class="rounded border border-gray-300 px-2 py-1 font-mono text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{{ c.short_sha }}</a>
 </div>

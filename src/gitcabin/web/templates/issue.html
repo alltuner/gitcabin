@@ -58,7 +58,7 @@
 <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No comments yet.</p>
 {% endif %}
 
-<form method="post" action="/{{ owner }}/{{ name }}/issues/{{ issue.number }}/comments" class="mt-6">
+<form method="post" action="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/comments" class="mt-6">
   <label for="comment-body" class="mb-2 block text-sm font-semibold">Add a comment</label>
   <textarea
     id="comment-body"
@@ -72,7 +72,7 @@
     {% if issue.state.value == "OPEN" %}
     <button
       type="submit"
-      formaction="/{{ owner }}/{{ name }}/issues/{{ issue.number }}/close"
+      formaction="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/close"
       formnovalidate
       class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
     >
@@ -81,7 +81,7 @@
     {% else %}
     <button
       type="submit"
-      formaction="/{{ owner }}/{{ name }}/issues/{{ issue.number }}/reopen"
+      formaction="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/reopen"
       formnovalidate
       class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
     >

@@ -34,6 +34,20 @@ _templates = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
 # Reading the manifest happens on every call (the file is tiny and rebuilds while
 # the server runs pick up new hashes without a restart).
 _templates.env.globals["asset"] = AssetResolver(dist_dir=_DIST_DIR)
+
+
+def _build_repo_url_prefix(owner: str, name: str) -> str:
+    """`/{owner}/{name}` for project repos, `/{name}` for projectless ones.
+
+    Templates call it as `{{ repo_url_prefix(owner, name) }}` to build
+    sub-route URLs (issues, commits, tree/<ref>, …) without caring
+    whether the repo lives under a project or at the root. owner="" or
+    None means projectless.
+    """
+    return f"/{owner}/{name}" if owner else f"/{name}"
+
+
+_templates.env.globals["repo_url_prefix"] = _build_repo_url_prefix
 # Filters for git-metadata polish — see gitcabin.web.format.
 _templates.env.filters["relative_time"] = relative_time
 _templates.env.filters["short_sha"] = short_sha
@@ -460,21 +474,21 @@ def build_router(settings: Settings) -> APIRouter:
                 raise HTTPException(status_code=404, detail="issue not found")
         # POST/redirect/GET so a refresh doesn't re-submit. 303 ensures the
         # follow-up request is a GET regardless of the original method.
-        return RedirectResponse(url=f"/{owner}/{name}/issues/{number}", status_code=303)
+        return RedirectResponse(url=f"{_build_repo_url_prefix(owner, name)}/issues/{number}", status_code=303)
 
     @router.post("/{owner}/{name}/issues/{number}/close", include_in_schema=False)
     def close_action(owner: str, name: str, number: int) -> RedirectResponse:
         bare = _open_repo(settings, owner, name)
         if close_issue(bare, number=number, actor=settings.viewer_login) is None:
             raise HTTPException(status_code=404, detail="issue not found")
-        return RedirectResponse(url=f"/{owner}/{name}/issues/{number}", status_code=303)
+        return RedirectResponse(url=f"{_build_repo_url_prefix(owner, name)}/issues/{number}", status_code=303)
 
     @router.post("/{owner}/{name}/issues/{number}/reopen", include_in_schema=False)
     def reopen_action(owner: str, name: str, number: int) -> RedirectResponse:
         bare = _open_repo(settings, owner, name)
         if reopen_issue(bare, number=number, actor=settings.viewer_login) is None:
             raise HTTPException(status_code=404, detail="issue not found")
-        return RedirectResponse(url=f"/{owner}/{name}/issues/{number}", status_code=303)
+        return RedirectResponse(url=f"{_build_repo_url_prefix(owner, name)}/issues/{number}", status_code=303)
 
     return router
 
