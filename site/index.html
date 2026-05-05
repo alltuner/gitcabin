@@ -367,90 +367,149 @@
       <span class="marginal">§ 01</span>
       <h2>Concept</h2>
       <ul>
-        <li><code>gh</code> has built-in support for arbitrary hosts via <code>GH_HOST</code>. The hostname <code>github.localhost</code> is special: gh sends to <code>http://api.github.localhost/</code> (REST) and <code>http://api.github.localhost/graphql</code> (GraphQL), so HTTPS is not required for local dev. For any other hostname gh forces HTTPS and uses the GitHub Enterprise URL shape (<code>https://&lt;host&gt;/api/v3/...</code> and <code>https://&lt;host&gt;/api/graphql</code>). gitcabin serves both shapes, so the same image works behind either path.</li>
-        <li>Issues, PRs, and counters live in side refs of the bare git repo (<code>refs/issues/*</code>, <code>refs/prs/*</code>, <code>refs/meta/*</code>). Code lives in normal <code>refs/heads/*</code> and <code>refs/tags/*</code>. The two namespaces never collide.</li>
+        <li><code>gh</code> already speaks GitHub-flavored REST + GraphQL. Point it at gitcabin via the <code>cab</code> wrapper and it doesn't know it's not talking to github.com.</li>
+        <li>Issues, PRs, comments, and counters live in side refs of the bare git repo (<code>refs/issues/*</code>, <code>refs/prs/*</code>, <code>refs/meta/*</code>). Code lives in normal <code>refs/heads/*</code> and <code>refs/tags/*</code>. The two namespaces never collide.</li>
         <li>The HTTP API server is the only writer of metadata refs. Plain <code>git clone</code>/<code>git push</code> only see code.</li>
+        <li>No database. No background workers. The bare repo on disk <em>is</em> the canonical store; if you can read it with <code>git</code>, you can recover everything.</li>
       </ul>
     </section>
 
     <section id="quickstart">
       <span class="marginal">§ 02</span>
       <h2>Quickstart</h2>
-      <p>The default deploy is local-only over HTTP via <code>github.localhost</code>. One command brings it up:</p>
-<pre><code>docker compose watch</code></pre>
-      <p>Compose builds the image, runs the API container on <code>127.0.0.1:80</code> and the HTML dashboard on <code>127.0.0.1:8080</code>, and reloads on every source edit. Plain <code>docker compose up --build</code> works too if you don't want autoreload.</p>
-      <p>Then point gh at it:</p>
-<pre><code>echo "any-token" | gh auth login --hostname github.localhost --with-token
-GH_HOST=github.localhost gh auth status</code></pre>
-      <p>That's it. The token is unverified — gitcabin trusts whoever can reach the port.</p>
-      <p>Stop with <code>docker compose down</code>.</p>
+      <p>One unprivileged port. No <code>/etc/hosts</code> edits. No port-80 conflict.</p>
+<pre><code>docker compose up --watch</code></pre>
+      <p>Compose builds the image, runs a single <code>gitcabin</code> service bound to <code>127.0.0.1:18080</code>, streams its access log, and reloads on every source edit. The container fronts both the REST/GraphQL API and the HTML dashboard via Host-header dispatch — <code>cab</code>/<code>gh</code> traffic (Host: <code>api.github.localhost</code>) hits the API; browser traffic hits the dashboard.</p>
 
-      <h3>Port 80 is already in use</h3>
-      <p>gh hardcodes port 80 for <code>github.localhost</code>, so the proxy needs <em>some</em> port-80 binding to exist. If you already have something on <code>127.0.0.1:80</code>, give gitcabin a dedicated loopback IP:</p>
-<pre><code><span class="c"># /etc/hosts (sudo required)</span>
-127.42.0.1   github.localhost api.github.localhost</code></pre>
-<pre><code><span class="c"># compose.override.yml</span>
-services:
-  gitcabin:
-    ports:
-      - "127.42.0.1:80:8000"</code></pre>
-      <p><code>127/8</code> is all loopback on Linux and macOS, so <code>127.42.0.1</code> is essentially free real estate. Run <code>docker compose up -d</code> and gh will dial port 80 on <code>127.42.0.1</code> instead of <code>127.0.0.1</code>.</p>
+      <h3>The <code>cab</code> wrapper</h3>
+      <p><code>cab</code> points <code>gh</code>'s HTTP traffic at gitcabin and registers the host on first use. Build the binary, or alias the docker image — both invocations are interchangeable:</p>
+<pre><code><span class="c"># build the Go binary (host-side)</span>
+cd cab && go build -o /usr/local/bin/cab . && cd ..</code></pre>
+<pre><code><span class="c"># or alias the docker image (no Go toolchain needed)</span>
+docker buildx build --platform linux/amd64,linux/arm64 -t alltuner/cab:dev cab/
+alias cab='docker run --rm --network gitcabin_default \
+  -v "$HOME/.config/gh:/home/cab/.config/gh" \
+  alltuner/cab:dev'</code></pre>
+      <p>The very first <code>cab</code> command auto-registers <code>github.localhost</code> with <code>gh</code> (writes a placeholder token to <code>~/.config/gh/hosts.yml</code> — gitcabin doesn't verify tokens, anyone who can reach the port is the owner) and then runs whatever you asked. Internally <code>cab</code> sets <code>HTTP_PROXY</code> to gitcabin's unprivileged port and <code>GH_HOST</code> to <code>github.localhost</code>, then <code>exec</code>s <code>gh</code>. <code>gh</code> honors <code>HTTP_PROXY</code> for <code>http://...</code> URLs (its calls to real github.com over HTTPS are unaffected).</p>
+      <p>Stop the stack with <code>docker compose down</code>. See <a href="https://github.com/alltuner/gitcabin/blob/main/docs/cab.md"><code>docs/cab.md</code></a> for the design.</p>
     </section>
 
-    <section id="browsing">
+    <section id="issues">
       <span class="marginal">§ 03</span>
-      <h2>Browsing the data</h2>
-      <p>The compose stack runs an HTML dashboard alongside the API on <code>127.0.0.1:8080</code>:</p>
-<pre><code>open http://localhost:8080/</code></pre>
-      <p>The dashboard reads the same bare repos as the API and lets you browse issues, refs, commits, blames, and tree views. Code refs (<code>refs/heads/*</code>) and metadata refs (<code>refs/issues/*</code>, <code>refs/prs/*</code>, <code>refs/meta/*</code>) are presented separately.</p>
+      <h2>Working with issues</h2>
+      <p>A new repo needs a one-time bare-repo init on disk because <code>gh</code> validates the repo exists before sending mutations:</p>
+<pre><code>cab repo init me/cabin</code></pre>
+      <p>After that, the rest is plain <code>gh</code>:</p>
+<pre><code><span class="c"># create</span>
+cab issue create -R me/cabin --title "First issue" --body "Try things out"
+
+<span class="c"># list — state filters work; ordering options are accepted but ignored</span>
+cab issue list  -R me/cabin
+cab issue list  -R me/cabin --state closed
+
+<span class="c"># view, optionally with comments</span>
+cab issue view 1 -R me/cabin
+cab issue view 1 -R me/cabin --comments
+
+<span class="c"># edit your own issue — title or body, separately or together</span>
+cab issue edit 1 -R me/cabin --title "Renamed"
+cab issue edit 1 -R me/cabin --body  "Updated body"
+
+<span class="c"># close. Reopening locally isn't wired up yet; manage state with edit.</span>
+cab issue close 1 -R me/cabin
+
+<span class="c"># comment</span>
+cab issue comment 1 -R me/cabin --body "A reply"</code></pre>
+      <p>Comment edit + delete work via raw GraphQL today (<code>updateIssueComment</code> / <code>deleteIssueComment</code>); <code>cab issue comment --edit-last</code> and <code>--delete</code> are the friendlier wrappers as soon as gh's bundled version supports them.</p>
     </section>
 
-    <section id="modes">
+    <section id="editability">
       <span class="marginal">§ 04</span>
-      <h2>Other deployment modes</h2>
-      <p>The local-only quickstart is one of three documented setups:</p>
+      <h2>Who can change what</h2>
+      <p>Same rules GitHub uses, enforced by the API:</p>
       <table>
         <thead>
           <tr>
-            <th>Mode</th>
-            <th>Audience</th>
-            <th>Cert work</th>
-            <th>Domain needed</th>
+            <th>Action</th>
+            <th>viewer == author</th>
+            <th>viewer ≠ author</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td>Local-only (default)</td>
-            <td>the user, on this machine</td>
-            <td>none</td>
-            <td><code>github.localhost</code> (built in)</td>
+            <td>Edit issue title / body</td>
+            <td>yes</td>
+            <td><strong>no, never</strong> — even ADMIN. Editing someone else's words is impersonation.</td>
           </tr>
           <tr>
-            <td>Tailnet-shared</td>
-            <td>anyone on your tailnet</td>
-            <td>none (Tailscale provisions)</td>
-            <td>tailnet hostname (built in)</td>
+            <td>Close / reopen issue</td>
+            <td>yes</td>
+            <td>only with TRIAGE / WRITE / MAINTAIN / ADMIN role</td>
           </tr>
           <tr>
-            <td>Public&thinsp;/&thinsp;team</td>
-            <td>anyone with DNS resolution</td>
-            <td>DNS-01 via Caddy</td>
-            <td>one you own</td>
+            <td>Edit comment body</td>
+            <td>yes</td>
+            <td><strong>no, never</strong> — same rule</td>
+          </tr>
+          <tr>
+            <td>Delete comment</td>
+            <td>yes</td>
+            <td>only with ADMIN (moderation)</td>
           </tr>
         </tbody>
       </table>
-      <p>See <a href="https://github.com/alltuner/gitcabin/blob/main/docs/installation.md"><code>docs/installation.md</code></a> for the Tailscale and Caddy recipes, the exact <code>gh auth login</code> invocation each one pairs with, and trade-offs.</p>
+      <p>Checks fire in the API layer, so they hold whether you go through <code>gh</code>, raw GraphQL, or the dashboard. The GraphQL types also expose <code>viewerCanUpdate</code>, <code>viewerCanCloseOrReopen</code>, <code>viewerCanDelete</code> so a UI can hide affordances ahead of time.</p>
+      <p>For repos that have never been linked to a GitHub upstream, the viewer is implicitly ADMIN — you own the bare repo on your disk. For linked repos, the role is the one cached in the sync config.</p>
+    </section>
+
+    <section id="browsing">
+      <span class="marginal">§ 05</span>
+      <h2>Browsing the data</h2>
+      <p>The dashboard lives at the same port as the API, routed by Host header — browsers hit the dashboard, <code>cab</code>/<code>gh</code> hits the API:</p>
+<pre><code>open http://localhost:18080/</code></pre>
+      <p>It reads the same bare repos and surfaces owners, repo trees with last-touched commit per file, blame, commits grouped by day, side-by-side diffs, branches, tags, issues, and the issue thread itself. Code refs and metadata refs are presented separately.</p>
+    </section>
+
+    <section id="sync">
+      <span class="marginal">§ 06</span>
+      <h2>Mirroring a GitHub repo</h2>
+      <p>gitcabin can pull issues, PRs, and comments from a real GitHub repository, and push back local-only issues you drafted in gitcabin. The sync subsystem is opt-in per repo.</p>
+      <p>Identity check first — gitcabin's <code>viewer_login</code> must match the GitHub login <code>gh</code> is authenticated as. Mismatch surfaces a hint:</p>
+<pre><code>gitcabin sync identity
+<span class="c"># gitcabin viewer_login: david</span>
+<span class="c"># github.com gh login:   davidpoblador</span>
+<span class="c"># these differ. set GITCABIN_VIEWER_LOGIN to the gh value,</span>
+<span class="c"># or pass --login on `gitcabin sync link` to override per repo.</span></code></pre>
+      <p>Link a local repo to its GitHub counterpart. The role (READ / TRIAGE / WRITE / MAINTAIN / ADMIN) is fetched from GitHub automatically; pass <code>--role</code> to override:</p>
+<pre><code>gitcabin sync link me/cabin --gh alice/cabin
+<span class="c"># linked me/cabin -&gt; alice/cabin (role=ADMIN, login=davidpoblador)</span></code></pre>
+      <p>Linking writes a sync config to <code>refs/meta/sync</code> inside the local bare repo.</p>
+      <p>Pull from GitHub. Pulls issues into <code>refs/issues/&lt;gh-number&gt;</code>, PRs into <code>refs/prs/&lt;gh-number&gt;</code>, and comments under each ref's <code>comments/</code> subtree. Re-pulls overwrite — GitHub wins when there's a conflict:</p>
+<pre><code>gitcabin sync pull me/cabin
+<span class="c"># pulled 12 issues, 3 PRs, 47 comments</span></code></pre>
+      <p>Push local-only issues to GitHub. Walks <code>refs/issues/local/*</code>, posts each, gets back the upstream number, and renumbers the ref to match. The local ref is dropped only after the new synced ref is fully populated:</p>
+<pre><code>gitcabin sync push me/cabin
+<span class="c"># pushed 1 issues</span></code></pre>
+      <p>After push, the issue's <code>provenance</code> becomes <code>SYNCED_BIDIR</code> and its author is rewritten to the gh-side login.</p>
+      <p>Caveats worth knowing: re-pull clobbers local edits on synced items; push isn't crash-safe yet (a death between upstream POST and local renumbering creates a duplicate); PR push isn't built (you can pull PRs to read them, but creating one needs local-branch infra that isn't there); <code>gh_author_id</code> isn't tracked yet, so renames upstream show stale logins until the next pull. Full design and outstanding gaps in <a href="https://github.com/alltuner/gitcabin/blob/main/docs/github-sync.md"><code>docs/github-sync.md</code></a>.</p>
+    </section>
+
+    <section id="modes">
+      <span class="marginal">§ 07</span>
+      <h2>Other deployment modes</h2>
+      <p>One shipping mode today: local-only HTTP via <code>cab</code> (the quickstart above). The current implementation is solid enough that we're prioritizing iteration speed over deployment-mode breadth — multi-device access via Tailscale is documented as a deferred design, not yet built.</p>
+      <p>The discussion behind the single-mode decision — including options ruled out (per-machine local CA, public/team-with-own-domain, DuckDNS, shared-wildcard-cert) and the deferred Tailnet-shared mode — lives in <a href="https://github.com/alltuner/gitcabin/blob/main/docs/tls.md"><code>docs/tls.md</code></a>.</p>
     </section>
 
     <section id="native">
-      <span class="marginal">§ 05</span>
+      <span class="marginal">§ 08</span>
       <h2>Running natively (no Docker, no gh)</h2>
 <pre><code>uv run gitcabin</code></pre>
-      <p>Listens on <code>127.0.0.1:8000</code>. Useful for direct probing with curl&thinsp;/&thinsp;httpie, but gh won't reach it — gh dials port 80 (<code>github.localhost</code>) or 443 (anything else), never 8000.</p>
+      <p>Listens on <code>127.0.0.1:8000</code>. Useful for direct probing with curl&thinsp;/&thinsp;httpie, but <code>gh</code> won't reach it — <code>gh</code> dials port 80 (<code>github.localhost</code>) or 443 (anything else), never 8000.</p>
     </section>
 
     <section id="development">
-      <span class="marginal">§ 06</span>
+      <span class="marginal">§ 09</span>
       <h2>Development</h2>
 <pre><code>uv sync                                    <span class="c"># install deps + editable gitcabin</span>
 uv run pytest                              <span class="c"># tests</span>
