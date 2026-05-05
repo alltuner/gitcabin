@@ -55,7 +55,9 @@
    retheme automatically — DaisyUI swaps the variables on theme change
    and these rules pick that up without per-theme overrides. */
 
-/* Pygments blocks. The .hl class is what HtmlFormatter wraps tokens in. */
+/* Pygments blocks. The .hl class is what HtmlFormatter wraps tokens in.
+   Top/bottom padding lives on first/last row cells (not on the wrapper),
+   so the linenos column's right-border keeps running edge-to-edge. */
 .hl {
   background: var(--color-base-200);
   font-size: 13px;
@@ -73,6 +75,8 @@
 }
 .hl td.code { padding: 0 12px; vertical-align: top; }
 .hl pre { margin: 0; padding: 0; background: transparent; }
+.hl tr:first-child td { padding-top: 0.6rem; }
+.hl tr:last-child td { padding-bottom: 0.6rem; }
 
 /* Blame table — needs a custom multi-column layout that Tailwind utility
    classes alone don't make obvious. */
