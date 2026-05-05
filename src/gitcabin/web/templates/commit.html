@@ -1,6 +1,7 @@
 {# ABOUTME: Single-commit view — metadata + changed paths + unified diff. #}
 {% extends "_base.html" %}
 {% block title %}{{ detail.short_sha }} — {{ owner }}/{{ name }}{% endblock %}
+{% block header_breadcrumb %}{% include "_repo_breadcrumb.html" %}{% endblock %}
 {% block content %}
 {% set active_tab = "commits" %}
 {% include "_repo_header.html" %}

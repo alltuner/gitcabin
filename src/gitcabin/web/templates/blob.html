@@ -1,6 +1,7 @@
 {# ABOUTME: File viewer — Pygments-highlighted source, with binary/too-large fallbacks. #}
 {% extends "_base.html" %}
 {% block title %}{{ path }} — {{ owner }}/{{ name }}{% endblock %}
+{% block header_breadcrumb %}{% include "_repo_breadcrumb.html" %}{% endblock %}
 {% block content %}
 {% set active_tab = "code" %}
 {% include "_repo_header.html" %}

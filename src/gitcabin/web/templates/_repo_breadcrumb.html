@@ -1,0 +1,8 @@
+{# ABOUTME: Header breadcrumb for every repo page — owner / name.
+   ABOUTME: The logo to the left already links to the dashboard, so the
+   ABOUTME: `projects` root crumb is dropped. Reads `owner` and `name`
+   ABOUTME: from context. Drop into `header_breadcrumb`. #}
+{% with crumbs = [
+  {"label": owner, "href": "/" ~ owner},
+  {"label": name},
+] %}{% include "_breadcrumb.html" %}{% endwith %}

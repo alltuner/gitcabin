@@ -1,6 +1,7 @@
 {# ABOUTME: Repo overview — file tree at HEAD plus a rendered README. #}
 {% extends "_base.html" %}
 {% block title %}{{ owner }}/{{ name }} — gitcabin{% endblock %}
+{% block header_breadcrumb %}{% include "_repo_breadcrumb.html" %}{% endblock %}
 {% block content %}
 {% set active_tab = "code" %}
 {% include "_repo_header.html" %}

@@ -2,8 +2,10 @@
 {% extends "_base.html" %}
 {% import "_macros.html" as ui %}
 {% block title %}{{ owner }} — gitcabin{% endblock %}
+{% block header_breadcrumb %}
+{% with crumbs = [{"label": owner}] %}{% include "_breadcrumb.html" %}{% endwith %}
+{% endblock %}
 {% block content %}
-{% with crumbs = [{"label": "projects", "href": "/"}, {"label": owner}] %}{% include "_breadcrumb.html" %}{% endwith %}
 {% if repos %}
 {% call ui.bordered_list() %}
   {% for repo in repos %}

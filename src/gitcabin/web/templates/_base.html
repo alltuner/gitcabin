@@ -59,16 +59,22 @@
   preload="mouseover">
 <header class="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
   <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-    <a href="/" class="flex items-center gap-2 font-semibold text-gray-900 dark:text-gray-100 hover:no-underline">
-      {# Roof + base sketch the cabin (no walls — the open silhouette
-         reads cleaner at navbar size). Inside: a two-node commit graph
-         with the trunk dropping to the base line, branching off to the
-         right. The bottom dot is dropped at this size — three nodes
-         packed in 16 user units feels cramped; the larger 3-node
-         variant is reserved for marketing / docs surfaces. #}
-      {% include "icons/cabin.html" %}
-      <span class="text-[1.65rem] leading-none tracking-tight">gitcabin</span>
-    </a>
+    {# Logo + page breadcrumb sit on a shared row so the wordmark slot
+       carries page context instead of repeating the brand. The wordmark
+       moves to the footer (see _footer.html). Pages override
+       `header_breadcrumb` to fill in their location. #}
+    <div class="flex min-w-0 items-center gap-3">
+      <a href="/" class="flex shrink-0 items-center text-gray-900 dark:text-gray-100 hover:no-underline" aria-label="gitcabin home">
+        {# Roof + base sketch the cabin (no walls — the open silhouette
+           reads cleaner at navbar size). Inside: a two-node commit graph
+           with the trunk dropping to the base line, branching off to the
+           right. The bottom dot is dropped at this size — three nodes
+           packed in 16 user units feels cramped; the larger 3-node
+           variant is reserved for marketing / docs surfaces. #}
+        {% include "icons/cabin.html" %}
+      </a>
+      <div class="min-w-0">{% block header_breadcrumb %}{% endblock %}</div>
+    </div>
 
     {# Theme switcher: three radios sharing name="theme". The light + dark
        radios carry DaisyUI's `theme-controller` class, so when one is

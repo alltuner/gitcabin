@@ -2,6 +2,7 @@
 {% extends "_base.html" %}
 {% import "_macros.html" as ui %}
 {% block title %}Issues — {{ owner }}/{{ name }} — gitcabin{% endblock %}
+{% block header_breadcrumb %}{% include "_repo_breadcrumb.html" %}{% endblock %}
 {% block content %}
 {% set active_tab = "issues" %}
 {% set total_issue_count = total_count %}

@@ -1,6 +1,7 @@
 {# ABOUTME: Blame view — per-line attribution with run-collapsing on the left margin. #}
 {% extends "_base.html" %}
 {% block title %}Blame: {{ path }} — {{ owner }}/{{ name }}{% endblock %}
+{% block header_breadcrumb %}{% include "_repo_breadcrumb.html" %}{% endblock %}
 {% block content %}
 {% set active_tab = "code" %}
 {% include "_repo_header.html" %}

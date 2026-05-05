@@ -1,6 +1,7 @@
 {# ABOUTME: Single-issue view — body + comments thread. #}
 {% extends "_base.html" %}
 {% block title %}#{{ issue.number }} {{ issue.title }} — gitcabin{% endblock %}
+{% block header_breadcrumb %}{% include "_repo_breadcrumb.html" %}{% endblock %}
 {% block content %}
 {% set active_tab = "issues" %}
 {% include "_repo_header.html" %}

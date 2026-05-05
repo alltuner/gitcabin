@@ -1,6 +1,7 @@
 {# ABOUTME: Subdirectory listing — file tree under a non-root path. #}
 {% extends "_base.html" %}
 {% block title %}{{ owner }}/{{ name }}: {{ path or ref }}{% endblock %}
+{% block header_breadcrumb %}{% include "_repo_breadcrumb.html" %}{% endblock %}
 {% block content %}
 {% set active_tab = "code" %}
 {% include "_repo_header.html" %}

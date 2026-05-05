@@ -1,6 +1,7 @@
 {# ABOUTME: Shown when a repo exists on disk but has no commits yet. #}
 {% extends "_base.html" %}
 {% block title %}{{ owner }}/{{ name }} — empty{% endblock %}
+{% block header_breadcrumb %}{% include "_repo_breadcrumb.html" %}{% endblock %}
 {% block content %}
 {% set active_tab = section %}
 {% include "_repo_header.html" %}

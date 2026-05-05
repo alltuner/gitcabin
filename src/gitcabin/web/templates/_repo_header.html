@@ -1,5 +1,5 @@
-{# ABOUTME: Reusable repo header — composes title + tabs above page-specific content. #}
-{# Caller sets `active_tab` to one of: "code", "issues", "commits", "branches".
-   Optionally sets `total_issue_count` to render the count badge inside Issues. #}
-{% include "_repo_title.html" %}
+{# ABOUTME: Repo tab strip — owner/name now lives in the header breadcrumb,
+   ABOUTME: so this is just the tabs row. Caller sets `active_tab` to one of
+   ABOUTME: "code", "issues", "commits", "branches". Optionally sets
+   ABOUTME: `total_issue_count` to render the count badge inside Issues. #}
 {% include "_repo_tabs.html" %}
