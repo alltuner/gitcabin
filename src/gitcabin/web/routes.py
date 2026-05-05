@@ -34,6 +34,25 @@ _templates = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
 _templates.env.globals["asset"] = AssetResolver(dist_dir=_DIST_DIR)
 
 
+def _repo_ctx(bare: BareRepo, issues: list | None = None) -> dict[str, object]:
+    """Repo-level context shared by every page that renders _repo_header.html.
+
+    Currently the issue counts so the Issues tab badge stays the same across
+    Code / Issues / Commits / Branches / blob / blame / commit / single-issue
+    pages of the same repo. Spread into _render kwargs by every repo-page
+    handler. Add more repo-wide facts here as they become widely useful.
+
+    Pages that already loaded the issues list can pass it in to avoid a
+    second list_issues() walk.
+    """
+    if issues is None:
+        issues = list_issues(bare)
+    return {
+        "total_issue_count": len(issues),
+        "open_issue_count": sum(i.state is IssueState.OPEN for i in issues),
+    }
+
+
 def _render(request: Request, settings: Settings, template: str, **ctx: object) -> HTMLResponse:
     """Render a template with the always-needed context (request, viewer).
 
@@ -169,8 +188,6 @@ def build_router(settings: Settings) -> APIRouter:
     @router.get("/{owner}/{name}", include_in_schema=False)
     def repo_page(request: Request, owner: str, name: str) -> HTMLResponse:
         bare = _open_repo(settings, owner, name)
-        all_issues = list_issues(bare)
-        open_count = sum(1 for i in all_issues if i.state is IssueState.OPEN)
         default_branch = code.head_ref_name(bare)
 
         # Repo overview shows the file tree at HEAD plus a rendered README
@@ -201,8 +218,6 @@ def build_router(settings: Settings) -> APIRouter:
             owner=owner,
             name=name,
             description=None,
-            open_issue_count=open_count,
-            total_issue_count=len(all_issues),
             default_branch=default_branch,
             entries=entries,
             readme_html=readme_html,
@@ -210,6 +225,7 @@ def build_router(settings: Settings) -> APIRouter:
             ref=default_branch or "HEAD",
             crumb_segments=[],
             path="",
+            **_repo_ctx(bare),
         )
 
     @router.get("/{owner}/{name}/tree/{ref}", include_in_schema=False)
@@ -230,6 +246,7 @@ def build_router(settings: Settings) -> APIRouter:
                     owner=owner,
                     name=name,
                     section="tree",
+                    **_repo_ctx(bare),
                 )
             raise HTTPException(status_code=404, detail="ref not found")
         node = code.walk_tree_at_path(commit, path)
@@ -248,6 +265,7 @@ def build_router(settings: Settings) -> APIRouter:
             path=path,
             entries=code.list_tree_entries(node),
             crumb_segments=_path_crumbs(path),
+            **_repo_ctx(bare),
         )
 
     @router.get("/{owner}/{name}/blob/{ref}/{path:path}", include_in_schema=False)
@@ -270,6 +288,7 @@ def build_router(settings: Settings) -> APIRouter:
             path=path,
             rendered=rendered,
             crumb_segments=_path_crumbs(path),
+            **_repo_ctx(bare),
         )
 
     @router.get("/{owner}/{name}/commits/{ref}", include_in_schema=False)
@@ -285,6 +304,7 @@ def build_router(settings: Settings) -> APIRouter:
                     owner=owner,
                     name=name,
                     section="commits",
+                    **_repo_ctx(bare),
                 )
             raise HTTPException(status_code=404, detail="ref not found")
         return _render(
@@ -295,6 +315,7 @@ def build_router(settings: Settings) -> APIRouter:
             name=name,
             ref=ref,
             commits=code.list_commits(commit, max_count=100),
+            **_repo_ctx(bare),
         )
 
     @router.get("/{owner}/{name}/commit/{sha}", include_in_schema=False)
@@ -310,6 +331,7 @@ def build_router(settings: Settings) -> APIRouter:
             owner=owner,
             name=name,
             detail=code.commit_detail(commit),
+            **_repo_ctx(bare),
         )
 
     @router.get("/{owner}/{name}/branches", include_in_schema=False)
@@ -324,6 +346,7 @@ def build_router(settings: Settings) -> APIRouter:
             branches=code.list_branches(bare),
             tags=code.list_tags(bare),
             default_branch=code.head_ref_name(bare),
+            **_repo_ctx(bare),
         )
 
     @router.get("/{owner}/{name}/blame/{ref}/{path:path}", include_in_schema=False)
@@ -342,13 +365,14 @@ def build_router(settings: Settings) -> APIRouter:
             path=path,
             lines=lines,
             crumb_segments=_path_crumbs(path),
+            **_repo_ctx(bare),
         )
 
     @router.get("/{owner}/{name}/issues", include_in_schema=False)
     def issues_page(request: Request, owner: str, name: str, state: str = "open") -> HTMLResponse:
         bare = _open_repo(settings, owner, name)
         all_issues = list_issues(bare)
-        open_count = sum(1 for i in all_issues if i.state is IssueState.OPEN)
+        open_count = sum(i.state is IssueState.OPEN for i in all_issues)
         closed_count = len(all_issues) - open_count
         if state == "open":
             shown = [i for i in all_issues if i.state is IssueState.OPEN]
@@ -370,6 +394,7 @@ def build_router(settings: Settings) -> APIRouter:
             open_count=open_count,
             closed_count=closed_count,
             total_count=len(all_issues),
+            **_repo_ctx(bare, all_issues),
         )
 
     @router.get("/{owner}/{name}/issues/{number}", include_in_schema=False)
@@ -387,6 +412,7 @@ def build_router(settings: Settings) -> APIRouter:
             name=name,
             issue=issue,
             comments=comments,
+            **_repo_ctx(bare),
         )
 
     @router.post("/{owner}/{name}/issues/{number}/comments", include_in_schema=False)
