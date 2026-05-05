@@ -39,6 +39,13 @@
    hx-target/select/swap    swap only <main> rather than the whole body, so
                             the header doesn't flicker. We GET the new page,
                             pick out its <main>, and outerHTML-swap ours.
+   hx-select-oob="header-breadcrumb"
+                            also pluck the breadcrumb container out of the
+                            response and OOB-swap the matching #header-
+                            breadcrumb in the current DOM. Without it the
+                            in-header crumb stays frozen on the page first
+                            loaded, since hx-select="main" doesn't reach
+                            the navbar.
    show:window:top          scroll to top after the swap, mimicking what a
                             real navigation would do.
    hx-history="false"       disable htmx's localStorage history cache. Asset
@@ -60,6 +67,7 @@
   hx-boost="true"
   hx-target="main"
   hx-select="main"
+  hx-select-oob="header-breadcrumb"
   hx-swap="outerHTML show:window:top"
   hx-history="false"
   hx-ext="preload"
@@ -80,7 +88,11 @@
            variant is reserved for marketing / docs surfaces. #}
         {% include "icons/cabin.html" %}
       </a>
-      <div class="min-w-0">{% block header_breadcrumb %}{% endblock %}</div>
+      {# id-tagged so htmx's `hx-select-oob` (set on body) can pluck the
+         updated breadcrumb out of every nav response and swap it in
+         alongside the <main> swap. Without that, only <main> swaps and
+         the breadcrumb stays frozen on whichever page first loaded. #}
+      <div id="header-breadcrumb" class="min-w-0 text-xl font-semibold leading-none tracking-tight">{% block header_breadcrumb %}{% endblock %}</div>
     </div>
 
     {# Theme switcher: three radios sharing name="theme". The light + dark

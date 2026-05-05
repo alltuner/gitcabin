@@ -1,15 +1,15 @@
 {# ABOUTME: Page breadcrumb — slash-separated segments. Renders inline; let callers
    ABOUTME: handle spacing. `crumbs` is a list of {label, href}; href omitted on the
    ABOUTME: last (current) segment. Used in the header bar via `header_breadcrumb`. #}
-<nav class="flex min-w-0 flex-wrap items-center gap-x-2 text-sm text-gray-500 dark:text-gray-400">
+<nav class="flex min-w-0 flex-wrap items-center gap-x-2">
   {% for c in crumbs %}
     {% if not loop.first %}
     <span class="text-gray-300 dark:text-gray-600">/</span>
     {% endif %}
     {% if c.href and not loop.last %}
-    <a href="{{ c.href }}" class="truncate hover:underline">{{ c.label }}</a>
+    <a href="{{ c.href }}" class="truncate text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ c.label }}</a>
     {% else %}
-    <span class="truncate font-semibold text-gray-900 dark:text-gray-100">{{ c.label }}</span>
+    <span class="truncate text-gray-900 dark:text-gray-100">{{ c.label }}</span>
     {% endif %}
   {% endfor %}
 </nav>
