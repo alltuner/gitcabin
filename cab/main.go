@@ -1,5 +1,5 @@
 // ABOUTME: cab — invokes gh against a local gitcabin via an unprivileged-port HTTP proxy.
-// ABOUTME: Native Go rewrite of scripts/cab. Stdlib only; no external deps.
+// ABOUTME: Stdlib + go-git only. gh stays out of the way except for actual passthrough.
 
 // cab is a thin shim around gh. It exists because gh hardcodes port 80 for
 // `github.localhost`, which forces a privileged-port binding on the host. cab
@@ -12,7 +12,7 @@
 //   cab login                          register the host with gh (idempotent)
 //   cab status                         is gitcabin reachable + gh registered?
 //   cab logout                         forget the host
-//   cab repo init <owner>/<name>       host-side bare-repo init (requires docker)
+//   cab repo init <owner>/<name>       host-side bare-repo init (uses go-git)
 //   cab <anything else>                ensure registered, then exec gh
 //
 // Env knobs:
@@ -25,6 +25,7 @@
 //   GITCABIN_HOST     hostname gh registers gitcabin under (default github.localhost).
 //                     Almost never needs to change — github.localhost is the one
 //                     hostname gh special-cases for plain HTTP.
+//   GITCABIN_DATA_DIR where `cab repo init` writes bare repos (default ./data).
 //
 // Why no gh subprocess for auth ops: gh just reads + writes
 // ~/.config/gh/hosts.yml. We do the same directly. That makes login / status /
@@ -52,10 +53,9 @@ const (
 	defaultPort = "8080"
 	defaultHost = "github.localhost"
 	defaultUser = "cab"
-	// Placeholder gitcabin doesn't verify tokens — anyone reaching the port
-	// is the owner — so any non-empty value gets gh to consider the host
-	// registered. Calling it gitcabin-no-auth is a hint to anyone
-	// inspecting their hosts.yml later.
+	// gitcabin doesn't verify tokens — anyone reaching the port is the owner —
+	// so any non-empty value gets gh to consider the host registered.
+	// "gitcabin-no-auth" is a hint to anyone inspecting their hosts.yml later.
 	placeholderToken = "gitcabin-no-auth"
 )
 
@@ -71,27 +71,27 @@ func main() {
 	switch os.Args[1] {
 	case "login":
 		ensureRegistered(host)
-		printStatus(proxy, host)
+		printStatus(host)
 	case "status", "doctor":
 		statusCheck(proxy, host)
 	case "logout":
-		removeHost(host)
+		removeHostFromFile(host)
 		fmt.Printf("forgot %s\n", host)
 	case "repo":
 		repoSubcommand(proxy, host, os.Args[2:])
 	case "-h", "--help", "help":
 		help()
 	default:
-		// Hot path: every passthrough invocation. ensureRegistered is a
-		// single file stat in the common case, so we pay essentially zero
-		// for it on subsequent calls.
+		// Hot path. ensureRegistered is a single file stat in the common case.
 		ensureRegistered(host)
 		execGh(proxy, host, os.Args[1:])
 	}
 }
 
+// ---- env / config -------------------------------------------------------- //
+
 // proxyURL resolves the URL gh's HTTP traffic is forwarded through. Two
-// shapes: direct override via GITCABIN_PROXY (used in the docker image to
+// shapes: a full override via GITCABIN_PROXY (used in the docker image to
 // point at the in-network service hostname), or the default
 // http://127.0.0.1:${GITCABIN_PORT:-8080} for host-side use.
 func proxyURL() string {
@@ -101,6 +101,13 @@ func proxyURL() string {
 	return "http://127.0.0.1:" + envDefault("GITCABIN_PORT", defaultPort)
 }
 
+func envDefault(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
+}
+
 // ---- subcommands -------------------------------------------------------- //
 
 // statusCheck verifies (1) the gitcabin proxy responds at the configured URL
@@ -108,17 +115,15 @@ func proxyURL() string {
 // invocation to succeed; printing them separately makes diagnosis easier.
 func statusCheck(proxy, host string) {
 	if err := pingProxy(proxy, host); err != nil {
-		fmt.Fprintf(os.Stderr, "cab: proxy at %s is not responding (%v)\n", proxy, err)
-		fmt.Fprintln(os.Stderr, "is gitcabin running?")
-		os.Exit(1)
+		die("proxy at %s is not responding (%v)\nis gitcabin running?", proxy, err)
 	}
 	fmt.Printf("  proxy %s -> %s    OK\n", proxy, host)
-	printStatus(proxy, host)
+	printStatus(host)
 }
 
-// printStatus mimics `gh auth status --hostname <host>` for our one host.
-// We reproduce the format gh users expect rather than shelling out.
-func printStatus(proxy, host string) {
+// printStatus mimics `gh auth status --hostname <host>` for our one host. We
+// reproduce the format gh users expect rather than shelling out.
+func printStatus(host string) {
 	if !hostInHostsFile(host) {
 		fmt.Printf("  %s\n    × not registered with gh — run `cab login`\n", host)
 		os.Exit(1)
@@ -126,9 +131,9 @@ func printStatus(proxy, host string) {
 	fmt.Printf("  %s\n    ✓ registered with gh (placeholder token)\n", host)
 }
 
-// pingProxy issues a minimal request to gitcabin via the proxy. Anything that
-// returns successfully (or even an HTTP error code) means the proxy is up;
-// only a transport failure (connection refused, timeout) is a hard fail.
+// pingProxy issues a minimal request to gitcabin via the proxy. Any HTTP
+// response (including error codes) means the proxy is up; only a transport
+// failure (connection refused, timeout) is a hard fail.
 func pingProxy(proxyStr, host string) error {
 	proxy, err := url.Parse(proxyStr)
 	if err != nil {
@@ -146,15 +151,13 @@ func pingProxy(proxyStr, host string) error {
 	return nil
 }
 
-// repoSubcommand handles the `cab repo …` namespace. The only cab-specific
-// command here is `cab repo init <owner>/<name>`, which initializes a fresh
-// bare repo by docker-execing into the gitcabin-api container. Everything
-// else passes through to gh.
+// repoSubcommand handles the `cab repo …` namespace. `cab repo init <slug>`
+// is cab-specific (go-git PlainInit, no docker exec); everything else passes
+// through to gh.
 func repoSubcommand(proxy, host string, args []string) {
 	if len(args) >= 1 && args[0] == "init" {
 		if len(args) != 2 {
-			fmt.Fprintln(os.Stderr, "usage: cab repo init <owner>/<name>")
-			os.Exit(2)
+			die("usage: cab repo init <owner>/<name>")
 		}
 		repoInit(args[1])
 		return
@@ -176,9 +179,8 @@ func repoSubcommand(proxy, host string, args []string) {
 // `createRepository` GraphQL mutation in gitcabin would let dockerized cab
 // init repos via API; out of scope for now.
 func repoInit(slug string) {
-	if !strings.Contains(slug, "/") || strings.Count(slug, "/") != 1 {
-		fmt.Fprintf(os.Stderr, "cab: expected <owner>/<name>, got %q\n", slug)
-		os.Exit(2)
+	if strings.Count(slug, "/") != 1 || strings.HasPrefix(slug, "/") || strings.HasSuffix(slug, "/") {
+		die("expected <owner>/<name>, got %q", slug)
 	}
 	dataDir := envDefault("GITCABIN_DATA_DIR", "./data")
 	target := filepath.Join(dataDir, "repos", slug+".git")
@@ -187,11 +189,9 @@ func repoInit(slug string) {
 		return
 	}
 	if _, err := git.PlainInit(target, true); err != nil {
-		fmt.Fprintf(os.Stderr, "cab: could not init %s at %s (%v)\n", slug, target, err)
-		fmt.Fprintln(os.Stderr, "is the gitcabin data dir reachable? (set GITCABIN_DATA_DIR if not in the project root)")
-		os.Exit(1)
+		die("could not init %s at %s (%v)\nis the gitcabin data dir reachable? (set GITCABIN_DATA_DIR if not in the project root)",
+			slug, target, err)
 	}
-
 	// go-git's PlainInit writes a minimal `[core]` block (just `bare = true`),
 	// which `git rev-parse --is-bare-repository` doesn't recognize. Overwrite
 	// with what `git init --bare` produces so command-line git tooling agrees
@@ -199,8 +199,7 @@ func repoInit(slug string) {
 	// writes — keeps repos byte-identical between cab-init'd and git-init'd.
 	canonical := "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = true\n"
 	if err := os.WriteFile(filepath.Join(target, "config"), []byte(canonical), 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "cab: init succeeded but config rewrite failed (%v)\n", err)
-		os.Exit(1)
+		die("init succeeded but config rewrite failed (%v)", err)
 	}
 	fmt.Printf("initialized %s at %s\n", slug, target)
 }
@@ -233,85 +232,83 @@ func ensureRegistered(host string) {
 	if hostInHostsFile(host) {
 		return
 	}
-	writeHost(host)
+	writeHostBlock(host)
 	fmt.Fprintf(os.Stderr, "registered %s with gh (one-time)\n", host)
 }
 
-// removeHost deletes the host's top-level block from hosts.yml. No-op if the
-// host isn't there.
-func removeHost(host string) {
-	path := hostsYAMLPath()
-	data, err := os.ReadFile(path)
+// hostInHostsFile checks whether the host appears as a top-level block in
+// hosts.yml. Reads the whole file once and uses findHostBlock; missing or
+// unreadable files are treated as "not registered."
+func hostInHostsFile(host string) bool {
+	data, err := os.ReadFile(hostsYAMLPath())
 	if err != nil {
-		return
+		return false
 	}
-	updated, removed := stripHostBlock(string(data), host)
-	if !removed {
-		return
-	}
-	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
-		fmt.Fprintf(os.Stderr, "cab: could not write %s (%v)\n", path, err)
-		os.Exit(1)
-	}
+	start, _ := findHostBlock(string(data), host)
+	return start >= 0
 }
 
-// writeHost appends a fresh block to hosts.yml registering the host with the
-// placeholder token. Idempotent: if the block already exists we don't touch
-// the file.
-func writeHost(host string) {
-	if hostInHostsFile(host) {
-		return
-	}
+// writeHostBlock unconditionally appends a registration block to hosts.yml.
+// Caller is responsible for checking that the host isn't already there
+// (ensureRegistered does this); calling unconditionally would duplicate the
+// block, which gh tolerates but is a smell.
+func writeHostBlock(host string) {
 	path := hostsYAMLPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		fmt.Fprintf(os.Stderr, "cab: could not create gh config dir (%v)\n", err)
-		os.Exit(1)
+		die("could not create gh config dir (%v)", err)
 	}
-
-	existing, _ := os.ReadFile(path) // ok if missing
+	existing, _ := os.ReadFile(path) // fine if missing
 	block := fmt.Sprintf(
 		"%s:\n    user: %s\n    oauth_token: %s\n    git_protocol: https\n    users:\n        %s:\n            oauth_token: %s\n            git_protocol: https\n",
 		host, defaultUser, placeholderToken, defaultUser, placeholderToken,
 	)
 	out := []byte(block)
 	if len(existing) > 0 {
-		// Make sure existing content ends with a newline before appending.
+		// Make sure the existing content ends with a newline before appending
+		// the new block, so the YAML stays well-formed.
 		if existing[len(existing)-1] != '\n' {
 			existing = append(existing, '\n')
 		}
 		out = append(existing, out...)
 	}
 	if err := os.WriteFile(path, out, 0o600); err != nil {
-		fmt.Fprintf(os.Stderr, "cab: could not write %s (%v)\n", path, err)
-		os.Exit(1)
+		die("could not write %s (%v)", path, err)
 	}
 }
 
-// hostInHostsFile checks whether the host appears as a top-level block in
-// hosts.yml. Looks for `<host>:` either at the very start of the file or
-// immediately after a newline. gh writes well-formed YAML, so this string-
-// level check is reliable without pulling in a YAML parser.
-func hostInHostsFile(host string) bool {
-	data, err := os.ReadFile(hostsYAMLPath())
+// removeHostFromFile deletes the host's top-level block from hosts.yml.
+// No-op if the file is missing or the host isn't in it.
+func removeHostFromFile(host string) {
+	path := hostsYAMLPath()
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return false
+		return
 	}
-	prefix := host + ":"
-	if strings.HasPrefix(string(data), prefix) {
-		return true
+	start, end := findHostBlock(string(data), host)
+	if start < 0 {
+		return
 	}
-	return strings.Contains(string(data), "\n"+prefix)
+	lines := strings.Split(string(data), "\n")
+	out := append([]string{}, lines[:start]...)
+	out = append(out, lines[end:]...)
+	if err := os.WriteFile(path, []byte(strings.Join(out, "\n")), 0o600); err != nil {
+		die("could not write %s (%v)", path, err)
+	}
 }
 
-// stripHostBlock removes the named host's top-level block from a hosts.yml
-// string. Returns the updated content and a flag indicating whether anything
-// changed. A "block" begins at `<host>:` (column 0) and ends at the next
-// column-0 line or EOF — gh's nested fields are all indented.
-func stripHostBlock(content, host string) (string, bool) {
+// findHostBlock locates a `<host>:` block in a hosts.yml string and returns
+// the [start, end) line range it occupies. A block begins at the line whose
+// content is exactly `<host>:` (or `<host>: …` followed by a space) at column
+// 0, and ends at the next column-0 line or EOF — gh's nested fields are all
+// indented. Returns (-1, -1) if the host isn't present.
+//
+// This is the single source of truth for host-block bounds; both
+// hostInHostsFile and removeHostFromFile use it.
+func findHostBlock(content, host string) (start, end int) {
 	lines := strings.Split(content, "\n")
 	startMarker := host + ":"
 
-	start := -1
+	start = -1
 	for i, line := range lines {
 		if line == startMarker || strings.HasPrefix(line, startMarker+" ") {
 			start = i
@@ -319,22 +316,20 @@ func stripHostBlock(content, host string) (string, bool) {
 		}
 	}
 	if start == -1 {
-		return content, false
+		return -1, -1
 	}
-	// Find the end: first line at column 0 that isn't blank.
-	end := len(lines)
+	end = len(lines)
 	for j := start + 1; j < len(lines); j++ {
 		if lines[j] == "" {
 			continue
 		}
+		// Indented = still inside this host's block. Column-0 = next block.
 		if !strings.HasPrefix(lines[j], " ") && !strings.HasPrefix(lines[j], "\t") {
 			end = j
 			break
 		}
 	}
-	out := append([]string{}, lines[:start]...)
-	out = append(out, lines[end:]...)
-	return strings.Join(out, "\n"), true
+	return start, end
 }
 
 // hostsYAMLPath returns the conventional location gh reads + writes:
@@ -363,12 +358,10 @@ func hostsYAMLPath() string {
 func execGh(proxy, host string, args []string) {
 	path, err := exec.LookPath("gh")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "cab: gh not found on PATH")
-		os.Exit(1)
+		die("gh not found on PATH")
 	}
 	if err := syscall.Exec(path, append([]string{"gh"}, args...), proxyEnv(proxy, host)); err != nil {
-		fmt.Fprintf(os.Stderr, "cab: exec gh: %v\n", err)
-		os.Exit(1)
+		die("exec gh: %v", err)
 	}
 }
 
@@ -393,11 +386,12 @@ func proxyEnv(proxy, host string) []string {
 
 // ---- misc ---------------------------------------------------------------- //
 
-func envDefault(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
+// die formats a message, prints it to stderr with a "cab: " prefix, and exits
+// non-zero. Single source of truth for fatal errors so the format stays
+// consistent across the CLI.
+func die(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "cab: "+format+"\n", args...)
+	os.Exit(1)
 }
 
 func help() {
@@ -407,13 +401,14 @@ Usage:
   cab login                            Register the host with gh (idempotent)
   cab status                           Is gitcabin up and reachable?
   cab logout                           Forget the host
-  cab repo init <owner>/<name>         Host-side bare-repo init (requires docker)
+  cab repo init <owner>/<name>         Host-side bare-repo init (uses go-git)
   cab issue create -R me/cabin ...     Any other gh subcommand passes through
 
 Env:
   GITCABIN_PROXY    full proxy URL (overrides GITCABIN_PORT)
   GITCABIN_PORT     gitcabin's host port (default 8080)
   GITCABIN_HOST     hostname gh registers gitcabin under (default github.localhost)
+  GITCABIN_DATA_DIR data dir for cab repo init (default ./data)
 
 See docs/cab.md for the design.`)
 }
