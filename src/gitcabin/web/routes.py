@@ -244,6 +244,8 @@ def build_router(settings: Settings) -> APIRouter:
             ref=default_branch or "HEAD",
             crumb_segments=[],
             path="",
+            branches=code.list_branches(bare),
+            tags=code.list_tags(bare),
             **_repo_ctx(bare),
         )
 
@@ -286,6 +288,9 @@ def build_router(settings: Settings) -> APIRouter:
                 commit, code.list_tree_entries(node), prefix=path
             ),
             crumb_segments=_path_crumbs(path),
+            branches=code.list_branches(bare),
+            tags=code.list_tags(bare),
+            default_branch=code.head_ref_name(bare),
             **_repo_ctx(bare),
         )
 
@@ -309,6 +314,9 @@ def build_router(settings: Settings) -> APIRouter:
             path=path,
             rendered=rendered,
             crumb_segments=_path_crumbs(path),
+            branches=code.list_branches(bare),
+            tags=code.list_tags(bare),
+            default_branch=code.head_ref_name(bare),
             **_repo_ctx(bare),
         )
 
@@ -386,6 +394,9 @@ def build_router(settings: Settings) -> APIRouter:
             path=path,
             lines=lines,
             crumb_segments=_path_crumbs(path),
+            branches=code.list_branches(bare),
+            tags=code.list_tags(bare),
+            default_branch=code.head_ref_name(bare),
             **_repo_ctx(bare),
         )
 

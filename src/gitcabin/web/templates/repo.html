@@ -6,12 +6,7 @@
 {% include "_repo_header.html" %}
 
 {% if entries %}
-<div class="mb-6 flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-  <span class="rounded border border-gray-300 px-2 py-1 font-mono text-xs dark:border-gray-700">{{ default_branch }}</span>
-  {% if head_short_sha %}
-  <span class="font-mono text-xs">{{ head_short_sha }}</span>
-  {% endif %}
-</div>
+{% with view_kind = "repo" %}{% include "_ref_breadcrumb.html" %}{% endwith %}
 {% include "_tree_table.html" %}
 {% else %}
 <div class="rounded-md border border-gray-200 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">

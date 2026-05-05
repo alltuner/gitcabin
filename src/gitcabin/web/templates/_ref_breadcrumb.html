@@ -1,0 +1,87 @@
+{# ABOUTME: One-row ref switcher + path breadcrumb, used on repo / tree / blob / blame.
+   ABOUTME: Reads `owner`, `name`, `ref`, `path`, `crumb_segments`, `branches`, `tags`,
+   ABOUTME: `default_branch`, `view_kind` ("repo"|"tree"|"blob"|"blame"), optional `head_short_sha`. #}
+{% set _kind = view_kind | default("tree") %}
+{% set _path = path | default("") %}
+{% set _path_suffix = ("/" ~ _path) if _path else "" %}
+<nav class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+  <div class="dropdown">
+    {# `tabindex=0` makes the trigger focusable; DaisyUI shows
+       `.dropdown-content` while the dropdown (or its content) has focus.
+       Zero JS, keyboard-accessible. #}
+    <label
+      tabindex="0"
+      role="button"
+      class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1 font-mono text-xs text-gray-900 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+      aria-haspopup="listbox"
+      title="Switch branches/tags">
+      {% with icon_class = "h-4 w-4 text-gray-500 dark:text-gray-400" %}{% include "icons/branch.html" %}{% endwith %}
+      <span>{{ ref }}</span>
+      {% with icon_class = "h-3 w-3 text-gray-500 dark:text-gray-400" %}{% include "icons/chevron_down.html" %}{% endwith %}
+    </label>
+    <div
+      tabindex="0"
+      class="dropdown-content z-10 mt-1 w-72 max-h-96 overflow-y-auto rounded-md border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+      {% if branches %}
+      <div class="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Branches</div>
+      <ul class="menu menu-sm w-full p-0">
+        {% for b in branches %}
+        {% if _kind == "blob" %}
+          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blob/" ~ b.name ~ _path_suffix %}
+        {% elif _kind == "blame" %}
+          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blame/" ~ b.name ~ _path_suffix %}
+        {% else %}
+          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/tree/" ~ b.name ~ _path_suffix %}
+        {% endif %}
+        <li>
+          <a href="{{ _href }}" class="flex items-center justify-between gap-2 font-mono text-xs {% if b.name == ref %}font-semibold text-blue-600 dark:text-blue-400{% endif %}">
+            <span class="truncate">{{ b.name }}</span>
+            {% if b.name == default_branch %}
+            <span class="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200">default</span>
+            {% endif %}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if tags %}
+      <div class="mt-2 px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Tags</div>
+      <ul class="menu menu-sm w-full p-0">
+        {% for t in tags %}
+        {% if _kind == "blob" %}
+          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blob/" ~ t.name ~ _path_suffix %}
+        {% elif _kind == "blame" %}
+          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blame/" ~ t.name ~ _path_suffix %}
+        {% else %}
+          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/tree/" ~ t.name ~ _path_suffix %}
+        {% endif %}
+        <li>
+          <a href="{{ _href }}" class="font-mono text-xs {% if t.name == ref %}font-semibold text-blue-600 dark:text-blue-400{% endif %}">
+            <span class="truncate">{{ t.name }}</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if not branches and not tags %}
+      <div class="px-2 py-1 text-xs text-gray-500 dark:text-gray-400">No refs.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="font-mono text-sm">
+    <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
+    {% for c in crumb_segments %}
+      <span class="text-gray-400">/</span>
+      {% if loop.last %}
+      <span class="text-gray-900 dark:text-gray-100">{{ c.name }}</span>
+      {% else %}
+      <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ c.path }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ c.name }}</a>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  {% if _kind == "repo" and head_short_sha %}
+  <span class="ml-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ head_short_sha }}</span>
+  {% endif %}
+</nav>
