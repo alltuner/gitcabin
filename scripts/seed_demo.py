@@ -16,7 +16,9 @@ from gitcabin.storage.repo import BareRepo
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
-REPOS_DIR = DATA_DIR / "repos"
+PROJECTS_DIR = DATA_DIR / "projects"
+# Legacy alias kept while the seed script still says `REPOS_DIR / repo.owner / …`.
+REPOS_DIR = PROJECTS_DIR
 
 
 # ---- low-level helpers -------------------------------------------------- #

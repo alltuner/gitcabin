@@ -35,7 +35,7 @@ class Settings:
     # for the response header so tests can assert exact values.
     oauth_scopes: tuple[str, ...] = DEFAULT_OAUTH_SCOPES
 
-    # Where bare repos live on disk. Resolvers compute repos/<owner>/<name>.git
+    # Where bare repos live on disk. Two trees: projects/<project>/<name>.git
     # under this path. `field(default=...)` rather than a literal default
     # because Path is not a frozen-dataclass-friendly mutable, and we want a
     # single canonical value rather than copies sprinkled through callers.

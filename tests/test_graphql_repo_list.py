@@ -62,7 +62,7 @@ def test_repository_owner_returns_empty_connection_for_owner_with_no_repos(
 ) -> None:
     # Owner directory exists but has no repos. The owner is still resolvable
     # (login is just the directory name), and the connection is empty.
-    (settings.data_dir / "repos" / "octocat").mkdir(parents=True)
+    (settings.data_dir / "projects" / "octocat").mkdir(parents=True)
     payload = _post(client, REPO_LIST_QUERY, {"owner": "octocat", "perPage": 30})
     assert "errors" not in payload, payload
     owner = payload["data"]["repositoryOwner"]
@@ -163,8 +163,8 @@ def test_repository_owner_ignores_non_bare_directories(
     # over time. Only directories ending in `.git` and verifying as bare repos
     # should appear in the connection.
     init_repo("octocat", "hello")
-    (settings.data_dir / "repos" / "octocat" / "not-a-repo").mkdir()
-    (settings.data_dir / "repos" / "octocat" / "stray.txt").write_text("ignore me")
+    (settings.data_dir / "projects" / "octocat" / "not-a-repo").mkdir()
+    (settings.data_dir / "projects" / "octocat" / "stray.txt").write_text("ignore me")
 
     payload = _post(client, REPO_LIST_QUERY, {"owner": "octocat", "perPage": 30})
     repos = payload["data"]["repositoryOwner"]["repositories"]

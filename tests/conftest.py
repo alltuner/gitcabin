@@ -59,7 +59,7 @@ def init_repo(settings: Settings) -> Callable[[str, str], BareRepo]:
     """
 
     def _init(owner: str, name: str) -> BareRepo:
-        path = (settings.data_dir / "repos" / owner / name).with_suffix(".git")
+        path = (settings.data_dir / "projects" / owner / name).with_suffix(".git")
         return BareRepo.open_or_init(path)
 
     return _init

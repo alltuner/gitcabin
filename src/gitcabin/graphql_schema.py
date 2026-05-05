@@ -652,7 +652,7 @@ class IssueConnection:
 
 def _repo_path(settings: Settings, owner: str, name: str) -> Path:
     """Path on disk for a repo's bare git directory."""
-    return (settings.data_dir / "repos" / owner / name).with_suffix(".git")
+    return (settings.data_dir / "projects" / owner / name).with_suffix(".git")
 
 
 def _open_bare_or_none(settings: Settings, owner: str, name: str) -> BareRepo | None:
@@ -998,7 +998,7 @@ def _build_repo_connection(
     privacy: RepositoryPrivacy | None,
     is_fork: bool | None,
 ) -> RepositoryConnection:
-    """Walk data_dir/repos/<login>/*.git and build a RepositoryConnection.
+    """Walk data_dir/projects/<login>/*.git and build a RepositoryConnection.
 
     Shared between Query.repositoryOwner.repositories and Viewer.repositories
     (gh repo list with and without an owner arg). We're always PUBLIC and
@@ -1012,7 +1012,7 @@ def _build_repo_connection(
     if is_fork is True:
         return empty
 
-    owner_dir = settings.data_dir / "repos" / login
+    owner_dir = settings.data_dir / "projects" / login
     repos: list[Repository] = []
     if owner_dir.is_dir():
         for entry in sorted(owner_dir.iterdir()):
@@ -1102,7 +1102,7 @@ class Query:
 
     @strawberry.field
     def repository(self, info: strawberry.Info, owner: str, name: str) -> Repository | None:
-        # Strict lookup: returns None unless data_dir/repos/<owner>/<name>.git
+        # Strict lookup: returns None unless data_dir/projects/<owner>/<name>.git
         # is an actual bare repo. gh repo view of a nonexistent repo correctly
         # surfaces NOT_FOUND instead of silently inventing a fixture.
         #
@@ -1119,7 +1119,7 @@ class Query:
 
     @strawberry.field
     def repository_owner(self, info: strawberry.Info, login: str) -> RepositoryOwner | None:
-        """Return the owner namespace at data_dir/repos/<login>/, or None.
+        """Return the owner namespace at data_dir/projects/<login>/, or None.
 
         gh repo list sends `repositoryOwner(login: $owner)`; null means
         NOT_FOUND. We say None when no directory at all exists for that login
@@ -1128,7 +1128,7 @@ class Query:
         is real, just empty.
         """
         settings: Settings = info.context["settings"]
-        owner_dir = settings.data_dir / "repos" / login
+        owner_dir = settings.data_dir / "projects" / login
         if not owner_dir.is_dir():
             return None
         return RepositoryOwner(login=login)

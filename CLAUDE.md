@@ -67,7 +67,7 @@ Ditto for any path-shaped value (sync targets, CSS bundle locations, …). If a 
 
 ## Storage
 
-- Bare repos at `data/repos/<owner>/<name>.git`. Metadata refs (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`) live in the same bare repo as the code.
+- Bare repos at `data/projects/<owner>/<name>.git`. Metadata refs (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`) live in the same bare repo as the code.
 - Storage operations go through `gitcabin.storage.*`. Plumbing-level writes use `BareRepo.run_git("hash-object", …)` etc.; reads use the GitPython object graph.
 
 ## Sync (GitHub mirror)

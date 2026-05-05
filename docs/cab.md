@@ -109,7 +109,7 @@ None of these are blockers. They're "v0.1 polish" once we have a release worth i
 
 4. **HTTPS-mode deployments (L4) bypass the wrapper.** Those use TLS end-to-end through CONNECT tunneling and can't use a plain HTTP proxy. `cab` is for the local HTTP path only.
 
-5. **`cab repo init` only works when cab can reach the gitcabin data directory** (host-side use, where `./data/repos/...` is writable). The dockerized `cab` can't init repos because the data volume isn't mounted there. Future: a `createRepository` GraphQL mutation in gitcabin would let dockerized cab init repos via API.
+5. **`cab repo init` only works when cab can reach the gitcabin data directory** (host-side use, where `./data/projects/...` is writable). The dockerized `cab` can't init repos because the data volume isn't mounted there. Future: a `createRepository` GraphQL mutation in gitcabin would let dockerized cab init repos via API.
 
 ## Env knobs
 

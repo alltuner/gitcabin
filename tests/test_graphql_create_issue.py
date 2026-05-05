@@ -72,7 +72,7 @@ def test_create_issue_persists_to_a_real_ref(client: TestClient, settings: Setti
         },
     )
 
-    bare = settings.data_dir / "repos" / "octocat" / "hello.git"
+    bare = settings.data_dir / "projects" / "octocat" / "hello.git"
     assert bare.is_dir(), "bare repo must be initialized on first issue"
     repo = BareRepo.open_or_init(bare)
     sha = repo.run_git("rev-parse", "refs/issues/local/1").strip()
@@ -114,6 +114,6 @@ def test_create_issue_writes_to_settings_data_dir_only(
         GH_CREATE_ISSUE,
         {"input": {"repositoryId": repo_id("octocat", "hello"), "title": "scoped"}},
     )
-    assert (settings.data_dir / "repos" / "octocat" / "hello.git").is_dir()
+    assert (settings.data_dir / "projects" / "octocat" / "hello.git").is_dir()
     # tmp_path should contain settings.data_dir (it's tmp_path / "data" by fixture)
     assert tmp_path in settings.data_dir.parents

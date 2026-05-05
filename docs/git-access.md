@@ -2,7 +2,7 @@
 
 > **Status:** not built. This doc enumerates the performance design space for smart-HTTP serving from gitcabin's existing FastAPI process so we can pick a starting point with eyes open.
 
-Users need to `git clone`, `git fetch`, and `git push` against gitcabin's bare repos. The bind mount at `./data:/app/data` already lets a user on the same host run `git clone file:///$(pwd)/data/repos/me/cabin.git` — that's the trivial baseline. This doc is about the **smart-HTTP** layer that gives us cross-device access (paired with Tailscale) and a single port to firewall.
+Users need to `git clone`, `git fetch`, and `git push` against gitcabin's bare repos. The bind mount at `./data:/app/data` already lets a user on the same host run `git clone file:///$(pwd)/data/projects/me/cabin.git` — that's the trivial baseline. This doc is about the **smart-HTTP** layer that gives us cross-device access (paired with Tailscale) and a single port to firewall.
 
 The constraint: gitcabin already runs on `127.0.0.1:18080`, single-port, granian + FastAPI. Adding git over HTTP means routing `/<owner>/<name>.git/...` URLs through the same process. We want this to feel *instant* on small repos and *not bottleneck* on large ones.
 

@@ -43,7 +43,7 @@ services:
       - "127.0.0.1:18080:8000"
     volumes:
       # Bare repos (code + metadata refs) live here. Host bind mount on
-      # purpose: David can `cd ./data/repos/owner/name.git && git log` to
+      # purpose: David can `cd ./data/projects/owner/name.git && git log` to
       # inspect state with native tooling. Excluded from git via .gitignore.
       - ./data:/app/data
     restart: unless-stopped

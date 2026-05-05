@@ -217,7 +217,7 @@ def _open_local(settings: Settings, local: str) -> BareRepo | None:
     owner, name = _split_slash(local, "<local>")
     if owner is None or name is None:
         return None
-    path = (Path(settings.data_dir) / "repos" / owner / name).with_suffix(".git")
+    path = (Path(settings.data_dir) / "projects" / owner / name).with_suffix(".git")
     if not path.is_dir():
         return None
     return BareRepo.open_or_init(path)

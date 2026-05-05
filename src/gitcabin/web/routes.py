@@ -1,4 +1,4 @@
-# ABOUTME: HTML routes for the web UI. Read-only views over data/repos and side refs.
+# ABOUTME: HTML routes for the web UI. Read-only views over data/projects and side refs.
 # ABOUTME: Lives in its own FastAPI app (gitcabin.web.app) — separate process from gh's API.
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from gitcabin.storage.issues import (
     list_issues,
     reopen_issue,
 )
+from gitcabin.storage import layout
 from gitcabin.storage.repo import BareRepo
 from gitcabin.web import code
 from gitcabin.web.assets import AssetResolver
@@ -80,37 +81,37 @@ def _render(request: Request, settings: Settings, template: str, **ctx: object) 
 
 
 def _list_owners(settings: Settings) -> list[dict[str, object]]:
-    """Walk data_dir/repos/ and return one entry per owner directory."""
-    repos_root = settings.data_dir / "repos"
-    if not repos_root.is_dir():
+    """Walk data_dir/projects/ and return one entry per project directory."""
+    projects_root = layout.projects_dir(settings.data_dir)
+    if not projects_root.is_dir():
         return []
     owners: list[dict[str, object]] = []
-    for owner_dir in sorted(repos_root.iterdir()):
-        if not owner_dir.is_dir():
+    for project_dir in sorted(projects_root.iterdir()):
+        if not project_dir.is_dir():
             continue
         repo_count = sum(
             1
-            for entry in owner_dir.iterdir()
+            for entry in project_dir.iterdir()
             if entry.name.endswith(".git") and BareRepo.open(entry) is not None
         )
-        owners.append({"login": owner_dir.name, "repo_count": repo_count})
+        owners.append({"login": project_dir.name, "repo_count": repo_count})
     return owners
 
 
 def _list_repos(settings: Settings, owner: str) -> list[dict[str, object]]:
-    """List repos under data_dir/repos/<owner>/, sorted by pushed_at desc.
+    """List repos under data_dir/projects/<project>/, sorted by pushed_at desc.
 
     Each entry carries an optional `upstream` dict ({"owner", "name"}) when
     the repo has a sync config — surfaced on the card so the user can see
     at a glance which repos mirror a GitHub upstream.
     """
-    owner_dir = settings.data_dir / "repos" / owner
-    if not owner_dir.is_dir():
+    project_dir = layout.projects_dir(settings.data_dir) / owner
+    if not project_dir.is_dir():
         return []
     from gitcabin.sync.config import read_config as read_sync_config
 
     out: list[dict[str, object]] = []
-    for entry in sorted(owner_dir.iterdir()):
+    for entry in sorted(project_dir.iterdir()):
         if not entry.name.endswith(".git"):
             continue
         bare = BareRepo.open(entry)
@@ -122,7 +123,7 @@ def _list_repos(settings: Settings, owner: str) -> list[dict[str, object]]:
         )
         out.append(
             {
-                "name": entry.name[:-4],
+                "name": entry.name[: -len(".git")],
                 "description": None,
                 "pushed_at": _repo_pushed_at(bare),
                 "upstream": upstream,
@@ -143,8 +144,8 @@ def _repo_pushed_at(bare: BareRepo) -> str:
 
 
 def _open_repo(settings: Settings, owner: str, name: str) -> BareRepo:
-    """Resolve a (owner, name) URL segment pair to a BareRepo or 404."""
-    bare = BareRepo.open(settings.data_dir / "repos" / owner / f"{name}.git")
+    """Resolve a (project, name) URL segment pair to a BareRepo or 404."""
+    bare = layout.open_repo(settings.data_dir, owner, name)
     if bare is None:
         raise HTTPException(status_code=404, detail="repo not found")
     return bare
@@ -191,9 +192,9 @@ def build_router(settings: Settings) -> APIRouter:
 
     @router.get("/{owner}", include_in_schema=False)
     def owner_page(request: Request, owner: str) -> HTMLResponse:
-        owner_dir = settings.data_dir / "repos" / owner
-        if not owner_dir.is_dir():
-            raise HTTPException(status_code=404, detail="owner not found")
+        project_dir = layout.projects_dir(settings.data_dir) / owner
+        if not project_dir.is_dir():
+            raise HTTPException(status_code=404, detail="project not found")
         return _render(
             request,
             settings,
