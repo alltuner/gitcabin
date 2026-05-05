@@ -11,12 +11,12 @@
 </div>
 <div class="mb-6 flex items-center gap-3">
   {% if issue.state.value == "OPEN" %}
-  <span class="inline-flex items-center gap-1.5 rounded-full bg-green-700 px-2.5 py-0.5 text-xs font-medium text-white">
+  <span class="inline-flex items-center gap-1.5 rounded-full bg-green-700 px-3 py-1 text-xs font-medium text-white">
     {% with icon_class = "h-3 w-3" %}{% include "icons/issue_open.html" %}{% endwith %}
     Open
   </span>
   {% else %}
-  <span class="inline-flex items-center gap-1.5 rounded-full bg-purple-700 px-2.5 py-0.5 text-xs font-medium text-white">
+  <span class="inline-flex items-center gap-1.5 rounded-full bg-purple-700 px-3 py-1 text-xs font-medium text-white">
     {% with icon_class = "h-3 w-3" %}{% include "icons/issue_closed.html" %}{% endwith %}
     Closed
   </span>
