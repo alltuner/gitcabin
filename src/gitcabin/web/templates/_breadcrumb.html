@@ -1,0 +1,19 @@
+{# ABOUTME: Page breadcrumb — small, link-prefixed segments separated by slashes. #}
+{# ABOUTME: Caller passes `crumbs` as a list of {label, href}; href omitted on the last (current) segment.
+
+   Single-segment crumbs (e.g. dashboard) read as a section label, so they render
+   slightly larger; multi-segment crumbs render at text-sm so they sit above the
+   page content without competing with it. #}
+{% set _solo = (crumbs | length) == 1 %}
+<nav class="mb-4 flex flex-wrap items-center gap-x-2 {% if _solo %}text-base{% else %}text-sm{% endif %} text-gray-500 dark:text-gray-400">
+  {% for c in crumbs %}
+    {% if not loop.first %}
+    <span class="text-gray-300 dark:text-gray-600">/</span>
+    {% endif %}
+    {% if c.href and not loop.last %}
+    <a href="{{ c.href }}" class="hover:underline">{{ c.label }}</a>
+    {% else %}
+    <span class="font-semibold text-gray-900 dark:text-gray-100">{{ c.label }}</span>
+    {% endif %}
+  {% endfor %}
+</nav>

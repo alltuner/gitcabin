@@ -3,7 +3,7 @@
 {% import "_macros.html" as ui %}
 {% block title %}gitcabin — projects{% endblock %}
 {% block content %}
-<h1 class="mb-4 text-2xl font-semibold">Projects</h1>
+{% with crumbs = [{"label": "projects"}] %}{% include "_breadcrumb.html" %}{% endwith %}
 {% if owners %}
 {% call ui.bordered_list() %}
   {% for owner in owners %}
