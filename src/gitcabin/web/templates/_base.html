@@ -55,12 +55,20 @@
                             unstyled. Back navigation now does a fresh GET
                             and picks up the current asset hashes.
 
-   preload + preload="mouseover" on body opts every descendant <a href>
-   into the preload extension. htmx-ext-preload's getClosestAttribute walk
-   inherits the value down without per-link annotation. The extension fires
-   an XHR on hover (~100 ms after the mouse enters); the response lands in
-   the browser HTTP cache. When the user clicks ~200 ms later, htmx's GET
-   under hx-boost reads from cache and the swap is essentially free.
+   preload="mouseover" needs to land on the actual swap targets — htmx-
+   ext-preload's `htmx:afterProcessNode` handler only inits anchors
+   under nodes that have `preload` themselves (or contain children with
+   it). On initial page load that means body works (the extension finds
+   <main> + #header-breadcrumb via the `[preload]` querySelectorAll on
+   body), but on subsequent hx-boost swaps htmx processes only the new
+   <main> in isolation — which without its own `preload` attribute
+   leaves every replaced anchor uninstrumented. Same trap for the OOB
+   header-breadcrumb swap. Putting `preload="mouseover"` on each swap
+   target keeps preload alive across navigations. The extension fires
+   an XHR on hover (~100 ms after the mouse enters); the response lands
+   in the browser HTTP cache. When the user clicks ~200 ms later,
+   htmx's GET under hx-boost reads from cache and the swap is
+   essentially free.
 #}
 <body
   class="flex min-h-screen flex-col bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100 font-sans"
@@ -70,8 +78,7 @@
   hx-select-oob="header-breadcrumb"
   hx-swap="outerHTML show:window:top"
   hx-history="false"
-  hx-ext="preload"
-  preload="mouseover">
+  hx-ext="preload">
 <header class="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
   <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
     {# Logo + page breadcrumb sit on a shared row so the wordmark slot
@@ -92,7 +99,7 @@
          updated breadcrumb out of every nav response and swap it in
          alongside the <main> swap. Without that, only <main> swaps and
          the breadcrumb stays frozen on whichever page first loaded. #}
-      <div id="header-breadcrumb" class="min-w-0 text-xl font-semibold tracking-tight">{% block header_breadcrumb %}{% endblock %}</div>
+      <div id="header-breadcrumb" preload="mouseover" class="min-w-0 text-xl font-semibold tracking-tight">{% block header_breadcrumb %}{% endblock %}</div>
     </div>
 
     {# Theme switcher: three radios sharing name="theme". The light + dark
@@ -134,7 +141,7 @@
     </div>
   </div>
 </header>
-<main class="mx-auto w-full max-w-6xl px-4 py-6">
+<main preload="mouseover" class="mx-auto w-full max-w-6xl px-4 py-6">
 {% block content %}{% endblock %}
 </main>
 {% include "_footer.html" %}
