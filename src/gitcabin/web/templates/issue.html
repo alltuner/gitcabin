@@ -58,7 +58,12 @@
 <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No comments yet.</p>
 {% endif %}
 
-<form method="post" action="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/comments" class="mt-6">
+<form
+  id="comment-form"
+  method="post"
+  action="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/comments"
+  class="mt-6"
+>
   <label for="comment-body" class="mb-2 block text-sm font-semibold">Add a comment</label>
   <textarea
     id="comment-body"
@@ -68,32 +73,45 @@
     class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
     placeholder="Leave a comment"
   ></textarea>
-  <div class="mt-3 flex items-center justify-end gap-2">
-    {% if issue.state.value == "OPEN" %}
+</form>
+
+{# Close/reopen lives in its own form so the htmx swap fires once per
+   click. Mixing hx-post on a submit-button inside the comment form
+   double-fires (htmx ajax + the form's own submit), which causes a CAS
+   collision on the issue ref. The Comment button uses `form=` to stay
+   visually grouped here while still submitting #comment-form. #}
+<div class="mt-3 flex items-center justify-end gap-2">
+  {% if issue.state.value == "OPEN" %}
+  <form
+    method="post"
+    action="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/close"
+  >
     <button
       type="submit"
-      formaction="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/close"
-      formnovalidate
       class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
     >
       Close issue
     </button>
-    {% else %}
+  </form>
+  {% else %}
+  <form
+    method="post"
+    action="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/reopen"
+  >
     <button
       type="submit"
-      formaction="{{ repo_url_prefix(owner, name) }}/issues/{{ issue.number }}/reopen"
-      formnovalidate
       class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
     >
       Reopen issue
     </button>
-    {% endif %}
-    <button
-      type="submit"
-      class="rounded-md bg-green-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-800"
-    >
-      Comment
-    </button>
-  </div>
-</form>
+  </form>
+  {% endif %}
+  <button
+    type="submit"
+    form="comment-form"
+    class="rounded-md bg-green-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-800"
+  >
+    Comment
+  </button>
+</div>
 {% endblock %}

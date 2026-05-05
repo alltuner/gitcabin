@@ -1,5 +1,5 @@
 # ABOUTME: Tests for the web UI's write actions — comment, close, reopen.
-# ABOUTME: Each action POSTs and 303-redirects back to the issue page.
+# ABOUTME: Plain POSTs 303-redirect; htmx-flagged POSTs render the issue inline.
 
 from __future__ import annotations
 
@@ -91,6 +91,64 @@ def test_action_404_for_unknown_issue(web_client: TestClient, init_repo) -> None
     init_repo("octocat", "hello")
     response = web_client.post("/octocat/hello/issues/999/close")
     assert response.status_code == 404
+
+
+def test_close_via_htmx_returns_updated_page_inline(
+    web_client: TestClient, client: TestClient, init_repo
+) -> None:
+    init_repo("octocat", "hello")
+    _create(client, "octocat", "hello", "swap me without a refresh")
+
+    # htmx submits include `HX-Request: true` — the server skips the 303
+    # and returns the freshly-rendered issue page so htmx can swap <main>
+    # without a follow-up GET that would hit the browser's cached copy.
+    response = web_client.post(
+        "/octocat/hello/issues/1/close",
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    # HX-Push-Url keeps the address bar on the canonical issue URL even
+    # though the POST went to /close.
+    assert response.headers["hx-push-url"] == "/octocat/hello/issues/1"
+    # And the swapped-in HTML reflects the new state.
+    assert "Closed" in response.text
+    assert "Reopen issue" in response.text
+
+
+def test_reopen_via_htmx_returns_updated_page_inline(
+    web_client: TestClient, client: TestClient, init_repo
+) -> None:
+    init_repo("octocat", "hello")
+    _create(client, "octocat", "hello", "round trip")
+    web_client.post("/octocat/hello/issues/1/close")
+
+    response = web_client.post(
+        "/octocat/hello/issues/1/reopen",
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert response.headers["hx-push-url"] == "/octocat/hello/issues/1"
+    assert "Open" in response.text
+    assert "Close issue" in response.text
+
+
+def test_comment_via_htmx_returns_updated_page_inline(
+    web_client: TestClient, client: TestClient, init_repo
+) -> None:
+    init_repo("octocat", "hello")
+    _create(client, "octocat", "hello", "live chat")
+
+    response = web_client.post(
+        "/octocat/hello/issues/1/comments",
+        data={"body": "appears immediately"},
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert response.headers["hx-push-url"] == "/octocat/hello/issues/1"
+    assert "appears immediately" in response.text
 
 
 def test_no_signed_in_chrome(web_client: TestClient) -> None:
