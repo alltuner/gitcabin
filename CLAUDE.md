@@ -14,6 +14,14 @@ This file records project-specific rules so they don't have to be re-stated each
 
 Why: a single edit to an icon file propagates everywhere; restyling, swapping a glyph, or fixing a viewBox is one diff. Inline SVGs scatter the change across templates.
 
+#### Tree-view icons are vendored from Material Icon Theme (MIT)
+
+`file.html`, `folder.html`, `symlink.html`, and every `file_<type>.html` originate from the [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) (MIT-licensed) at commit `1d6af33e3ec7b561691dcab718f6abdac40c75d7`. They carry brand colors as embedded `fill="#…"`, so `text-*` Tailwind utilities won't recolor them — only `h-*`/`w-*` sizing applies. `symlink.html` is a small derivative built on top of `document.svg` with a shortcut-arrow overlay.
+
+When adding a new file-type icon, prefer pulling from the same source (pin the same commit) and keep the ABOUTME line citing the source filename so future edits know where to refresh from.
+
+The chrome icons (cabin, issue_*, theme_*, upstream, branch, chevron_*) remain hand-rolled monochrome glyphs that take `currentColor` — those live outside the tree view and are recolored by callers.
+
 ### Reusable template chunks live in their own `_*.html` files
 
 Beyond icons, anything reused across pages is its own template:
@@ -40,6 +48,22 @@ cd web-src && bun run watch       # dev: rebuild on change
 ```
 
 `uv run --no-dev pytest -q` runs the test suite.
+
+## Python
+
+### Compose paths with pathlib, never with strings
+
+Every filesystem path is a `pathlib.Path`. Compose with `/` for directory segments and `Path.with_suffix(".ext")` for adding an extension. Do **not** mix in `f"{name}.ext"`, string concatenation, or `os.path.join`.
+
+```python
+# good
+path = (settings.data_dir / "projects" / project / name).with_suffix(".git")
+
+# bad — f-string for the trailing segment defeats the convention
+path = settings.data_dir / "projects" / project / f"{name}.git"
+```
+
+Ditto for any path-shaped value (sync targets, CSS bundle locations, …). If a function accepts a path, type-annotate it as `Path`, not `str`.
 
 ## Storage
 

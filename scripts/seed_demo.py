@@ -765,7 +765,7 @@ def _all_repos() -> list[Repo]:
 
 
 def _seed_repo(repo: Repo, *, reset: bool) -> str:
-    bare_path = REPOS_DIR / repo.owner / f"{repo.name}.git"
+    bare_path = (REPOS_DIR / repo.owner / repo.name).with_suffix(".git")
     if bare_path.exists():
         if not reset:
             return f"skip {repo.owner}/{repo.name} (already exists)"

@@ -652,7 +652,7 @@ class IssueConnection:
 
 def _repo_path(settings: Settings, owner: str, name: str) -> Path:
     """Path on disk for a repo's bare git directory."""
-    return settings.data_dir / "repos" / owner / f"{name}.git"
+    return (settings.data_dir / "repos" / owner / name).with_suffix(".git")
 
 
 def _open_bare_or_none(settings: Settings, owner: str, name: str) -> BareRepo | None:
