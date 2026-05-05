@@ -7,22 +7,29 @@
 # the image build is what produces the prod-shaped bundle.
 
 # ---- stage 1: assets ---------------------------------------------------- #
+#
+# The bun stage mirrors the host project layout exactly — web-src/ alongside
+# src/gitcabin/web/templates/ — so styles.css's @source globs resolve to real
+# files. If the layout drifts, Tailwind silently emits a CSS with no utility
+# classes and the dashboard renders unstyled.
 
 FROM oven/bun:1 AS assets
-WORKDIR /web-src
+WORKDIR /work
 
 # Cache deps in a separate layer. bun.lock pins everything we install.
-COPY web-src/package.json web-src/bun.lock ./
-RUN bun install --frozen-lockfile
+COPY web-src/package.json web-src/bun.lock ./web-src/
+RUN cd web-src && bun install --frozen-lockfile
 
-# Build the bundle. `CLEAN=1 bun run build` removes any prior dist/ and writes
-# fresh hashed files plus manifest.json into ../src/gitcabin/web/static/dist/.
-COPY web-src/build.ts web-src/src/ ./
-COPY web-src/src/ ./src/
-# Stage the python source structure bun's build.ts writes into — we don't need
-# the python code itself, just the directory layout the relative path expects.
-RUN mkdir -p ../src/gitcabin/web/static
-RUN bun run build
+# Bundler input + the templates Tailwind 4's @source directive scans. The
+# templates are read-only here (this stage doesn't run the Python app), but
+# tailwindcss needs to see their HTML to know which utility classes to emit.
+COPY web-src/build.ts web-src/src/ ./web-src/
+COPY web-src/src/ ./web-src/src/
+COPY src/gitcabin/web/templates/ ./src/gitcabin/web/templates/
+
+# Build the bundle. `CLEAN=1 bun run build` writes hashed files + manifest.json
+# to ./src/gitcabin/web/static/dist/ — the runtime stage copies from there.
+RUN mkdir -p ./src/gitcabin/web/static && cd web-src && bun run build
 
 # ---- stage 2: runtime --------------------------------------------------- #
 
@@ -56,7 +63,7 @@ COPY --chown=app:app src/ ./src/
 
 # Bundled assets from the bun stage — hashed JS/CSS plus the manifest.json
 # the asset() helper reads at template-render time.
-COPY --from=assets --chown=app:app /src/gitcabin/web/static/dist/ ./src/gitcabin/web/static/dist/
+COPY --from=assets --chown=app:app /work/src/gitcabin/web/static/dist/ ./src/gitcabin/web/static/dist/
 
 # Pre-create the data directory so a host bind mount inherits its ownership
 # (uid 1000). Without this, Docker creates the empty bind-mount target as
