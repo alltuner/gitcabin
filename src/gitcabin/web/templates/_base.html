@@ -6,12 +6,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}gitcabin{% endblock %}</title>
 
+{# FOUC blocker: apply the persisted theme synchronously, before the
+   stylesheet loads. Inline (not bundled) on purpose — by the time the
+   bundled JS runs, the page would already have flashed in the wrong
+   palette. Stays in <head> ahead of the stylesheet link so any `dark`
+   class is on <html> when the CSS rules first match. #}
+<script>
+(function() {
+  var theme = localStorage.getItem('theme') || 'system';
+  var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var isDark = theme === 'dark' || (theme === 'system' && prefersDark);
+  document.documentElement.classList.toggle('dark', isDark);
+})();
+</script>
+
 {# Bundled CSS: Tailwind 4 + custom rules, content-hashed for immutable cache #}
 <link rel="stylesheet" href="{{ asset('main.css') }}">
 
-{# Bundled JS: htmx + htmx-ext-preload. defer so the body parses first;
-   the htmx:load handler in main.ts wires preload="mouseover" onto every
-   internal anchor as soon as DOM is ready. #}
+{# Bundled JS: htmx + htmx-ext-preload + theme switcher. defer so the body
+   parses first; the htmx:load handler in main.ts wires preload="mouseover"
+   onto every internal anchor as soon as DOM is ready. #}
 <script src="{{ asset('main.js') }}" defer></script>
 
 {% block head_extra %}{% endblock %}
@@ -45,19 +59,58 @@
 <header class="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
   <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
     <a href="/" class="flex items-center gap-2 font-semibold text-gray-900 dark:text-gray-100 hover:no-underline">
-      {# Cabin built from the branch graph: the roof's two slopes meet at a
-         commit node, a branch line goes off to a second commit, walls and
-         floor draw the cabin silhouette. Three filled nodes preserve the
-         original graph reading; the outline reads as a house. #}
-      <svg viewBox="0 0 16 16" class="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 14 V8 L8 4 L13 8 V14 Z"/>
-        <path d="M8 4 L13 2.5"/>
-        <circle cx="8" cy="4" r="1.2" fill="currentColor" stroke="none"/>
-        <circle cx="13" cy="2.5" r="1.2" fill="currentColor" stroke="none"/>
-        <circle cx="13" cy="14" r="1.2" fill="currentColor" stroke="none"/>
+      {# Cabin silhouette with a centered door. Clean two-stroke shape, no
+         floating-node clutter. The wordmark "gitcabin" carries the project's
+         git identity; the mark just needs to be a cabin. #}
+      <svg viewBox="0 0 20 20" class="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.5 17 V9 L10 3 L17.5 9 V17 Z"/>
+        <path d="M8 17 V12 H12 V17"/>
       </svg>
       gitcabin
     </a>
+
+    {# Theme switcher: light / system / dark. main.ts wires click handlers
+       on data-theme buttons and toggles the .dark class on <html>. Active
+       state is shown via data-theme-active set by the same JS — pure-CSS
+       active-state would need a parent class we'd have to plumb through
+       Jinja, and JS is already required for the click handler anyway. #}
+    <div
+      class="inline-flex items-center gap-0.5 rounded-md border border-gray-200 bg-white p-0.5 dark:border-gray-700 dark:bg-gray-800"
+      role="group"
+      aria-label="Theme">
+      <button
+        type="button"
+        data-theme="light"
+        class="theme-btn rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 data-[theme-active]:bg-gray-100 data-[theme-active]:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100 dark:data-[theme-active]:bg-gray-700 dark:data-[theme-active]:text-gray-100"
+        aria-label="Light mode"
+        title="Light">
+        <svg viewBox="0 0 20 20" class="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <circle cx="10" cy="10" r="3.5"/>
+          <path d="M10 2 V4 M10 16 V18 M2 10 H4 M16 10 H18 M4.4 4.4 L5.8 5.8 M14.2 14.2 L15.6 15.6 M4.4 15.6 L5.8 14.2 M14.2 5.8 L15.6 4.4"/>
+        </svg>
+      </button>
+      <button
+        type="button"
+        data-theme="system"
+        class="theme-btn rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 data-[theme-active]:bg-gray-100 data-[theme-active]:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100 dark:data-[theme-active]:bg-gray-700 dark:data-[theme-active]:text-gray-100"
+        aria-label="Match system"
+        title="System">
+        <svg viewBox="0 0 20 20" class="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+          <rect x="2.5" y="3.5" width="15" height="11" rx="1.5"/>
+          <path d="M7 17.5 H13 M10 14.5 V17.5"/>
+        </svg>
+      </button>
+      <button
+        type="button"
+        data-theme="dark"
+        class="theme-btn rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 data-[theme-active]:bg-gray-100 data-[theme-active]:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100 dark:data-[theme-active]:bg-gray-700 dark:data-[theme-active]:text-gray-100"
+        aria-label="Dark mode"
+        title="Dark">
+        <svg viewBox="0 0 20 20" class="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+          <path d="M16.5 11.5 a7 7 0 1 1 -8 -8 a5.5 5.5 0 0 0 8 8 Z"/>
+        </svg>
+      </button>
+    </div>
   </div>
 </header>
 <main class="mx-auto max-w-6xl px-4 py-6">

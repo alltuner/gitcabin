@@ -14,7 +14,7 @@
   {% for c in commits %}
   <div class="flex items-start gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
     <div class="min-w-0 flex-1">
-      <a href="/{{ owner }}/{{ name }}/commit/{{ c.sha }}" class="font-semibold text-gray-900 hover:text-blue-600 dark:text-gray-100 dark:hover:text-blue-400">{{ c.subject }}</a>
+      <a href="/{{ owner }}/{{ name }}/commit/{{ c.sha }}" class="font-semibold text-gray-900 hover:text-fern-700 dark:text-gray-100 dark:hover:text-fern-400">{{ c.subject }}</a>
       <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
         <strong class="text-gray-700 dark:text-gray-300">{{ c.author_name }}</strong>
         committed on {{ c.authored_at[:10] }}

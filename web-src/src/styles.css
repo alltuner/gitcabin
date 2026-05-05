@@ -8,21 +8,105 @@
    the utilities used in Jinja2 markup. */
 @source "../../src/gitcabin/web/templates/**/*.html";
 
+/* Class-based dark variant. The default in Tailwind 4 keys off
+   prefers-color-scheme, which doesn't let users override their OS preference
+   site-by-site. Switching to a `.dark` selector lets the theme switcher in
+   _base.html toggle dark mode regardless of system pref. The wrapper
+   `:where(...)` keeps specificity at 0 so dark utilities don't have to
+   fight other selectors. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---- palette ---------------------------------------------------------- */
+/* Cabin palette. See docs/palette.md for hex/role intent. Anchors:
+     dark-wine #7b1818      destructive / error
+     amber-honey #e5ad00    highlight / focus / unread
+     fern #597a48           accent / link / merged
+     charcoal-blue #233d4d  neutral surface + ink (replaces Tailwind gray)
+
+   The gray ramp is retargeted to the charcoal-blue ramp so every existing
+   bg-gray-50 / text-gray-900 / border-gray-200 utility adopts the cabin
+   neutral without per-template churn. The four named ramps are also exposed
+   so accents can be applied explicitly: bg-fern-600, text-amber-honey-500. */
+@theme {
+  --color-dark-wine-50: #fbeaea;
+  --color-dark-wine-100: #f7d4d4;
+  --color-dark-wine-200: #eeaaaa;
+  --color-dark-wine-300: #e67f7f;
+  --color-dark-wine-400: #dd5555;
+  --color-dark-wine-500: #d52a2a;
+  --color-dark-wine-600: #aa2222;
+  --color-dark-wine-700: #801919;
+  --color-dark-wine-800: #551111;
+  --color-dark-wine-900: #2b0808;
+  --color-dark-wine-950: #1e0606;
+
+  --color-amber-honey-50: #fff9e5;
+  --color-amber-honey-100: #fff2cc;
+  --color-amber-honey-200: #ffe699;
+  --color-amber-honey-300: #ffd966;
+  --color-amber-honey-400: #ffcc33;
+  --color-amber-honey-500: #ffbf00;
+  --color-amber-honey-600: #cc9900;
+  --color-amber-honey-700: #997300;
+  --color-amber-honey-800: #664d00;
+  --color-amber-honey-900: #332600;
+  --color-amber-honey-950: #241b00;
+
+  --color-fern-50: #f1f6ef;
+  --color-fern-100: #e3ecdf;
+  --color-fern-200: #c8d9bf;
+  --color-fern-300: #acc69f;
+  --color-fern-400: #90b47e;
+  --color-fern-500: #74a15e;
+  --color-fern-600: #5d814b;
+  --color-fern-700: #466039;
+  --color-fern-800: #2f4026;
+  --color-fern-900: #172013;
+  --color-fern-950: #10160d;
+
+  --color-charcoal-blue-50: #eef3f7;
+  --color-charcoal-blue-100: #dce8ef;
+  --color-charcoal-blue-200: #b9d0df;
+  --color-charcoal-blue-300: #96b9cf;
+  --color-charcoal-blue-400: #73a2bf;
+  --color-charcoal-blue-500: #508baf;
+  --color-charcoal-blue-600: #406f8c;
+  --color-charcoal-blue-700: #305369;
+  --color-charcoal-blue-800: #203746;
+  --color-charcoal-blue-900: #101c23;
+  --color-charcoal-blue-950: #0b1318;
+
+  /* Retarget gray → charcoal-blue. Same hex values, different token name. */
+  --color-gray-50: #eef3f7;
+  --color-gray-100: #dce8ef;
+  --color-gray-200: #b9d0df;
+  --color-gray-300: #96b9cf;
+  --color-gray-400: #73a2bf;
+  --color-gray-500: #508baf;
+  --color-gray-600: #406f8c;
+  --color-gray-700: #305369;
+  --color-gray-800: #203746;
+  --color-gray-900: #101c23;
+  --color-gray-950: #0b1318;
+}
+
 /* ---- custom rules ----------------------------------------------------- */
 /* Tailwind utilities can't express these directly: pygments-rendered code
    blocks, blame tables, and markdown body typography. Kept as plain CSS so
    the rules are obvious in source. */
 
-/* Pygments blocks. The .hl class is what HtmlFormatter wraps tokens in. */
+/* Pygments blocks. The .hl class is what HtmlFormatter wraps tokens in.
+   Colors reference the charcoal-blue palette so code blocks share the
+   cabin neutral with the rest of the chrome. */
 .hl {
-  background: rgb(246 248 250);
+  background: var(--color-charcoal-blue-50);
   font-size: 13px;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 .hl table { width: 100%; border-collapse: collapse; }
 .hl td.linenos {
-  border-right: 1px solid rgb(208 215 222);
-  color: rgb(89 99 110);
+  border-right: 1px solid var(--color-charcoal-blue-200);
+  color: var(--color-charcoal-blue-600);
   padding: 0 8px;
   text-align: right;
   user-select: none;
@@ -32,9 +116,14 @@
 .hl td.code { padding: 0 12px; vertical-align: top; }
 .hl pre { margin: 0; padding: 0; background: transparent; }
 
-@media (prefers-color-scheme: dark) {
-  .hl { background: rgb(13 17 23); }
-  .hl td.linenos { border-color: rgb(48 54 61); color: rgb(125 133 144); }
+/* Class-based dark variant matches Tailwind utilities (see @custom-variant
+   above). Toggling .dark on <html> flips both the utilities and these rules
+   in lockstep — using @media (prefers-color-scheme) here would desync the
+   theme switcher. */
+:where(.dark) .hl { background: var(--color-charcoal-blue-950); }
+:where(.dark) .hl td.linenos {
+  border-color: var(--color-charcoal-blue-800);
+  color: var(--color-charcoal-blue-400);
 }
 
 /* Blame table — needs a custom multi-column layout that Tailwind utility
@@ -48,12 +137,12 @@ table.blame {
 table.blame td {
   vertical-align: top;
   padding: 0 8px;
-  border-bottom: 1px solid rgb(208 215 222);
+  border-bottom: 1px solid var(--color-charcoal-blue-200);
 }
 table.blame td.commit {
   width: 280px;
-  background: rgb(246 248 250);
-  border-right: 1px solid rgb(208 215 222);
+  background: var(--color-charcoal-blue-50);
+  border-right: 1px solid var(--color-charcoal-blue-200);
   font-size: 11px;
   padding: 4px 8px;
 }
@@ -61,7 +150,7 @@ table.blame td.commit.empty { background: transparent; }
 table.blame td.commit .subject {
   font-size: 11px;
   font-weight: 600;
-  color: rgb(36 41 47);
+  color: var(--color-charcoal-blue-900);
   display: block;
   white-space: nowrap;
   overflow: hidden;
@@ -69,23 +158,27 @@ table.blame td.commit .subject {
 }
 table.blame td.commit .meta {
   font-size: 10px;
-  color: rgb(89 99 110);
+  color: var(--color-charcoal-blue-600);
   display: block;
 }
 table.blame td.linenum {
   width: 1%;
   text-align: right;
-  color: rgb(89 99 110);
+  color: var(--color-charcoal-blue-600);
   user-select: none;
-  border-right: 1px solid rgb(208 215 222);
+  border-right: 1px solid var(--color-charcoal-blue-200);
 }
 table.blame td.code { padding: 0 12px; }
 table.blame td.code pre { margin: 0; padding: 0; background: transparent; }
 
-@media (prefers-color-scheme: dark) {
-  table.blame td { border-color: rgb(48 54 61); }
-  table.blame td.commit { background: rgb(13 17 23); border-color: rgb(48 54 61); }
-  table.blame td.commit .subject { color: rgb(230 237 243); }
-  table.blame td.commit .meta { color: rgb(125 133 144); }
-  table.blame td.linenum { color: rgb(125 133 144); border-color: rgb(48 54 61); }
+:where(.dark) table.blame td { border-color: var(--color-charcoal-blue-800); }
+:where(.dark) table.blame td.commit {
+  background: var(--color-charcoal-blue-950);
+  border-color: var(--color-charcoal-blue-800);
+}
+:where(.dark) table.blame td.commit .subject { color: var(--color-charcoal-blue-50); }
+:where(.dark) table.blame td.commit .meta { color: var(--color-charcoal-blue-400); }
+:where(.dark) table.blame td.linenum {
+  color: var(--color-charcoal-blue-400);
+  border-color: var(--color-charcoal-blue-800);
 }
