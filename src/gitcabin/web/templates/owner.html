@@ -7,6 +7,9 @@
 {% endblock %}
 {% block content %}
 {% if repos %}
+<div class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+  {{ repos | length }} {{ "Repositories" if (repos | length) != 1 else "Repository" }}
+</div>
 {% call ui.bordered_list() %}
   {% for repo in repos %}
   {% include "_repo_card.html" %}
