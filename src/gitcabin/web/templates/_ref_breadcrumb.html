@@ -5,12 +5,23 @@
 {% set _path = path | default("") %}
 {% set _path_suffix = ("/" ~ _path) if _path else "" %}
 {# `ref` is a SHA when the URL pins to a specific commit (e.g. clicking
-   a file in a commit's changed-files list lands on
-   `/blob/<sha>/<path>`). In that case the dropdown still opens — it
-   lets the user jump to a branch — but the trigger gets a commit
-   glyph + "commit XXXXXXX" so it doesn't masquerade as a branch. #}
+   a file in a commit's changed-files list lands on `/blob/<sha>/<path>`).
+   The branch dropdown is dropped in that case — "switch to a branch"
+   from a commit-pinned URL is semantically off (different commit, not
+   a different ref). The trigger becomes a static chip linking to the
+   commit page so the reader can see which change pinned this view;
+   the breadcrumb above is the escape hatch back to live HEAD. #}
 {% set _is_sha = (ref | length == 40) and (ref | ref_label != ref) %}
 <nav class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+  {% if _is_sha %}
+  <a
+    href="/{{ owner }}/{{ name }}/commit/{{ ref }}"
+    class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1 font-mono text-xs text-gray-900 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+    title="View commit details">
+    {% with icon_class = "h-4 w-4 text-gray-500 dark:text-gray-400" %}{% include "icons/commit.html" %}{% endwith %}
+    <span>commit&nbsp;{{ ref | ref_label }}</span>
+  </a>
+  {% else %}
   <div class="dropdown">
     {# `tabindex=0` makes the trigger focusable; DaisyUI shows
        `.dropdown-content` while the dropdown (or its content) has focus.
@@ -21,13 +32,8 @@
       class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1 font-mono text-xs text-gray-900 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
       aria-haspopup="listbox"
       title="Switch branches/tags">
-      {% if _is_sha %}
-      {% with icon_class = "h-4 w-4 text-gray-500 dark:text-gray-400" %}{% include "icons/commit.html" %}{% endwith %}
-      <span>commit&nbsp;{{ ref | ref_label }}</span>
-      {% else %}
       {% with icon_class = "h-4 w-4 text-gray-500 dark:text-gray-400" %}{% include "icons/branch.html" %}{% endwith %}
       <span>{{ ref }}</span>
-      {% endif %}
       {% with icon_class = "h-3 w-3 text-gray-500 dark:text-gray-400" %}{% include "icons/chevron_down.html" %}{% endwith %}
     </label>
     <div
@@ -79,6 +85,7 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
 
   {# Branch / tag count badges — clicking each lands on /branches, which
      lists both. Hidden when there's nothing interesting to surface:
