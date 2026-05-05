@@ -12,5 +12,10 @@ wheels/
 # Runtime state — bare repos with code + metadata refs written by the server
 data/
 
+# Bundled frontend assets — produced from web-src/ at build time. Tracked
+# input lives in web-src/; nothing under static/dist/ should be committed.
+src/gitcabin/web/static/dist/
+web-src/node_modules/
+
 # Claude Code harness state
 .claude/scheduled_tasks.lock

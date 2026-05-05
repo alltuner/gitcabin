@@ -1,40 +1,42 @@
-{# ABOUTME: Base layout — Tailwind via CDN, GitHub-shaped header. #}
+{# ABOUTME: Base layout — bundled Tailwind + htmx, no CDN, content-hashed assets. #}
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}gitcabin{% endblock %}</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-  tailwind.config = {
-    darkMode: 'media',
-    theme: {
-      extend: {
-        fontFamily: {
-          sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Helvetica', 'Arial', 'sans-serif'],
-          mono: ['ui-monospace', 'SFMono-Regular', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
-        },
-      },
-    },
-  };
-</script>
-<link rel="stylesheet" href="/static/style.css">
+
+{# Bundled CSS: Tailwind 4 + custom rules, content-hashed for immutable cache #}
+<link rel="stylesheet" href="{{ asset('main.css') }}">
+
+{# Bundled JS: htmx + htmx-ext-preload. defer so the body parses first;
+   the htmx:load handler in main.ts wires preload="mouseover" onto every
+   internal anchor as soon as DOM is ready. #}
+<script src="{{ asset('main.js') }}" defer></script>
+
 {% block head_extra %}{% endblock %}
 </head>
-<body class="bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100 font-sans">
+{# hx-ext opts the whole tree into the preload extension. preload="mouseover"
+   on body inherits down to every anchor via the extension's getClosestAttribute
+   walk — every internal link prefetches on hover (~100ms after entering)
+   without per-link annotation. #}
+<body
+  class="bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100 font-sans"
+  hx-ext="preload"
+  preload="mouseover">
 <header class="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
   <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
     <a href="/" class="flex items-center gap-2 font-semibold text-gray-900 dark:text-gray-100 hover:no-underline">
-      <svg viewBox="0 0 16 16" class="h-5 w-5" aria-hidden="true" fill="currentColor">
-        {# Custom logo: a git-graph glyph — main-line commit at top and bottom,
-           a branch node off to the right, connected by paths. Reads as
-           "branch + merge" without leaning on any existing service's mark. #}
-        <circle cx="4" cy="3" r="1.5"/>
-        <circle cx="4" cy="13" r="1.5"/>
-        <circle cx="12" cy="8" r="1.5"/>
-        <path d="M4 4.5v7" stroke="currentColor" stroke-width="1.25" fill="none"/>
-        <path d="M4 8h6.5" stroke="currentColor" stroke-width="1.25" fill="none"/>
+      {# Cabin built from the branch graph: the roof's two slopes meet at a
+         commit node, a branch line goes off to a second commit, walls and
+         floor draw the cabin silhouette. Three filled nodes preserve the
+         original graph reading; the outline reads as a house. #}
+      <svg viewBox="0 0 16 16" class="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 14 V8 L8 4 L13 8 V14 Z"/>
+        <path d="M8 4 L13 2.5"/>
+        <circle cx="8" cy="4" r="1.2" fill="currentColor" stroke="none"/>
+        <circle cx="13" cy="2.5" r="1.2" fill="currentColor" stroke="none"/>
+        <circle cx="13" cy="14" r="1.2" fill="currentColor" stroke="none"/>
       </svg>
       gitcabin
     </a>

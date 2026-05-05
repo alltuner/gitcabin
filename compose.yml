@@ -22,6 +22,10 @@ services:
       - "--interface"
       - "asgi"
       - "--factory"
+      # --access-log surfaces every request in `docker compose logs` so dev
+      # iteration (and prod debugging) doesn't have to guess what's hitting
+      # the box. Granian's default is off; we always want it on here.
+      - "--access-log"
       - "--host"
       - "0.0.0.0"
       - "--port"
@@ -42,14 +46,29 @@ services:
     restart: unless-stopped
     develop:
       watch:
-        # Source edits sync into /app/src and restart the service. Cheaper
-        # than a rebuild and matches granian's restart-on-import-change story.
+        # Python source edits sync into /app/src and restart the service.
+        # The bundled dist/ subdirectory is excluded here (handled by the
+        # next rule) so changes to a hashed CSS/JS file don't pointlessly
+        # restart granian — the asset manifest is re-read per request.
         - action: sync+restart
           path: ./src
           target: /app/src
+          ignore:
+            - src/gitcabin/web/static/dist/
+        # Bundler output: hot-swap into the running container without a
+        # restart. Run `bun run --cwd web-src watch` on the host to keep
+        # this directory current; granian picks up the new manifest on the
+        # next request automatically.
+        - action: sync
+          path: ./src/gitcabin/web/static/dist
+          target: /app/src/gitcabin/web/static/dist
         # Anything that changes the dependency graph or the image itself
-        # forces a full rebuild — uv sync runs as part of the image build.
+        # forces a full rebuild — uv sync + bun build run during image build.
         - action: rebuild
           path: ./pyproject.toml
         - action: rebuild
           path: ./Dockerfile
+        - action: rebuild
+          path: ./web-src/package.json
+        - action: rebuild
+          path: ./web-src/bun.lock

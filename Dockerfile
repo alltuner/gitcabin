@@ -1,6 +1,30 @@
-# Single-stage image: small enough that layering doesn't pay off, and we want
-# `uv run` available at runtime so the dev workflow inside the container matches
-# the one outside.
+# Multi-stage:
+#   stage 1 (assets) — bun bundles htmx + tailwind into hashed JS/CSS.
+#   stage 2 (runtime) — python:3.14-slim with the bundled assets and the app.
+#
+# `docker compose watch` reuses the runtime stage and bind-mounts ./src on top
+# for live reload. The bundler is run on the host during dev (bun run watch);
+# the image build is what produces the prod-shaped bundle.
+
+# ---- stage 1: assets ---------------------------------------------------- #
+
+FROM oven/bun:1 AS assets
+WORKDIR /web-src
+
+# Cache deps in a separate layer. bun.lock pins everything we install.
+COPY web-src/package.json web-src/bun.lock ./
+RUN bun install --frozen-lockfile
+
+# Build the bundle. `CLEAN=1 bun run build` removes any prior dist/ and writes
+# fresh hashed files plus manifest.json into ../src/gitcabin/web/static/dist/.
+COPY web-src/build.ts web-src/src/ ./
+COPY web-src/src/ ./src/
+# Stage the python source structure bun's build.ts writes into — we don't need
+# the python code itself, just the directory layout the relative path expects.
+RUN mkdir -p ../src/gitcabin/web/static
+RUN bun run build
+
+# ---- stage 2: runtime --------------------------------------------------- #
 
 FROM python:3.14-slim
 
@@ -30,6 +54,10 @@ USER app
 COPY --chown=app:app pyproject.toml README.md LICENSE ./
 COPY --chown=app:app src/ ./src/
 
+# Bundled assets from the bun stage — hashed JS/CSS plus the manifest.json
+# the asset() helper reads at template-render time.
+COPY --from=assets --chown=app:app /src/gitcabin/web/static/dist/ ./src/gitcabin/web/static/dist/
+
 # Pre-create the data directory so a host bind mount inherits its ownership
 # (uid 1000). Without this, Docker creates the empty bind-mount target as
 # root and the server can't write its bare repos.
@@ -47,10 +75,12 @@ RUN uv sync --no-dev
 
 EXPOSE 8000
 
-# Production-shaped CMD: no --reload. For dev autoreload, use
-# `docker compose watch` — Compose syncs source into the container and
-# restarts the service on each change without rebuilding.
+# Production-shaped CMD: no --reload. --access-log on so requests are
+# visible in `docker compose logs` (granian defaults to off). For dev
+# autoreload, use `docker compose watch` — Compose syncs source into the
+# container and restarts the service on each change without rebuilding.
 CMD ["uv", "run", "--no-dev", "granian", \
      "--interface", "asgi", "--factory", \
+     "--access-log", \
      "--host", "0.0.0.0", "--port", "8000", \
-     "gitcabin.app:create_app"]
+     "gitcabin.combined:create_app"]

@@ -1,0 +1,91 @@
+/* ABOUTME: Tailwind 4 source + custom rules. Compiled by @tailwindcss/cli into a hashed bundle. */
+/* ABOUTME: @source directives tell Tailwind which template files to scan for utility classes. */
+
+@import "tailwindcss";
+
+/* Tailwind 4 auto-detects content from CSS imports, but our templates live in
+   a separate Python package. Add explicit @source globs so the JIT picks up
+   the utilities used in Jinja2 markup. */
+@source "../../src/gitcabin/web/templates/**/*.html";
+
+/* ---- custom rules ----------------------------------------------------- */
+/* Tailwind utilities can't express these directly: pygments-rendered code
+   blocks, blame tables, and markdown body typography. Kept as plain CSS so
+   the rules are obvious in source. */
+
+/* Pygments blocks. The .hl class is what HtmlFormatter wraps tokens in. */
+.hl {
+  background: rgb(246 248 250);
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+.hl table { width: 100%; border-collapse: collapse; }
+.hl td.linenos {
+  border-right: 1px solid rgb(208 215 222);
+  color: rgb(89 99 110);
+  padding: 0 8px;
+  text-align: right;
+  user-select: none;
+  width: 1%;
+  vertical-align: top;
+}
+.hl td.code { padding: 0 12px; vertical-align: top; }
+.hl pre { margin: 0; padding: 0; background: transparent; }
+
+@media (prefers-color-scheme: dark) {
+  .hl { background: rgb(13 17 23); }
+  .hl td.linenos { border-color: rgb(48 54 61); color: rgb(125 133 144); }
+}
+
+/* Blame table — needs a custom multi-column layout that Tailwind utility
+   classes alone don't make obvious. */
+table.blame {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+table.blame td {
+  vertical-align: top;
+  padding: 0 8px;
+  border-bottom: 1px solid rgb(208 215 222);
+}
+table.blame td.commit {
+  width: 280px;
+  background: rgb(246 248 250);
+  border-right: 1px solid rgb(208 215 222);
+  font-size: 11px;
+  padding: 4px 8px;
+}
+table.blame td.commit.empty { background: transparent; }
+table.blame td.commit .subject {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(36 41 47);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+table.blame td.commit .meta {
+  font-size: 10px;
+  color: rgb(89 99 110);
+  display: block;
+}
+table.blame td.linenum {
+  width: 1%;
+  text-align: right;
+  color: rgb(89 99 110);
+  user-select: none;
+  border-right: 1px solid rgb(208 215 222);
+}
+table.blame td.code { padding: 0 12px; }
+table.blame td.code pre { margin: 0; padding: 0; background: transparent; }
+
+@media (prefers-color-scheme: dark) {
+  table.blame td { border-color: rgb(48 54 61); }
+  table.blame td.commit { background: rgb(13 17 23); border-color: rgb(48 54 61); }
+  table.blame td.commit .subject { color: rgb(230 237 243); }
+  table.blame td.commit .meta { color: rgb(125 133 144); }
+  table.blame td.linenum { color: rgb(125 133 144); border-color: rgb(48 54 61); }
+}

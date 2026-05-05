@@ -23,9 +23,15 @@ from gitcabin.storage.issues import (
 )
 from gitcabin.storage.repo import BareRepo
 from gitcabin.web import code
+from gitcabin.web.assets import AssetResolver
 
 _WEB_DIR = Path(__file__).parent
+_DIST_DIR = _WEB_DIR / "static" / "dist"
 _templates = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
+# Templates write `{{ asset('main.css') }}` and get back `/static/dist/main.<hash>.css`.
+# Reading the manifest happens on every call (the file is tiny and rebuilds while
+# the server runs pick up new hashes without a restart).
+_templates.env.globals["asset"] = AssetResolver(dist_dir=_DIST_DIR)
 
 
 def _render(request: Request, settings: Settings, template: str, **ctx: object) -> HTMLResponse:
@@ -402,6 +408,28 @@ def build_router(settings: Settings) -> APIRouter:
     return router
 
 
+class _ImmutableStaticFiles(StaticFiles):
+    """StaticFiles that flags content-hashed bundles as immutable.
+
+    The bundler writes hashed filenames under static/dist/ — main.<hash>.js,
+    main.<hash>.css. Same content always produces the same filename, so we
+    can promise the browser the response will never change. `immutable`
+    tells the cache it doesn't even need to revalidate; `max-age=31536000`
+    is the conventional one-year window. Files outside dist/ keep the
+    default StaticFiles short-cache behavior.
+    """
+
+    async def get_response(self, path: str, scope):  # type: ignore[no-untyped-def]
+        response = await super().get_response(path, scope)
+        if path.startswith("dist/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
 def mount_static(app) -> None:  # type: ignore[no-untyped-def]
     """Attach /static/* to a FastAPI app. Called once from create_app."""
-    app.mount("/static", StaticFiles(directory=str(_WEB_DIR / "static")), name="static")
+    app.mount(
+        "/static",
+        _ImmutableStaticFiles(directory=str(_WEB_DIR / "static")),
+        name="static",
+    )
