@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import subprocess
+from typing import Protocol
+
 from gitcabin.storage.issues import (
     LOCAL_ISSUE_REF_PREFIX,
     Issue,
@@ -131,20 +134,112 @@ def _push_one(
 # ---- PR push ------------------------------------------------------------ //
 
 
-def push_local_prs(repo: BareRepo, client: GhClient, config: SyncConfig) -> list[Pr]:
+class BranchPusher(Protocol):
+    """Callable that uploads a single local branch to a GitHub remote.
+
+    Mirrors the GhClient.runner pattern — the default implementation shells
+    out via `git push`; tests inject a recording fake so the suite never
+    actually contacts the network.
+    """
+
+    def __call__(
+        self,
+        repo: BareRepo,
+        /,
+        *,
+        gh_owner: str,
+        gh_name: str,
+        host: str,
+        branch: str,
+    ) -> None: ...
+
+
+def _default_branch_pusher(
+    repo: BareRepo,
+    /,
+    *,
+    gh_owner: str,
+    gh_name: str,
+    host: str,
+    branch: str,
+) -> None:
+    """Push refs/heads/<branch> from the bare repo to <host>:<owner>/<name>.
+
+    Auth flows through `gh auth git-credential` instead of embedding the
+    token in the URL — both have the same `ps`-listing exposure window, but
+    the credential-helper form keeps the token out of the git argv string,
+    which lands in shell history and any tracing tools watching subprocess
+    invocations. The empty `helper=` first clears any system-level helpers
+    (osxkeychain, manager-core) so we don't accidentally pick up a
+    different account's token. Requires gh in PATH and authenticated for
+    `host`, both of which are already prerequisites for the rest of sync.
+    """
+    url = f"https://{host}/{gh_owner}/{gh_name}.git"
+    refspec = f"refs/heads/{branch}:refs/heads/{branch}"
+    repo.run_git(
+        "-c",
+        f"credential.{url}.helper=",
+        "-c",
+        f"credential.{url}.helper=!gh auth git-credential",
+        "push",
+        url,
+        refspec,
+    )
+
+
+def branch_for_push(head_ref: str, viewer_login: str) -> str | None:
+    """Extract the bare branch name from a PR's `head_ref`, or None if we can't push it.
+
+    `head_ref` follows GitHub's PR `head` convention:
+
+      "branch"            same-repo PR — push refs/heads/branch.
+      "<viewer>:branch"   viewer's own fork-style label — same as above.
+      "<other>:branch"    cross-fork PR — branch lives on someone else's
+                          fork; we have no remote for it, so skip and let
+                          the user push manually (the legacy workflow).
+    """
+    if not head_ref:
+        return None
+    if ":" not in head_ref:
+        return head_ref
+    owner, _, branch = head_ref.partition(":")
+    if owner == viewer_login:
+        return branch
+    return None
+
+
+def _has_local_branch(repo: BareRepo, branch: str) -> bool:
+    """True iff refs/heads/<branch> resolves in the bare repo.
+
+    `git rev-parse --verify` exits 128 when the ref is missing; we treat
+    that as "branch not local" rather than letting it propagate, so
+    branch-on-fork-only cases skip the auto-push cleanly.
+    """
+    try:
+        repo.run_git("rev-parse", "--verify", f"refs/heads/{branch}")
+    except subprocess.CalledProcessError:
+        return False
+    return True
+
+
+def push_local_prs(
+    repo: BareRepo,
+    client: GhClient,
+    config: SyncConfig,
+    *,
+    push_branch: BranchPusher = _default_branch_pusher,
+) -> list[Pr]:
     """Push every LOCAL_ONLY pull request to GitHub.
 
     For each PR at refs/prs/local/<n>:
+      0. If the head branch lives in the local bare repo and isn't on a
+         third-party fork, push it to the GitHub remote first. Skipping
+         this step keeps the legacy manual `git push origin <branch>`
+         workflow working unchanged for cross-fork PRs.
       1. POST it to /repos/<o>/<r>/pulls with title / body / head / base /
          draft. GitHub allocates the upstream number + id.
       2. Re-import as SYNCED_BIDIR at refs/prs/<gh_number>.
       3. Drop refs/prs/local/<n>.
-
-    *Prerequisite:* the head branch must already exist on the GitHub repo.
-    gitcabin doesn't push code, only metadata. POST /pulls returns 422 if
-    GitHub can't resolve `head` to a real ref. The simplest workflow today
-    is `git push origin <branch>` from the user's working tree before
-    invoking this push — see docs/github-sync.md for the rationale.
 
     Same crash-window as push_local_issues: a failure after the upstream
     POST but before update-ref leaves the upstream PR with no local
@@ -154,15 +249,35 @@ def push_local_prs(repo: BareRepo, client: GhClient, config: SyncConfig) -> list
     for pr in list_local_prs(repo):
         if pr.provenance is not Provenance.LOCAL_ONLY:
             continue
-        out.append(_push_one_pr(repo, client, config, pr))
+        out.append(_push_one_pr(repo, client, config, pr, push_branch=push_branch))
     return out
 
 
 def _push_one_pr(
-    repo: BareRepo, client: GhClient, config: SyncConfig, pr: Pr
+    repo: BareRepo,
+    client: GhClient,
+    config: SyncConfig,
+    pr: Pr,
+    *,
+    push_branch: BranchPusher,
 ) -> Pr:
     """Execute the per-PR push protocol described in push_local_prs."""
     base = f"repos/{config.gh_owner}/{config.gh_name}"
+
+    # 0. Push the head branch first if we own it locally. The POST in step 1
+    # would otherwise 422 with "head ref does not exist" against a fresh
+    # GitHub repo. Cross-fork PRs and branches that exist only on the
+    # user's working tree (not the bare repo) are skipped — those are the
+    # legacy manual-push cases and continue to work as before.
+    branch = branch_for_push(pr.head_ref, config.gh_viewer_login)
+    if branch is not None and _has_local_branch(repo, branch):
+        push_branch(
+            repo,
+            gh_owner=config.gh_owner,
+            gh_name=config.gh_name,
+            host=client.host,
+            branch=branch,
+        )
 
     # 1. POST the PR upstream. GitHub's response carries the assigned number,
     # id, and timestamps we want on the SYNCED_BIDIR re-import.

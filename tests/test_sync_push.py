@@ -31,7 +31,7 @@ from gitcabin.storage.prs import (
 from gitcabin.storage.repo import BareRepo
 from gitcabin.sync.config import SyncConfig
 from gitcabin.sync.gh import GhClient
-from gitcabin.sync.push import push_local_issues, push_local_prs
+from gitcabin.sync.push import branch_for_push, push_local_issues, push_local_prs
 
 
 @pytest.fixture
@@ -433,3 +433,145 @@ def test_pushed_pr_synced_ref_is_under_refs_prs_not_local(
     assert sha
     listing = repo.run_git("for-each-ref", LOCAL_PR_REF_PREFIX).strip()
     assert listing == ""
+
+
+# ---- branch auto-push --------------------------------------------------- #
+
+
+def test_branch_for_push_strips_viewer_prefix() -> None:
+    # Plain branch name passes through.
+    assert branch_for_push("feature", "alice-on-github") == "feature"
+    # viewer-prefixed forks resolve to the bare branch.
+    assert branch_for_push("alice-on-github:feature", "alice-on-github") == "feature"
+
+
+def test_branch_for_push_returns_none_for_cross_fork_or_empty() -> None:
+    # Different-account prefix means the branch lives on someone else's fork —
+    # gitcabin can't push there, so signal "skip" via None.
+    assert branch_for_push("someone-else:feature", "alice-on-github") is None
+    # Empty string defends against degenerate stored data.
+    assert branch_for_push("", "alice-on-github") is None
+
+
+def _seed_head(repo: BareRepo, branch: str) -> str:
+    """Create refs/heads/<branch> in the bare repo pointing at an empty tree commit.
+
+    Local-PR tests don't normally create branch refs, so the auto-push step
+    is naturally skipped. This helper opts a single test into the auto-push
+    path so we can assert the pusher gets called with the right args.
+    """
+    tree = repo.run_git("mktree", input="").strip()
+    commit = repo.run_git(
+        "commit-tree", tree, "-m", "seed", input=""
+    ).strip()
+    repo.run_git("update-ref", f"refs/heads/{branch}", commit)
+    return commit
+
+
+def test_push_local_pr_auto_pushes_head_branch_when_local(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    # Set up a local PR whose head branch actually exists in the bare repo.
+    _seed_head(repo, "wip")
+    create_local_pr(
+        repo,
+        title="t",
+        body="",
+        author="david",
+        head_ref="alice-on-github:wip",
+        base_ref="main",
+    )
+
+    pushed_branches: list[dict[str, str]] = []
+
+    def fake_push(
+        _repo: BareRepo,
+        /,
+        *,
+        gh_owner: str,
+        gh_name: str,
+        host: str,
+        branch: str,
+    ) -> None:
+        pushed_branches.append(
+            {"owner": gh_owner, "name": gh_name, "host": host, "branch": branch}
+        )
+
+    fake = FakeGh(gh_owner="octo", gh_name="hello")
+    push_local_prs(
+        repo, _client_for(fake), config, push_branch=fake_push
+    )
+
+    assert pushed_branches == [
+        {"owner": "octo", "name": "hello", "host": "github.com", "branch": "wip"}
+    ]
+
+
+def test_push_local_pr_skips_auto_push_for_cross_fork_head(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    # Even with a local heads/wip, a cross-fork head ref ("other:wip")
+    # belongs on someone else's remote — gitcabin should not try to push it.
+    _seed_head(repo, "wip")
+    create_local_pr(
+        repo,
+        title="t",
+        body="",
+        author="david",
+        head_ref="other:wip",
+        base_ref="main",
+    )
+
+    calls: list[str] = []
+
+    def fake_push(
+        _repo: BareRepo,
+        /,
+        *,
+        gh_owner: str,
+        gh_name: str,
+        host: str,
+        branch: str,
+    ) -> None:
+        del gh_owner, gh_name, host  # not asserted in this test
+        calls.append(branch)
+
+    fake = FakeGh(gh_owner="octo", gh_name="hello")
+    push_local_prs(repo, _client_for(fake), config, push_branch=fake_push)
+
+    assert calls == []
+
+
+def test_push_local_pr_skips_auto_push_when_branch_not_in_bare_repo(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    # head_ref names a viewer-owned branch, but it doesn't exist in the bare
+    # repo — the user is on the legacy "git push origin <b>" path. Skip
+    # auto-push silently and let the user-managed remote branch suffice.
+    create_local_pr(
+        repo,
+        title="t",
+        body="",
+        author="david",
+        head_ref="alice-on-github:wip",
+        base_ref="main",
+    )
+
+    calls: list[str] = []
+
+    def fake_push(
+        _repo: BareRepo,
+        /,
+        *,
+        gh_owner: str,
+        gh_name: str,
+        host: str,
+        branch: str,
+    ) -> None:
+        del gh_owner, gh_name, host  # not asserted in this test
+        calls.append(branch)
+
+    fake = FakeGh(gh_owner="octo", gh_name="hello")
+    push_local_prs(repo, _client_for(fake), config, push_branch=fake_push)
+
+    assert calls == []

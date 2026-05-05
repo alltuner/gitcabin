@@ -16,7 +16,7 @@ This doc focuses specifically on **authorship attribution and edit affordances**
 | Pull issues + comments | `gitcabin.sync.pull` | done |
 | Pull PRs | `gitcabin.sync.pull` | done |
 | Push local-only issues + comments | `gitcabin.sync.push` | done |
-| Push local-only PRs | `gitcabin.sync.push` | done (head branch must already exist on GitHub — see prereq below) |
+| Push local-only PRs | `gitcabin.sync.push` | done (auto-pushes the head branch first when it lives in the bare repo — see below) |
 | `can_edit` / `can_delete` rules | `gitcabin.permissions` | done |
 | Mutation enforcement (closeIssue) | `gitcabin.graphql_schema` | done |
 | Mutation enforcement (updateIssue, updateComment, deleteComment) | — | not built ([#15](https://github.com/alltuner/gitcabin/issues/15)) |
@@ -31,18 +31,25 @@ This doc focuses specifically on **authorship attribution and edit affordances**
 
 End-to-end smoke test verified at commit `9e6383d` against `alltuner/gitcabin-sync-smoke`: pull recovered both issues + the comment + the closed-state of issue 2; push of a local draft created issue 3 upstream (with its comment), renumbered locally from `refs/issues/local/1` to `refs/issues/3`, and stamped `provenance: SYNCED_BIDIR` + the upstream `gh_issue_id`.
 
-### PR push prerequisite
+### PR push: branch upload
 
-`push_local_prs` POSTs to `/repos/<o>/<r>/pulls` with the local PR's `head` and `base` branch labels. **gitcabin doesn't push code** — only metadata. The head branch must already exist on the GitHub repo before push runs, or GitHub responds 422 ("head ref does not exist"). The simplest workflow today:
+`push_local_prs` POSTs to `/repos/<o>/<r>/pulls` with the local PR's `head` and `base` branch labels. GitHub responds 422 ("head ref does not exist") if the named branch isn't on the upstream repo, so the push step has to upload the branch first.
+
+For each local PR, before the POST runs:
+
+1. Extract the bare branch name from `head_ref` (`branch` or `<viewer>:branch`). A `<other>:branch` cross-fork label is skipped — gitcabin doesn't have a remote for someone else's fork.
+2. If `refs/heads/<branch>` exists in the bare repo, push it to `https://<host>/<owner>/<name>.git` using gh's credential helper (`gh auth git-credential`) so the token never lands in argv. If the branch isn't local, skip — the user is on the manual-push path and the upstream branch is already there.
+
+The injectable `push_branch` parameter on `push_local_prs` is the test seam: tests pass a recording fake instead of shelling out.
 
 ```sh
-git push origin my-branch                    # push code first (your working tree)
-cab repo init me/cabin                       # ensure the local mirror exists
-# create a draft PR locally, e.g. via createPullRequest mutation in a future commit
-gitcabin sync push me/cabin                  # POST it to GitHub
+# bare repo already mirrors the GitHub remote
+# (cab repo init <owner>/<name> handles this)
+# create a draft PR locally via createPullRequest mutation
+gitcabin sync push me/cabin                  # uploads branch + POSTs the PR
 ```
 
-A future commit could add a "push branches first" step to `gitcabin sync push` that walks `refs/prs/local/*`, identifies their head branches, and runs `git push` against the GitHub repo before posting the PR. Out of scope for #14; tracked separately.
+Cross-fork PRs (`head_ref="other:branch"`) still need the legacy manual workflow — push the branch yourself first, then run `gitcabin sync push`.
 
 ---
 
