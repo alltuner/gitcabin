@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 import markdown
@@ -241,8 +242,23 @@ def render_blob(blob: Blob) -> RenderedBlob:
         lexer = guess_lexer_for_filename(blob.name, text)
     except ClassNotFound:
         lexer = get_lexer_by_name("text")
-    formatter = HtmlFormatter(linenos="table", cssclass="hl", wrapcode=True)
-    html = highlight(text, lexer, formatter)
+    # `anchorlinenos` wraps each line number in `<a href="#L<n>">` and gives
+    # the corresponding code line `id="L<n>"` so users can deep-link to a
+    # specific line. Pygments hardcodes a hyphen in its anchor format
+    # (`L-1`, `L-2`); rewriting to `L1`, `L2` matches GitHub's `#L42`
+    # convention so links pasted between the two services Just Work.
+    formatter = HtmlFormatter(
+        linenos="table",
+        cssclass="hl",
+        wrapcode=True,
+        anchorlinenos=True,
+        lineanchors="L",
+    )
+    html = re.sub(
+        r'(name|id|href)="(#?)L-(\d+)"',
+        r'\1="\2L\3"',
+        highlight(text, lexer, formatter),
+    )
     return RenderedBlob(
         name=blob.name,
         size=blob.size,
