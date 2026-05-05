@@ -41,6 +41,12 @@
                             pick out its <main>, and outerHTML-swap ours.
    show:window:top          scroll to top after the swap, mimicking what a
                             real navigation would do.
+   hx-history="false"       disable htmx's localStorage history cache. Asset
+                            bundle filenames are content-hashed and flip
+                            across server restarts, so a restored snapshot
+                            would reference dead CSS/JS URLs and render
+                            unstyled. Back navigation now does a fresh GET
+                            and picks up the current asset hashes.
 
    preload + preload="mouseover" on body opts every descendant <a href>
    into the preload extension. htmx-ext-preload's getClosestAttribute walk
@@ -55,6 +61,7 @@
   hx-target="main"
   hx-select="main"
   hx-swap="outerHTML show:window:top"
+  hx-history="false"
   hx-ext="preload"
   preload="mouseover">
 <header class="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
