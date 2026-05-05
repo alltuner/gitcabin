@@ -60,14 +60,21 @@
 <header class="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
   <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
     <a href="/" class="flex items-center gap-2 font-semibold text-gray-900 dark:text-gray-100 hover:no-underline">
-      {# Cabin silhouette with a centered door. Clean two-stroke shape, no
-         floating-node clutter. The wordmark "gitcabin" carries the project's
-         git identity; the mark just needs to be a cabin. #}
-      <svg viewBox="0 0 20 20" class="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M2.5 17 V9 L10 3 L17.5 9 V17 Z"/>
-        <path d="M8 17 V12 H12 V17"/>
+      {# Roof + base sketch the cabin (no walls — the open silhouette
+         reads cleaner at navbar size). Inside: a two-node commit graph
+         with the trunk dropping to the base line, branching off to the
+         right. The bottom dot is dropped at this size — three nodes
+         packed in 16 user units feels cramped; the larger 3-node
+         variant is reserved for marketing / docs surfaces. #}
+      <svg viewBox="4 4 16 16" class="h-9 w-9 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5.5 11.5 L12 7 L18.5 11.5"/>
+        <path d="M7 18 H17"/>
+        <circle cx="10.2" cy="14" r="1.15"/>
+        <circle cx="14.2" cy="15.2" r="1.15"/>
+        <path d="M10.2 18 V14"/>
+        <path d="M10.2 14 L14.2 15.2"/>
       </svg>
-      gitcabin
+      <span class="text-[1.65rem] leading-none tracking-tight">gitcabin</span>
     </a>
 
     {# Theme switcher: three radios sharing name="theme". The light + dark
