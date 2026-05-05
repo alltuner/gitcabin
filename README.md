@@ -8,7 +8,8 @@
 </p>
 
 <p align="center">
-  <a href="https://alltuner.com/sponsor">Sponsor</a>
+  <a href="https://www.gitcabin.com/">Website</a> ·
+  <a href="https://alltuner.com/sponsor/">Sponsor</a>
 </p>
 
 <p align="center">
@@ -17,8 +18,8 @@
 </p>
 
 > [!WARNING]
-> **Pre-alpha sketch — not functional software yet.**
-> This repo is a working sketch of what gitcabin *could* be, not a tool you can rely on. Most of what's here is design notes and structural code; deployment recipes work in narrow conditions but will break in real use. Read for the ideas; don't deploy for production. Feedback on the direction is very welcome — see [`docs/`](docs/) for what's been thought through and what's still open.
+> **Developing in the open — not yet a launched product.**
+> Most of what's here is design notes and structural code; recipes work in narrow conditions and will break in real use. Read for the ideas, follow along as it firms up, but don't deploy for production. Feedback on the direction is very welcome — see [`docs/`](docs/) for what's been thought through and what's still open.
 
 ---
 
