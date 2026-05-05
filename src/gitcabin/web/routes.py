@@ -418,6 +418,14 @@ def build_router(settings: Settings) -> APIRouter:
         lines = code.blame_blob(bare, ref, path)
         if lines is None:
             raise HTTPException(status_code=404, detail="blob not found")
+        # Pull the blob's size so the blame chrome can match the blob page —
+        # same code-panel header (`<bytes> | nav-links`).
+        blob_size: int | None = None
+        commit = code.resolve_ref(bare, ref)
+        if commit is not None:
+            node = code.walk_tree_at_path(commit, path)
+            if node is not None and node.type == "blob":
+                blob_size = node.size
         return _render(
             request,
             settings,
@@ -427,6 +435,7 @@ def build_router(settings: Settings) -> APIRouter:
             ref=ref,
             path=path,
             lines=lines,
+            blob_size=blob_size,
             crumb_segments=_path_crumbs(path),
             branches=code.list_branches(bare),
             tags=code.list_tags(bare),
