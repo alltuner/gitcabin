@@ -13,7 +13,17 @@
   {% if file.is_binary %}
   <div class="px-4 py-3 text-xs italic text-gray-500 dark:text-gray-400">Binary file — diff not shown.</div>
   {% elif not file.hunks %}
-  <div class="px-4 py-3 text-xs italic text-gray-500 dark:text-gray-400">Empty diff.</div>
+  {# An "added" file with no hunks is an empty file (no `+` lines because
+     there's no content). A "deleted" empty file lands here too. Renames
+     and mode-only changes can also produce no patch body — call them
+     out explicitly so the reader doesn't take "Empty diff" as a bug. #}
+  <div class="px-4 py-3 text-xs italic text-gray-500 dark:text-gray-400">
+    {% if file.change_type == "added" %}Empty file added.
+    {% elif file.change_type == "deleted" %}Empty file removed.
+    {% elif file.change_type == "renamed" %}Renamed without content changes.
+    {% else %}No textual changes.
+    {% endif %}
+  </div>
   {% else %}
   {# Split view: two paired columns, each carrying its own line-number gutter
      + text. `paired` reshapes the hunk's flat unified-diff lines into
