@@ -23,7 +23,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/cab .
 # rather than apk's `github-cli` package because Alpine ships an older
 # release that queries fields gitcabin's partial schema doesn't expose;
 # pinning gh to the same version the host typically runs avoids that drift.
-FROM alpine:3.20
+FROM alpine:3.23
 ARG GH_VERSION=2.92.0
 RUN apk add --no-cache ca-certificates wget tar && \
     arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/') && \
