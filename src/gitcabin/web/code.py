@@ -35,12 +35,13 @@ MAX_BLOB_RENDER_BYTES = 1_000_000
 
 @dataclass(frozen=True, slots=True)
 class TreeEntry:
-    """One row in a file-listing view (a tree subdir or a blob)."""
+    """One row in a file-listing view (a tree subdir, blob, or symlink)."""
 
     name: str
     type: str  # "tree" or "blob"
     sha: str
     size: int | None  # bytes for blobs, None for trees
+    is_symlink: bool = False
     last_commit_message: str | None = None
     last_commit_sha: str | None = None
     last_commit_at: str | None = None
@@ -186,6 +187,9 @@ def walk_tree_at_path(commit: Commit, path: str) -> Tree | Blob | None:
     return node
 
 
+_GIT_SYMLINK_MODE = 0o120000
+
+
 def list_tree_entries(tree: Tree) -> list[TreeEntry]:
     """List a tree's direct children. Trees come first (alphabetical), then blobs."""
     trees: list[TreeEntry] = []
@@ -194,10 +198,106 @@ def list_tree_entries(tree: Tree) -> list[TreeEntry]:
         if entry.type == "tree":
             trees.append(TreeEntry(name=entry.name, type="tree", sha=entry.hexsha, size=None))
         else:
-            blobs.append(TreeEntry(name=entry.name, type="blob", sha=entry.hexsha, size=entry.size))
+            is_symlink = entry.mode == _GIT_SYMLINK_MODE
+            blobs.append(
+                TreeEntry(
+                    name=entry.name,
+                    type="blob",
+                    sha=entry.hexsha,
+                    size=entry.size,
+                    is_symlink=is_symlink,
+                )
+            )
     trees.sort(key=lambda e: e.name)
     blobs.sort(key=lambda e: e.name)
     return trees + blobs
+
+
+def enrich_with_last_commits(
+    commit: Commit,
+    entries: list[TreeEntry],
+    *,
+    prefix: str = "",
+    max_commits: int = 500,
+) -> list[TreeEntry]:
+    """Walk back from `commit` filling in last_commit_* per entry.
+
+    Stops as soon as every entry has been resolved or after max_commits
+    walked, whichever comes first. `prefix` is the path inside the tree
+    where these entries live (`""` for repo root, `"src/web"` for
+    nested). Each entry's name is joined with the prefix to form the
+    full path that we match against the commit's diff.
+
+    Algorithm: walk commits newest-first. For each commit `c`, take the
+    diff against its first parent (or the root tree if it's the root
+    commit). Any path under `prefix/<entry.name>` whose direct child
+    `<entry.name>` matches an unresolved entry — that entry's last
+    commit is `c`. Mark resolved, continue.
+
+    Pure GitPython, no shell-out. For repos with many small files this
+    is O(commits × files-touched-per-commit) which is acceptable for
+    the typical interactive view.
+    """
+    pending: dict[str, TreeEntry] = {e.name: e for e in entries}
+    resolved: dict[str, tuple[str, str, str]] = {}  # name -> (sha, subject, iso)
+    walked = 0
+
+    for c in commit.repo.iter_commits(commit.hexsha, max_count=max_commits):
+        walked += 1
+        if not pending:
+            break
+        # Diff against first parent — for the root commit, diff against an
+        # empty tree (gitpython handles this when there's no parent).
+        if c.parents:
+            try:
+                diff_paths = {item.b_path or item.a_path for item in c.parents[0].diff(c)}
+            except Exception:
+                continue
+        else:
+            diff_paths = {item.path for item in c.tree.traverse() if item.type == "blob"}
+
+        # For each path in this commit, peel off `prefix/`, look at the
+        # first segment, and if it matches a pending entry name, that
+        # entry's last commit is this one.
+        prefix_slash = f"{prefix}/" if prefix else ""
+        msg = c.message if isinstance(c.message, str) else c.message.decode()
+        subject = msg.split("\n", 1)[0].strip()
+        ts = c.authored_datetime.isoformat()
+        for p in diff_paths:
+            if p is None:
+                continue
+            rel = p[len(prefix_slash):] if prefix_slash and p.startswith(prefix_slash) else p
+            if not rel or "/" in rel and not (prefix_slash and p.startswith(prefix_slash)):
+                # Path is outside this prefix's scope; skip.
+                if prefix_slash and not p.startswith(prefix_slash):
+                    continue
+            head = rel.split("/", 1)[0]
+            if head in pending and head not in resolved:
+                resolved[head] = (c.hexsha, subject, ts)
+        # Drop resolved from pending so we exit early.
+        for name in resolved:
+            pending.pop(name, None)
+
+    out: list[TreeEntry] = []
+    for entry in entries:
+        info = resolved.get(entry.name)
+        if info is None:
+            out.append(entry)
+        else:
+            sha, subject, ts = info
+            out.append(
+                TreeEntry(
+                    name=entry.name,
+                    type=entry.type,
+                    sha=entry.sha,
+                    size=entry.size,
+                    is_symlink=entry.is_symlink,
+                    last_commit_message=subject,
+                    last_commit_sha=sha,
+                    last_commit_at=ts,
+                )
+            )
+    return out
 
 
 def find_readme(tree: Tree) -> Blob | None:

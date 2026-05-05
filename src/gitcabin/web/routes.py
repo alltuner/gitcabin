@@ -213,7 +213,9 @@ def build_router(settings: Settings) -> APIRouter:
         readme_html: str | None = None
         head_short_sha: str | None = None
         if head_commit is not None:
-            entries = code.list_tree_entries(head_commit.tree)
+            entries = code.enrich_with_last_commits(
+                head_commit, code.list_tree_entries(head_commit.tree)
+            )
             readme_blob = code.find_readme(head_commit.tree)
             if readme_blob is not None:
                 raw = readme_blob.data_stream.read()
@@ -279,7 +281,9 @@ def build_router(settings: Settings) -> APIRouter:
             name=name,
             ref=ref,
             path=path,
-            entries=code.list_tree_entries(node),
+            entries=code.enrich_with_last_commits(
+                commit, code.list_tree_entries(node), prefix=path
+            ),
             crumb_segments=_path_crumbs(path),
             **_repo_ctx(bare),
         )
