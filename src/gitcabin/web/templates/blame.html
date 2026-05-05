@@ -6,13 +6,13 @@
 {% include "_repo_header.html" %}
 
 <nav class="mb-4 text-sm font-mono">
-  <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}" class="text-fern-700 hover:underline dark:text-fern-400">{{ name }}</a>
+  <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
   {% for c in crumb_segments %}
     <span class="mx-1 text-gray-400">/</span>
     {% if loop.last %}
     <span class="text-gray-900 dark:text-gray-100">{{ c.name }}</span>
     {% else %}
-    <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ c.path }}" class="text-fern-700 hover:underline dark:text-fern-400">{{ c.name }}</a>
+    <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ c.path }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ c.name }}</a>
     {% endif %}
   {% endfor %}
 </nav>
@@ -22,7 +22,7 @@
     <span>Blame on</span>
     <span class="rounded border border-gray-300 px-2 py-1 font-mono text-xs dark:border-gray-700">{{ ref }}</span>
   </div>
-  <a href="/{{ owner }}/{{ name }}/blob/{{ ref }}/{{ path }}" class="text-fern-700 hover:underline dark:text-fern-400">view raw</a>
+  <a href="/{{ owner }}/{{ name }}/blob/{{ ref }}/{{ path }}" class="text-blue-600 hover:underline dark:text-blue-400">view raw</a>
 </div>
 
 <div class="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
@@ -32,7 +32,7 @@
       <tr>
         {% if line.is_run_start %}
         <td class="commit">
-          <a href="/{{ owner }}/{{ name }}/commit/{{ line.commit_sha }}" class="font-mono text-fern-700 hover:underline dark:text-fern-400">{{ line.short_sha }}</a>
+          <a href="/{{ owner }}/{{ name }}/commit/{{ line.commit_sha }}" class="font-mono text-blue-600 hover:underline dark:text-blue-400">{{ line.short_sha }}</a>
           <span>{{ line.author_name }} · {{ line.authored_at[:10] }}</span>
           <div class="subject">{{ line.subject }}</div>
         </td>

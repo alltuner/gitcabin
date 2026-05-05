@@ -12,9 +12,9 @@
       <tr class="hover:bg-gray-50 dark:hover:bg-gray-900">
         <td class="px-4 py-2 font-mono text-xs">
           {% if crumb_segments | length > 1 %}
-          <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ crumb_segments[-2].path }}" class="text-fern-700 hover:underline dark:text-fern-400">..</a>
+          <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ crumb_segments[-2].path }}" class="text-blue-600 hover:underline dark:text-blue-400">..</a>
           {% else %}
-          <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}" class="text-fern-700 hover:underline dark:text-fern-400">..</a>
+          <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}" class="text-blue-600 hover:underline dark:text-blue-400">..</a>
           {% endif %}
         </td>
         <td></td>
@@ -25,10 +25,10 @@
         <td class="px-4 py-2">
           {% if entry.type == "tree" %}
           <span class="mr-2 text-gray-400">📁</span>
-          <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{% if path %}{{ path }}/{% endif %}{{ entry.name }}" class="text-fern-700 hover:underline dark:text-fern-400">{{ entry.name }}</a>
+          <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{% if path %}{{ path }}/{% endif %}{{ entry.name }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ entry.name }}</a>
           {% else %}
           <span class="mr-2 text-gray-400">📄</span>
-          <a href="/{{ owner }}/{{ name }}/blob/{{ ref }}/{% if path %}{{ path }}/{% endif %}{{ entry.name }}" class="text-fern-700 hover:underline dark:text-fern-400">{{ entry.name }}</a>
+          <a href="/{{ owner }}/{{ name }}/blob/{{ ref }}/{% if path %}{{ path }}/{% endif %}{{ entry.name }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ entry.name }}</a>
           {% endif %}
         </td>
         <td class="px-4 py-2 text-right text-xs text-gray-500 dark:text-gray-400">
