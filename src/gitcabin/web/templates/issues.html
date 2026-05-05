@@ -6,19 +6,7 @@
 {% set total_issue_count = total_count %}
 {% include "_repo_header.html" %}
 
-<div class="mb-4 flex items-center gap-4 border-b border-gray-200 pb-3 text-sm dark:border-gray-800">
-  <a href="?state=open" class="flex items-center gap-1 {% if state == 'open' %}font-semibold text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100{% endif %}">
-    <svg class="h-4 w-4 text-green-600" viewBox="0 0 16 16" fill="currentColor"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill-rule="evenodd" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>
-    {{ open_count }} Open
-  </a>
-  <a href="?state=closed" class="flex items-center gap-1 {% if state == 'closed' %}font-semibold text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100{% endif %}">
-    <svg class="h-4 w-4 text-purple-600" viewBox="0 0 16 16" fill="currentColor"><path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/><path fill-rule="evenodd" d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z"/></svg>
-    {{ closed_count }} Closed
-  </a>
-  <a href="?state=all" class="{% if state == 'all' %}font-semibold text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100{% endif %}">
-    All ({{ total_count }})
-  </a>
-</div>
+{% include "_issue_state_filter.html" %}
 
 {% if issues %}
 <div class="divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
