@@ -1,0 +1,150 @@
+#!/bin/sh
+# ABOUTME: cab — invoke gh against a local gitcabin via an unprivileged-port HTTP proxy.
+# ABOUTME: Hides the HTTP_PROXY plumbing, the GH_HOST flag, and the placeholder-token ceremony.
+#
+# Usage:
+#   cab login                                      # one-time: register the host with gh
+#   cab status                                     # is gitcabin up and reachable?
+#   cab repo init me/cabin                         # host-side bare-repo init for a fresh name
+#   cab issue create -R me/cabin --title "..."     # any other gh subcommand passes through
+#   cab any-other-gh-command [args]
+#
+# Why this exists:
+#
+#   gh hardcodes port 80 for `github.localhost`, which means the host or the
+#   docker daemon has to bind a privileged port — and that's a long tail of
+#   failure modes (vmnetd missing on macOS, port-80 conflicts, rootless docker
+#   without cap_net_bind_service). cab points gh's HTTP_PROXY at gitcabin's
+#   unprivileged port so cleartext requests round-trip through loopback in
+#   absolute-URI form. No certs, no privileged ports, no /etc/hosts edits.
+#
+# Env knobs:
+#
+#   GITCABIN_PORT   port the local gitcabin instance is listening on (default 8080)
+#   GITCABIN_HOST   hostname gh registers gitcabin under (default github.localhost)
+#
+# We also clear NO_PROXY: many dev environments default it to `localhost,127.0.0.1`,
+# which would make Go's net/http skip the proxy and dial port 80 directly — the
+# exact failure mode this script exists to avoid.
+
+set -e
+
+PORT="${GITCABIN_PORT:-8080}"
+HOST="${GITCABIN_HOST:-github.localhost}"
+
+# Common env for any gh invocation we make on the user's behalf.
+proxy_env() {
+  env -u no_proxy -u NO_PROXY \
+    HTTP_PROXY="http://127.0.0.1:${PORT}" \
+    GH_HOST="${HOST}" \
+    "$@"
+}
+
+# Register the host with gh on first use, transparently. gh will only talk to
+# hosts present in ~/.config/gh/hosts.yml — without this, the very first
+# `cab issue create` would fail with "no auth for github.localhost". gitcabin
+# doesn't verify tokens, so any non-empty token gets us into hosts.yml.
+ensure_auth() {
+  if proxy_env gh auth status --hostname "${HOST}" >/dev/null 2>&1; then
+    return 0
+  fi
+  if echo "gitcabin-no-auth" | proxy_env gh auth login --hostname "${HOST}" --with-token >/dev/null 2>&1; then
+    printf 'registered %s with gh (one-time)\n' "${HOST}" >&2
+    return 0
+  fi
+  printf 'cab: could not register %s with gh.\nis gitcabin running on port %s?\n' "${HOST}" "${PORT}" >&2
+  exit 1
+}
+
+cmd_login() {
+  # Explicit re-registration. Useful after `cab logout` or to verify the
+  # connection. Auto-register would have done it implicitly on any other call;
+  # `cab login` exists as a discoverable command for users who want to confirm
+  # the setup before running anything mutational.
+  ensure_auth
+  proxy_env gh auth status
+}
+
+cmd_status() {
+  # First check the proxy responds; then check gh's view of auth.
+  if ! curl -sf -o /dev/null -x "http://127.0.0.1:${PORT}" "http://api.${HOST}/"; then
+    printf '  proxy at 127.0.0.1:%s is not responding.\n  is gitcabin running?\n' "${PORT}" >&2
+    exit 1
+  fi
+  printf '  proxy 127.0.0.1:%s -> %s    OK\n' "${PORT}" "${HOST}"
+  proxy_env gh auth status 2>&1 | sed 's/^/  /'
+}
+
+cmd_logout() {
+  proxy_env gh auth logout --hostname "${HOST}"
+}
+
+cmd_repo_init() {
+  # gh's pre-mutation lookup demands the repo already exist (Query.repository
+  # is strict). For a fresh name we do a bare-repo init inside the running
+  # container, which the host bind mount surfaces under data/repos/.
+  if [ "$#" -ne 1 ]; then
+    printf 'usage: cab repo init <owner>/<name>\n' >&2
+    exit 2
+  fi
+  case "$1" in
+    */*) ;;
+    *)
+      printf 'expected <owner>/<name>, got %s\n' "$1" >&2
+      exit 2
+      ;;
+  esac
+  if ! docker compose exec -T gitcabin git init --bare "/app/data/repos/$1.git" >/dev/null 2>&1; then
+    printf 'could not init %s; is the gitcabin compose stack up?\n' "$1" >&2
+    exit 1
+  fi
+  printf 'initialized %s\n' "$1"
+}
+
+case "${1:-}" in
+  login)
+    shift
+    cmd_login "$@"
+    ;;
+  status|doctor)
+    shift
+    cmd_status "$@"
+    ;;
+  logout)
+    shift
+    cmd_logout "$@"
+    ;;
+  repo)
+    shift
+    case "${1:-}" in
+      init)
+        shift
+        cmd_repo_init "$@"
+        ;;
+      *)
+        # Anything else under `repo` (view, list, clone, etc.) is plain gh.
+        exec env -u no_proxy -u NO_PROXY \
+          HTTP_PROXY="http://127.0.0.1:${PORT}" \
+          GH_HOST="${HOST}" \
+          gh repo "$@"
+        ;;
+    esac
+    ;;
+  -h|--help|help)
+    sed -n '1,30p' "$0" | sed 's/^# *//' >&2
+    exit 0
+    ;;
+  *)
+    # Auto-register on first use so the user never has to think about
+    # `gh auth login`. gitcabin doesn't verify tokens, so the first call
+    # silently writes a placeholder token to ~/.config/gh/hosts.yml and the
+    # rest works.
+    ensure_auth
+    # Can't `exec proxy_env gh ...` — proxy_env is a shell function and exec
+    # only takes external commands. Inline the env invocation for passthrough.
+    exec env -u no_proxy -u NO_PROXY \
+      HTTP_PROXY="http://127.0.0.1:${PORT}" \
+      GH_HOST="${HOST}" \
+      gh "$@"
+    ;;
+esac

@@ -1,6 +1,8 @@
 # TLS and hostname strategy (design notes)
 
-> **Status:** No option chosen yet. This file surveys the problem, the hard constraints, the options researched, and the per-option design detail. Anyone picking this up later should be able to make an informed call from this file alone — it leans on no option except those explicitly ruled out.
+> **Status:** One mode is live and shipping: **L1** (local-only HTTP via the `cab` wrapper, see [`cab.md`](cab.md)). **L4** (Tailnet-shared via Tailscale) is **deferred** — the design below is preserved for when we resume work on multi-device access, but no implementation ships today. **L2 (shared wildcard cert)** is obsolete: `cab` solves the same use case (single-machine HTTPS-shaped access without domain ownership or CA install) without operating any cert pipeline. The remaining options are ruled out as before.
+>
+> The deferral is deliberate. L1+`cab` is solid enough that the project's iteration speed is better spent on sync, mutations, and UI than on a second deployment topology. We come back to L4 when L1's surface stops shifting.
 
 ## What we're trying to solve
 
@@ -41,24 +43,29 @@ Maintainer-side cost matters but is a softer constraint. We're willing to run mo
 
 ## The options we have researched
 
-Eight distinct approaches were investigated. Three remain live; the rest are ruled out. The live three are all viable; none has been chosen.
+Eight distinct approaches were investigated. **One is live and shipping** (L1). **One is deferred** (L4, design preserved). The rest are ruled out.
 
-### Live options
+### Live option
 
 | Option | What the user does | What we run | Cert source | Hostname shape |
 |---|---|---|---|---|
-| [Local-only HTTP](#l1-local-only-http-already-shipped) | `docker compose up` | nothing | none | `github.localhost` |
-| [Shared wildcard cert](#l2-shared-wildcard-cert) | `docker compose up`; pick a subdomain | always-on Caddy + R2 (or equivalent) | LE via DNS-01 (we run it) | `*.local.gitcabin.com` |
-| [Tailnet-shared (Tailscale)](#l4-tailnet-shared-tailscale) | install Tailscale CLI; mint auth key; `docker compose up` | nothing (Tailscale Inc. provides the control plane) | LE via DNS-01 (Tailscale runs it) | `<host>.<tailnet>.ts.net` |
+| [Local-only HTTP via `cab`](#l1-local-only-http-via-cab-shipping) | `docker compose up`; symlink `cab` onto PATH | nothing | none (cleartext loopback) | `github.localhost` |
 
-The numbering preserves L1, L2, L4 to match the order in which the options were considered; "L3" and "L5" labels are intentionally absent because those slots map to options that have been ruled out.
+### Deferred
+
+| Option | What the user does | What we run | Cert source | Hostname shape |
+|---|---|---|---|---|
+| [Tailnet-shared (Tailscale)](#l4-tailnet-shared-tailscale-deferred) | install Tailscale CLI; mint auth key; `docker compose up` | nothing (Tailscale Inc. provides the control plane) | LE via DNS-01 (Tailscale runs it) | `<host>.<tailnet>.ts.net` |
+
+The L-numbering preserves history (L1 / L2 / L3 / L4 / L5 from earlier design rounds); intermediate labels map to options now ruled out.
 
 ### Ruled out
 
 | Option | Reason it's out |
 |---|---|
 | **Per-machine local CA** (mkcert / Caddy local CA) | Violates C3. Every prior install required a sudo-prompted keychain step. This was the trigger for this entire redesign. |
-| **L3 — DuckDNS / deSEC / dynv6 + per-user ACME** | Scoped out. Technically viable (zero maintainer infra, real LE certs via DNS-01, all hard constraints met), but the hostname is `*.duckdns.org` (or equivalent third-party), it adds a third-party uptime dependency in the renewal path, and it pushes the user through an external signup. Within the simplified scope of L1 + L2 + L4, it doesn't earn its keep. Recipe and trade-offs preserved in git history (commit `72b0767` if needed). |
+| **L2 — Shared wildcard cert (`*.local.gitcabin.com`)** | Obsoleted by `cab`. L2's value proposition was "real LE cert for a built-in hostname, no domain ownership, no CA install." `cab` gives the same outcome (`gh` reaches gitcabin under a built-in hostname, no domain, no CA) without operating any cert pipeline at all — no R2 bucket, no rotation runbook, no revocation risk, no LE-revocation-of-published-key concern. The full L2 design lives in git history (commit `7fdb53d` and ancestors) if we ever need to resurrect it. |
+| **L3 — DuckDNS / deSEC / dynv6 + per-user ACME** | Scoped out earlier. Hostname brand is `*.duckdns.org`, adds third-party uptime dependency at renewal, requires external signup. Now also strictly redundant with L1+`cab`. |
 | **L5 — Public/team (own domain)** | Scoped out. Violates C4 by definition (domain required), and the original framing — "for operators who already pass C4" — turned out to be carrying scope we don't want. Anyone who owns a domain and wants gitcabin reachable from anywhere can build a Caddy + DNS-01 recipe themselves; we're not the right project to document that. Also drops support for "GitHub Actions runners reaching gitcabin" as a use case — see [What's not in this doc](#whats-not-in-this-doc). |
 | **mDNS / `gitcabin.local`** | No public CA issues certs for `.local` (CA/B Forum policy). The only way to get a "trusted" cert for `.local` is a private CA, which violates C3. |
 | **Magic-DNS-only services without certs** (`lvh.me`, `localtest.me`, `local.gd`, `vcap.me`) | No cert path. gh forces HTTPS, so a hostname with no cert story is unusable as the ingress. Useful only for plain-HTTP local dev, where we already have `github.localhost`. |
@@ -110,15 +117,17 @@ Open. The Tailscale Funnel hostnames are real `*.ts.net` names with real LE cert
 
 ---
 
-## L1 — Local-only HTTP (already shipped)
+## L1 — Local-only HTTP via `cab` (shipping)
 
-Default mode. `gh` dials `http://api.github.localhost/` over plain HTTP because `github.localhost` is the one hostname gh special-cases for plain HTTP. RFC 6761 reserves `*.localhost` to resolve to `127.0.0.1` natively on macOS, Linux, and Windows, so no DNS setup is needed.
+The current default and only shipping mode. `gh` dials `http://api.github.localhost/` over plain HTTP because `github.localhost` is the one hostname gh special-cases for plain HTTP. RFC 6761 reserves `*.localhost` to resolve to `127.0.0.1` natively on macOS, Linux, and Windows, so no DNS setup is needed.
 
-**Constraint check:** C1–C6 all met trivially because there is no cert chain, no domain, no third party.
+The wrinkle gh's hardcoded port 80 would have created (privileged-port binding on the host, vmnetd dependency, port-80 conflicts, /etc/hosts workarounds) is dissolved by the [`cab`](cab.md) wrapper: it sets `HTTP_PROXY` so gh dials gitcabin on `127.0.0.1:8080` instead, with the request line carrying the absolute URI gh wanted to send. gitcabin's HTTP server accepts absolute-form Request-URIs per RFC 7230, so no application changes were needed.
 
-**What it doesn't cover:** anything that isn't "this single user, this single machine." For multi-device, sharing, or anyone-else-on-the-network access, we need L2 or L4.
+**Constraint check:** C1–C6 all met. No cert chain, no domain, no third party, no privileged port anywhere on the host.
 
-Already documented in [`installation.md`](installation.md#local-only). Nothing more to design here.
+**What it doesn't cover:** anything that isn't "this single user, this single machine." Multi-device access is the deferred L4 mode below.
+
+Operational details in [`installation.md`](installation.md). Wrapper rationale in [`cab.md`](cab.md). Nothing more to design here.
 
 ---
 
@@ -243,7 +252,9 @@ If `127.0.0.1:443` is already in use on the user's machine, the loopback-alias p
 
 ---
 
-## L4 — Tailnet-shared (Tailscale)
+## L4 — Tailnet-shared (Tailscale, deferred)
+
+> **Deferred.** This design is preserved here because we expect to come back to it once the L1-via-`cab` surface stabilizes and we want multi-device access. The recipe below — including the eight deltas from the `~/repos/infrastructure` audit — is ready to lift wholesale; we just haven't built it. There is no `compose.tailscale.yml` in the repo today, no `gitcabin sync` integration assuming a tailnet, no documented user flow in `installation.md`. The intent here is to capture the design while it's fresh, not to claim shipping support.
 
 A `tailscale/tailscale` sidecar puts gitcabin on the user's tailnet under `<host>.<tailnet>.ts.net`. Tailscale's coordination plane provisions and renews a real LE cert via DNS-01 (against TXT records under their `*.ts.net` zone). No host port is bound; access is gated by tailnet membership.
 
@@ -262,9 +273,9 @@ Nothing on the maintainer side. Tailscale Inc. operates the coordination plane, 
 5. `docker compose -f compose.yml -f compose.tailscale.yml up -d`.
 6. `gh auth login --hostname gitcabin.<tailnet>.ts.net`.
 
-### Recipe (from the audit)
+### Recipe (preserved for when we resume)
 
-The recipe in current [`installation.md`](installation.md) is structurally correct. The audit of `~/repos/infrastructure` (which runs this pattern in production for other services) surfaced eight concrete deltas to import:
+The audit of `~/repos/infrastructure` (which runs this pattern in production for other services) surfaced eight concrete deltas to import when we revive this:
 
 1. **Pin the image tag** (`tailscale/tailscale:v1.96`, not `:latest`). Renovate-bumped, no silent breaking restarts.
 2. **`restart: unless-stopped`** on the sidecar. Without it, the sidecar doesn't recover after a host reboot.

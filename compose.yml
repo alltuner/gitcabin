@@ -1,6 +1,8 @@
-# Local-dev compose: container runs granian unprivileged on port 8000;
-# Docker Desktop publishes that to the host on port 80 (which is what gh
-# expects for github.localhost).
+# Local-dev compose: container runs granian unprivileged on port 8000 and
+# Docker Desktop publishes that to the host on an unprivileged port (8080).
+# The `cab` wrapper sets HTTP_PROXY so `gh -h github.localhost` reaches us
+# there instead of dialing the hardcoded port 80 — no privileged-port
+# binding anywhere on the host.
 #
 # Use `docker compose watch` for the dev loop — Compose syncs source into
 # the container and restarts granian on every edit. Plain `docker compose up`
@@ -13,13 +15,12 @@ services:
     build: .
     container_name: gitcabin
     ports:
-      # 127.0.0.1-bound on purpose: gh dials port 80 on whatever IP
-      # `github.localhost` resolves to (loopback by default), and binding to
-      # localhost only keeps gitcabin off the LAN. Users with port 80 already
-      # taken can either stop the conflicting service or use a loopback alias
-      # (see docs/installation.md). On macOS Docker Desktop's vmnetd grants
-      # port 80 without `sudo docker`.
-      - "127.0.0.1:80:8000"
+      # 127.0.0.1-bound on purpose: keeps gitcabin off the LAN. The host
+      # port (8080) is the "well-known" cab proxy port — users invoke
+      # `cab issue create ...` and the wrapper points HTTP_PROXY here.
+      # Override with GITCABIN_PORT if you need a different port and pass
+      # the same value to `cab` (it reads GITCABIN_PORT too).
+      - "127.0.0.1:8080:8000"
     volumes:
       # Bare repos (code + metadata refs) live here. Host bind mount on
       # purpose: David can `cd ./data/repos/owner/name.git && git log` to
@@ -60,9 +61,10 @@ services:
       - "8000"
       - "gitcabin.web.app:create_app"
     ports:
-      # Browse at http://localhost:8080/ once the stack is up. 127.0.0.1-bound
-      # so the dashboard isn't visible to other hosts on the LAN.
-      - "127.0.0.1:8080:8000"
+      # Browse at http://localhost:8081/ once the stack is up. 127.0.0.1-bound
+      # so the dashboard isn't visible to other hosts on the LAN. Port 8081
+      # because 8080 is the API/proxy port the cab wrapper sends gh through.
+      - "127.0.0.1:8081:8000"
     volumes:
       # The dashboard's POST handlers (comment / close / reopen) write to the
       # same bare repos as the API; CAS via `git update-ref REF NEW OLD` is

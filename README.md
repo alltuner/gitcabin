@@ -30,37 +30,25 @@ The default deploy is local-only over HTTP via `github.localhost`. One command b
 docker compose watch
 ```
 
-Compose builds the image, runs the API container on `127.0.0.1:80` and the HTML dashboard on `127.0.0.1:8080`, and reloads on every source edit. Plain `docker compose up --build` works too if you don't want autoreload.
+Compose builds the image, runs the API on `127.0.0.1:8080` and the HTML dashboard on `127.0.0.1:8081`, and reloads on every source edit. Plain `docker compose up --build` works too if you don't want autoreload. **No privileged ports anywhere** — neither the host nor the daemon needs to bind 80 or 443.
 
-Then point `gh` at it:
+Put the bundled `cab` wrapper on your PATH once:
 
 ```sh
-echo "any-token" | gh auth login --hostname github.localhost --with-token
-GH_HOST=github.localhost gh auth status
+ln -s "$PWD/scripts/cab" /usr/local/bin/cab        # or any directory on your PATH
 ```
 
-That's it. The token is unverified — gitcabin trusts whoever can reach the port.
+That's it. Your first `cab` command auto-registers `github.localhost` with `gh` (writes a placeholder token to `~/.config/gh/hosts.yml` — gitcabin doesn't verify tokens, anyone who can reach the port is the owner) and then runs whatever you asked:
+
+```sh
+cab repo init me/cabin                             # init a fresh repo
+cab issue create -R me/cabin --title "First issue" --body "Try things out"
+cab issue list -R me/cabin
+```
+
+`cab` is a tiny shell wrapper that sets `HTTP_PROXY` to `127.0.0.1:8080` (gitcabin's unprivileged port) and `GH_HOST` to `github.localhost`, then forwards to `gh`. `gh` honors `HTTP_PROXY` for `http://...` URLs (its calls to real `github.com` over HTTPS are unaffected), so a single `cab issue create -R me/cabin --title ...` Just Works without ever touching a privileged port — no `vmnetd`, no port-80 conflicts, no `/etc/hosts` edits. See [`docs/cab.md`](docs/cab.md) for the design.
 
 Stop with `docker compose down`.
-
-### Port 80 is already in use
-
-`gh` hardcodes port 80 for `github.localhost`, so the proxy needs *some* port-80 binding to exist. If you already have something on `127.0.0.1:80`, give gitcabin a dedicated loopback IP:
-
-```sh
-# /etc/hosts (sudo required)
-127.42.0.1   github.localhost api.github.localhost
-```
-
-```yaml
-# compose.override.yml
-services:
-  gitcabin:
-    ports:
-      - "127.42.0.1:80:8000"
-```
-
-`127/8` is all loopback on Linux and macOS, so `127.42.0.1` is essentially free real estate. Run `docker compose up -d` and `gh` will dial port 80 on `127.42.0.1` instead of `127.0.0.1`.
 
 ---
 
@@ -76,41 +64,45 @@ A tiny self-hosted GitHub clone driven by the official `gh` CLI, with all metada
 
 ## Using gitcabin
 
-Once it's running and `gh` is authenticated, everything goes through the regular `gh` commands. Set `GH_HOST=github.localhost` for the session (or pass `-h github.localhost` per call) and the rest looks like talking to GitHub.
+Once the stack is up, every operation is `cab <whatever-gh-subcommand>`. The wrapper points `gh`'s HTTP traffic at the unprivileged proxy port and registers the host with `gh` on first use; otherwise it's a transparent passthrough.
 
 ### Working with issues
 
-Repos are created on first use — there's no separate `gh repo create` step yet. Just create an issue and gitcabin will initialize the bare repo on disk.
+A new repo needs a one-time bare-repo init on disk because `gh` validates the repo exists before sending mutations. `cab repo init` does it via the running container:
 
 ```sh
-export GH_HOST=github.localhost
+cab repo init me/cabin
+```
 
-# Create an issue. The repo is initialized lazily.
-gh issue create -R me/cabin --title "First issue" --body "Try things out"
+After that, the rest is plain `gh`:
+
+```sh
+# Create an issue.
+cab issue create -R me/cabin --title "First issue" --body "Try things out"
 
 # List issues. State filters work; ordering options are accepted but ignored.
-gh issue list -R me/cabin
-gh issue list -R me/cabin --state closed
+cab issue list -R me/cabin
+cab issue list -R me/cabin --state closed
 
 # View one, optionally with its comments.
-gh issue view 1 -R me/cabin
-gh issue view 1 -R me/cabin --comments
+cab issue view 1 -R me/cabin
+cab issue view 1 -R me/cabin --comments
 
 # Edit your own issue. Title or body, separately or together.
-gh issue edit 1 -R me/cabin --title "Renamed"
-gh issue edit 1 -R me/cabin --body "Updated body"
+cab issue edit 1 -R me/cabin --title "Renamed"
+cab issue edit 1 -R me/cabin --body "Updated body"
 
 # Close. Reopening locally isn't wired up yet; manage state with edit.
-gh issue close 1 -R me/cabin
+cab issue close 1 -R me/cabin
 ```
 
 ### Comments
 
 ```sh
-gh issue comment 1 -R me/cabin --body "A reply"
+cab issue comment 1 -R me/cabin --body "A reply"
 
 # Edit your own comment.
-gh api graphql -f query='
+cab api graphql -f query='
   mutation U($id: ID!, $body: String!) {
     updateIssueComment(input: {id: $id, body: $body}) {
       issueComment { body }
@@ -119,14 +111,14 @@ gh api graphql -f query='
 ' -F id=<comment-id> -F body="Edited reply"
 
 # Delete your own comment (or any comment if you have ADMIN on a synced repo).
-gh api graphql -f query='
+cab api graphql -f query='
   mutation D($id: ID!) {
     deleteIssueComment(input: {id: $id}) { clientMutationId }
   }
 ' -F id=<comment-id>
 ```
 
-`gh issue comment --edit-last` and `gh issue comment --delete` are the friendlier wrappers — both work as soon as gh's version supports `updateIssueComment` / `deleteIssueComment` (gh 2.92+).
+`cab issue comment --edit-last` and `cab issue comment --delete` are the friendlier wrappers — both work as soon as gh's version supports `updateIssueComment` / `deleteIssueComment` (gh 2.92+).
 
 ### Editability — who can change what
 
@@ -145,10 +137,10 @@ For repos that have never been linked to a GitHub upstream, the viewer is implic
 
 ### Browsing the data
 
-The compose stack runs an HTML dashboard alongside the API on `127.0.0.1:8080`:
+The compose stack runs an HTML dashboard alongside the API on `127.0.0.1:8081`:
 
 ```sh
-open http://localhost:8080/
+open http://localhost:8081/
 ```
 
 The dashboard reads the same bare repos as the API and lets you browse issues, refs, commits, blames, and tree views. Code refs (`refs/heads/*`) and metadata refs (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`) are presented separately.
@@ -206,14 +198,9 @@ The full design and outstanding gaps live in [`docs/github-sync.md`](docs/github
 
 ## Other deployment modes
 
-The local-only quickstart is one of two documented setups:
+Today there's exactly one shipping mode: **Local-only HTTP via `cab`** (the quickstart above). The current implementation is solid enough that we're prioritizing iteration speed over deployment-mode breadth — multi-device access via Tailscale is documented as a deferred design in [`docs/tls.md`](docs/tls.md) but not yet built.
 
-| Mode | Audience | Cert work | Domain needed |
-|---|---|---|---|
-| Local-only (default) | the user, on this machine | none | `github.localhost` (built in) |
-| Tailnet-shared | anyone on your tailnet | none (Tailscale provisions) | tailnet hostname (built in) |
-
-See [`docs/installation.md`](docs/installation.md) for the Tailscale recipe, the exact `gh auth login` invocation it pairs with, and trade-offs. The design discussion behind these modes — including options ruled out (per-machine local CA, public/team-with-own-domain, DuckDNS) and a shared-wildcard-cert path still under design — lives in [`docs/tls.md`](docs/tls.md).
+The design discussion behind this single-mode decision — including options ruled out (per-machine local CA, public/team-with-own-domain, DuckDNS, shared-wildcard-cert) and the deferred Tailnet-shared mode — lives in [`docs/tls.md`](docs/tls.md).
 
 ## Running natively (no Docker, no gh)
 
