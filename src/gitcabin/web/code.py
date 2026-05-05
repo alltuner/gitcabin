@@ -213,6 +213,56 @@ def list_tree_entries(tree: Tree) -> list[TreeEntry]:
     return trees + blobs
 
 
+def _walk_to_prefix(tree: Tree, prefix: str) -> Tree | None:
+    """Navigate from `tree` down through `prefix` (slash-separated).
+
+    Returns the `Tree` at that subpath, or None if any segment is
+    missing / not a tree. GitPython does this in-process via gitdb —
+    no `git` subprocess.
+    """
+    if not prefix:
+        return tree
+    node: Tree | Blob = tree
+    for segment in prefix.split("/"):
+        if not segment:
+            continue
+        try:
+            node = node[segment]  # type: ignore[index]
+        except KeyError:
+            return None
+        if node.type != "tree":
+            return None
+    return node  # type: ignore[return-value]
+
+
+def _changed_top_level(
+    parent_tree: Tree | None, commit_tree: Tree | None
+) -> set[str]:
+    """Names whose contents differ between `parent_tree` and `commit_tree`.
+
+    Compares one level deep using each entry's `binsha` — git trees are
+    content-addressed, so equal binshas guarantee identical subtrees
+    without needing to recurse. A name on only one side counts as
+    changed. Either argument can be None (the path didn't exist on
+    that side).
+    """
+    if (
+        parent_tree is not None
+        and commit_tree is not None
+        and parent_tree.binsha == commit_tree.binsha
+    ):
+        return set()
+    parent_entries = {e.name: e for e in (parent_tree or ())}
+    commit_entries = {e.name: e for e in (commit_tree or ())}
+    out: set[str] = set()
+    for name in parent_entries.keys() | commit_entries.keys():
+        pe = parent_entries.get(name)
+        ce = commit_entries.get(name)
+        if pe is None or ce is None or pe.binsha != ce.binsha:
+            out.add(name)
+    return out
+
+
 def enrich_with_last_commits(
     commit: Commit,
     entries: list[TreeEntry],
@@ -225,58 +275,49 @@ def enrich_with_last_commits(
     Stops as soon as every entry has been resolved or after max_commits
     walked, whichever comes first. `prefix` is the path inside the tree
     where these entries live (`""` for repo root, `"src/web"` for
-    nested). Each entry's name is joined with the prefix to form the
-    full path that we match against the commit's diff.
+    nested).
 
-    Algorithm: walk commits newest-first. For each commit `c`, take the
-    diff against its first parent (or the root tree if it's the root
-    commit). Any path under `prefix/<entry.name>` whose direct child
-    `<entry.name>` matches an unresolved entry — that entry's last
-    commit is `c`. Mark resolved, continue.
+    Algorithm: walk commits newest-first. For each commit, navigate
+    both its own tree and its first parent's tree down to `prefix`,
+    then compare the resulting subtrees one level deep by entry binsha
+    (git's content-addressing makes "did this commit change anything
+    under prefix" an O(1) `binsha` check; only diverging subtrees pay
+    the per-entry cost). Any name in our pending set that shows a
+    binsha mismatch against the parent — or that exists on only one
+    side — is resolved to this commit's metadata.
 
-    Pure GitPython, no shell-out. For repos with many small files this
-    is O(commits × files-touched-per-commit) which is acceptable for
-    the typical interactive view.
+    Pure GitPython object-graph access via gitdb — no subprocess.
     """
     pending: dict[str, TreeEntry] = {e.name: e for e in entries}
     resolved: dict[str, tuple[str, str, str]] = {}  # name -> (sha, subject, iso)
-    walked = 0
 
     for c in commit.repo.iter_commits(commit.hexsha, max_count=max_commits):
-        walked += 1
         if not pending:
             break
-        # Diff against first parent — for the root commit, diff against an
-        # empty tree (gitpython handles this when there's no parent).
-        if c.parents:
-            try:
-                diff_paths = {item.b_path or item.a_path for item in c.parents[0].diff(c)}
-            except Exception:
-                continue
-        else:
-            diff_paths = {item.path for item in c.tree.traverse() if item.type == "blob"}
 
-        # For each path in this commit, peel off `prefix/`, look at the
-        # first segment, and if it matches a pending entry name, that
-        # entry's last commit is this one.
-        prefix_slash = f"{prefix}/" if prefix else ""
+        # Cheap commit-level skip: if the whole tree is unchanged from
+        # parent, nothing under `prefix` could have changed either.
+        if c.parents and c.tree.binsha == c.parents[0].tree.binsha:
+            continue
+
+        commit_subtree = _walk_to_prefix(c.tree, prefix)
+        if commit_subtree is None:
+            # Prefix doesn't exist in this commit; can't attribute.
+            continue
+        parent_subtree = (
+            _walk_to_prefix(c.parents[0].tree, prefix) if c.parents else None
+        )
+        changed = _changed_top_level(parent_subtree, commit_subtree)
+        if not changed:
+            continue
+
         msg = c.message if isinstance(c.message, str) else c.message.decode()
         subject = msg.split("\n", 1)[0].strip()
         ts = c.authored_datetime.isoformat()
-        for p in diff_paths:
-            if p is None:
-                continue
-            rel = p[len(prefix_slash):] if prefix_slash and p.startswith(prefix_slash) else p
-            if not rel or "/" in rel and not (prefix_slash and p.startswith(prefix_slash)):
-                # Path is outside this prefix's scope; skip.
-                if prefix_slash and not p.startswith(prefix_slash):
-                    continue
-            head = rel.split("/", 1)[0]
-            if head in pending and head not in resolved:
-                resolved[head] = (c.hexsha, subject, ts)
-        # Drop resolved from pending so we exit early.
-        for name in resolved:
-            pending.pop(name, None)
+        for name in changed:
+            if name in pending:
+                resolved[name] = (c.hexsha, subject, ts)
+                pending.pop(name)
 
     out: list[TreeEntry] = []
     for entry in entries:
