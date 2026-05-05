@@ -53,3 +53,60 @@ def short_sha(sha: str | None, length: int = 7) -> str:
     if not sha:
         return ""
     return sha[:length]
+
+
+# Filename → icon-template mapping. Order matters: full-name matches win
+# over extension matches, so e.g. "Dockerfile.dev" gets the Docker icon
+# rather than falling back. New file types: add an entry here and a
+# matching icons/file_<name>.html.
+_FILE_ICON_BY_FULLNAME: dict[str, str] = {
+    "dockerfile": "icons/file_dockerfile.html",
+    "license": "icons/file_license.html",
+    "license.md": "icons/file_license.html",
+    "license.txt": "icons/file_license.html",
+    "readme": "icons/file_md.html",
+    "readme.md": "icons/file_md.html",
+    "readme.markdown": "icons/file_md.html",
+    "makefile": "icons/file_makefile.html",
+    "justfile": "icons/file_makefile.html",
+}
+
+_FILE_ICON_BY_EXTENSION: dict[str, str] = {
+    ".py": "icons/file_python.html",
+    ".pyi": "icons/file_python.html",
+    ".js": "icons/file_js.html",
+    ".mjs": "icons/file_js.html",
+    ".cjs": "icons/file_js.html",
+    ".jsx": "icons/file_js.html",
+    ".ts": "icons/file_ts.html",
+    ".tsx": "icons/file_ts.html",
+    ".json": "icons/file_json.html",
+    ".md": "icons/file_md.html",
+    ".markdown": "icons/file_md.html",
+    ".yaml": "icons/file_yaml.html",
+    ".yml": "icons/file_yaml.html",
+    ".toml": "icons/file_yaml.html",
+    ".css": "icons/file_css.html",
+    ".html": "icons/file_html.html",
+    ".htm": "icons/file_html.html",
+    ".go": "icons/file_go.html",
+    ".rs": "icons/file_rust.html",
+    ".sh": "icons/file_shell.html",
+    ".bash": "icons/file_shell.html",
+    ".zsh": "icons/file_shell.html",
+    ".lock": "icons/file_lock.html",
+}
+
+
+def file_icon(name: str) -> str:
+    """Return the icon-template path for a filename. Falls back to icons/file.html."""
+    if not name:
+        return "icons/file.html"
+    lower = name.lower()
+    full_match = _FILE_ICON_BY_FULLNAME.get(lower)
+    if full_match is not None:
+        return full_match
+    if "." in lower:
+        ext = "." + lower.rsplit(".", 1)[1]
+        return _FILE_ICON_BY_EXTENSION.get(ext, "icons/file.html")
+    return "icons/file.html"
