@@ -26,6 +26,8 @@
   <div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">File too large to render inline.</div>
   {% elif rendered.is_binary %}
   <div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Binary file — preview not available.</div>
+  {% elif rendered.is_empty %}
+  <div class="p-8 text-center text-sm italic text-gray-500 dark:text-gray-400">Empty file.</div>
   {% else %}
   {{ rendered.highlighted_html | safe }}
   {% endif %}

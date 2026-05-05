@@ -53,6 +53,7 @@ class RenderedBlob:
     size: int
     is_binary: bool
     is_too_large: bool
+    is_empty: bool
     highlighted_html: str | None
     raw_text: str | None
 
@@ -185,14 +186,27 @@ def render_markdown(text: str) -> str:
 
 
 def render_blob(blob: Blob) -> RenderedBlob:
-    """Decode and syntax-highlight a blob, with size and binary fallbacks."""
+    """Decode and syntax-highlight a blob, with size, empty, and binary fallbacks."""
     raw = blob.data_stream.read()
+    if len(raw) == 0:
+        # Empty file — skip the pygments table entirely (it would emit a
+        # phantom "1" line-number gutter for a single empty line).
+        return RenderedBlob(
+            name=blob.name,
+            size=0,
+            is_binary=False,
+            is_too_large=False,
+            is_empty=True,
+            highlighted_html=None,
+            raw_text="",
+        )
     if len(raw) > MAX_BLOB_RENDER_BYTES:
         return RenderedBlob(
             name=blob.name,
             size=blob.size,
             is_binary=False,
             is_too_large=True,
+            is_empty=False,
             highlighted_html=None,
             raw_text=None,
         )
@@ -204,6 +218,7 @@ def render_blob(blob: Blob) -> RenderedBlob:
             size=blob.size,
             is_binary=True,
             is_too_large=False,
+            is_empty=False,
             highlighted_html=None,
             raw_text=None,
         )
@@ -216,6 +231,7 @@ def render_blob(blob: Blob) -> RenderedBlob:
             size=blob.size,
             is_binary=True,
             is_too_large=False,
+            is_empty=False,
             highlighted_html=None,
             raw_text=None,
         )
@@ -232,6 +248,7 @@ def render_blob(blob: Blob) -> RenderedBlob:
         size=blob.size,
         is_binary=False,
         is_too_large=False,
+        is_empty=False,
         highlighted_html=html,
         raw_text=text,
     )
