@@ -3,7 +3,7 @@
 
 // cab is a thin shim around gh. It exists because gh hardcodes port 80 for
 // `github.localhost`, which forces a privileged-port binding on the host. cab
-// sets HTTP_PROXY to gitcabin's unprivileged port (8080 by default) so gh's
+// sets HTTP_PROXY to gitcabin's unprivileged port (18080 by default) so gh's
 // http://api.github.localhost/ requests round-trip through loopback to
 // gitcabin without anyone touching port 80.
 //
@@ -17,11 +17,11 @@
 //
 // Env knobs:
 //
-//   GITCABIN_PROXY    full proxy URL (default http://127.0.0.1:${GITCABIN_PORT:-8080}).
-//                     Override to `http://gitcabin-api:8000` when running inside
+//   GITCABIN_PROXY    full proxy URL (default http://127.0.0.1:${GITCABIN_PORT:-18080}).
+//                     Override to `http://gitcabin:8000` when running inside
 //                     the gitcabin compose network.
 //   GITCABIN_PORT     shorthand: builds the default GITCABIN_PROXY when GITCABIN_PROXY
-//                     isn't set. Default 8080.
+//                     isn't set. Default 18080.
 //   GITCABIN_HOST     hostname gh registers gitcabin under (default github.localhost).
 //                     Almost never needs to change — github.localhost is the one
 //                     hostname gh special-cases for plain HTTP.
@@ -50,7 +50,7 @@ import (
 )
 
 const (
-	defaultPort = "8080"
+	defaultPort = "18080"
 	defaultHost = "github.localhost"
 	defaultUser = "cab"
 	// gitcabin doesn't verify tokens — anyone reaching the port is the owner —
@@ -93,7 +93,7 @@ func main() {
 // proxyURL resolves the URL gh's HTTP traffic is forwarded through. Two
 // shapes: a full override via GITCABIN_PROXY (used in the docker image to
 // point at the in-network service hostname), or the default
-// http://127.0.0.1:${GITCABIN_PORT:-8080} for host-side use.
+// http://127.0.0.1:${GITCABIN_PORT:-18080} for host-side use.
 func proxyURL() string {
 	if v := os.Getenv("GITCABIN_PROXY"); v != "" {
 		return v
@@ -406,7 +406,7 @@ Usage:
 
 Env:
   GITCABIN_PROXY    full proxy URL (overrides GITCABIN_PORT)
-  GITCABIN_PORT     gitcabin's host port (default 8080)
+  GITCABIN_PORT     gitcabin's host port (default 18080)
   GITCABIN_HOST     hostname gh registers gitcabin under (default github.localhost)
   GITCABIN_DATA_DIR data dir for cab repo init (default ./data)
 

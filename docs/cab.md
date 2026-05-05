@@ -18,7 +18,7 @@ For specific cab subcommands (`status`, `login`, `logout`, `repo init`) the bina
 
 `gh` is a Go program. Go's `net/http` honors `HTTP_PROXY` for `http://...` URLs by default. When `gh -h github.localhost` constructs `http://api.github.localhost/`, the request is sent to the proxy in [absolute-form per RFC 7230](https://www.rfc-editor.org/rfc/rfc7230#section-5.3.2):
 
-- `gh` dials the proxy URL (`127.0.0.1:8080` on host, `gitcabin-api:8000` inside the docker network).
+- `gh` dials the proxy URL (`127.0.0.1:18080` on host, `gitcabin:8000` inside the docker network).
 - The HTTP request line reads `GET http://api.github.localhost/ HTTP/1.1`.
 - gitcabin (granian + hyper underneath) accepts absolute-form Request-URIs and routes by path.
 - Cleartext, no certs, no privileged ports anywhere on the host.
@@ -39,7 +39,7 @@ Before `cab`, the L1 (local-only HTTP) mode required:
 
 After `cab`:
 
-- gitcabin binds an unprivileged port (8080 by default).
+- gitcabin binds an unprivileged port (18080 by default).
 - Any port-80 conflict is irrelevant because we don't bind 80 anywhere.
 - `vmnetd` is not in the path.
 - The `/etc/hosts` workaround is unnecessary and has been deleted from the README.
@@ -115,8 +115,8 @@ None of these are blockers. They're "v0.1 polish" once we have a release worth i
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `GITCABIN_PROXY` | (unset) | Full proxy URL. Overrides `GITCABIN_PORT`. Used in the docker image to point at `http://gitcabin-api:8000`. |
-| `GITCABIN_PORT` | `8080` | Host port the local gitcabin instance binds. Used to compute `GITCABIN_PROXY` when the latter isn't set. |
+| `GITCABIN_PROXY` | (unset) | Full proxy URL. Overrides `GITCABIN_PORT`. Used in the docker image to point at `http://gitcabin:8000`. |
+| `GITCABIN_PORT` | `18080` | Host port the local gitcabin instance binds. Used to compute `GITCABIN_PROXY` when the latter isn't set. |
 | `GITCABIN_HOST` | `github.localhost` | Hostname `gh` uses for the local instance. Almost never needs to change — `github.localhost` is the one hostname gh special-cases for plain HTTP. |
 | `GITCABIN_DATA_DIR` | `./data` | Where `cab repo init` looks for the gitcabin data directory. Only relevant on the host. |
 

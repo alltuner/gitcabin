@@ -1,8 +1,8 @@
-# Local-dev compose: container runs granian unprivileged on port 8000 and
-# Docker Desktop publishes that to the host on an unprivileged port (8080).
-# The `cab` wrapper sets HTTP_PROXY so `gh -h github.localhost` reaches us
-# there instead of dialing the hardcoded port 80 — no privileged-port
-# binding anywhere on the host.
+# Local-dev compose: one service, one host port. The container runs the
+# combined ASGI app (gitcabin.combined:create_app) which dispatches by Host
+# header — `Host: api.github.localhost` (cab + gh traffic) hits the REST +
+# GraphQL API; everything else (browsers) hits the HTML dashboard. No
+# privileged ports anywhere; cab forwards via HTTP_PROXY to 8080.
 #
 # Use `docker compose watch` for the dev loop — Compose syncs source into
 # the container and restarts granian on every edit. Plain `docker compose up`
@@ -11,16 +11,29 @@
 name: gitcabin
 
 services:
-  gitcabin-api:
+  gitcabin:
     build: .
-    container_name: gitcabin-api
+    container_name: gitcabin
+    command:
+      - "uv"
+      - "run"
+      - "--no-dev"
+      - "granian"
+      - "--interface"
+      - "asgi"
+      - "--factory"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "gitcabin.combined:create_app"
     ports:
-      # 127.0.0.1-bound on purpose: keeps gitcabin off the LAN. The host
-      # port (8080) is the "well-known" cab proxy port — users invoke
-      # `cab issue create ...` and the wrapper points HTTP_PROXY here.
-      # Override with GITCABIN_PORT if you need a different port and pass
-      # the same value to `cab` (it reads GITCABIN_PORT too).
-      - "127.0.0.1:8080:8000"
+      # 127.0.0.1-bound on purpose: keeps gitcabin off the LAN. cab points
+      # HTTP_PROXY here for gh traffic; browsers reach the dashboard at
+      # http://localhost:18080/. One port covers both because the combined
+      # app routes by Host header. 18080 (rather than the more common 8080)
+      # to avoid colliding with the long tail of dev-tool defaults.
+      - "127.0.0.1:18080:8000"
     volumes:
       # Bare repos (code + metadata refs) live here. Host bind mount on
       # purpose: David can `cd ./data/repos/owner/name.git && git log` to
@@ -36,47 +49,6 @@ services:
           target: /app/src
         # Anything that changes the dependency graph or the image itself
         # forces a full rebuild — uv sync runs as part of the image build.
-        - action: rebuild
-          path: ./pyproject.toml
-        - action: rebuild
-          path: ./Dockerfile
-
-  # The HTML dashboard runs as its own granian process so the API and the
-  # web UI keep separate routing concerns. Same image, same data volume,
-  # different ASGI factory + port.
-  gitcabin-dashboard:
-    build: .
-    container_name: gitcabin-dashboard
-    command:
-      - "uv"
-      - "run"
-      - "--no-dev"
-      - "granian"
-      - "--interface"
-      - "asgi"
-      - "--factory"
-      - "--host"
-      - "0.0.0.0"
-      - "--port"
-      - "8000"
-      - "gitcabin.web.app:create_app"
-    ports:
-      # Browse at http://localhost:8081/ once the stack is up. 127.0.0.1-bound
-      # so the dashboard isn't visible to other hosts on the LAN. Port 8081
-      # because 8080 is the API/proxy port the cab wrapper sends gh through.
-      - "127.0.0.1:8081:8000"
-    volumes:
-      # The dashboard's POST handlers (comment / close / reopen) write to the
-      # same bare repos as the API; CAS via `git update-ref REF NEW OLD` is
-      # what keeps concurrent writers from clobbering each other, so two
-      # writer processes against the same volume is by-design safe.
-      - ./data:/app/data
-    restart: unless-stopped
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./src
-          target: /app/src
         - action: rebuild
           path: ./pyproject.toml
         - action: rebuild

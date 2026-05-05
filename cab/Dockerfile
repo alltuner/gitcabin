@@ -42,10 +42,11 @@ ENV HOME=/home/cab
 ENV XDG_CONFIG_HOME=/home/cab/.config
 
 # Defaults that match the gitcabin compose stack: when this container joins
-# the gitcabin network, the API service is reachable as `gitcabin-api:8000`.
-# We point the proxy there (HTTP_PROXY) but keep GH_HOST=github.localhost so
-# gh stays on its plain-HTTP fast path.
-ENV GITCABIN_PROXY=http://gitcabin-api:8000
+# the gitcabin network, the combined service is reachable as `gitcabin:8000`.
+# Point HTTP_PROXY there and keep GH_HOST=github.localhost so gh's request
+# Host header is `api.github.localhost` — that's what makes the combined
+# app's Host-based dispatcher route us to the API side.
+ENV GITCABIN_PROXY=http://gitcabin:8000
 ENV GITCABIN_HOST=github.localhost
 
 # Pre-seed gh's hosts.yml so cab's hot path (host already registered? skip

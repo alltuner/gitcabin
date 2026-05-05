@@ -30,7 +30,7 @@ The default deploy is local-only over HTTP via `github.localhost`. One command b
 docker compose watch
 ```
 
-Compose builds the image, runs the API on `127.0.0.1:8080` and the HTML dashboard on `127.0.0.1:8081`, and reloads on every source edit. Plain `docker compose up --build` works too if you don't want autoreload. **No privileged ports anywhere** — neither the host nor the daemon needs to bind 80 or 443.
+Compose builds the image, runs a single `gitcabin` service bound to `127.0.0.1:18080`, and reloads on every source edit. Plain `docker compose up --build` works too if you don't want autoreload. The container fronts both the REST/GraphQL API and the HTML dashboard via Host-header dispatch — `cab`/`gh` traffic (Host: `api.github.localhost`) hits the API; browser traffic hits the dashboard. **One unprivileged port** — neither the host nor the daemon binds 80 or 443.
 
 `cab` is the wrapper that points `gh`'s HTTP traffic at gitcabin and registers the host with `gh` on first use. Two ways to invoke it:
 
@@ -57,7 +57,7 @@ cab issue create -R me/cabin --title "First issue" --body "Try things out"
 cab issue list -R me/cabin
 ```
 
-`cab` sets `HTTP_PROXY` to `127.0.0.1:8080` (gitcabin's unprivileged port; or `gitcabin-api:8000` from inside the docker network) and `GH_HOST` to `github.localhost`, then `exec`s `gh`. `gh` honors `HTTP_PROXY` for `http://...` URLs (its calls to real `github.com` over HTTPS are unaffected), so a single `cab issue create -R me/cabin --title ...` Just Works without ever touching a privileged port — no `vmnetd`, no port-80 conflicts, no `/etc/hosts` edits. See [`docs/cab.md`](docs/cab.md) for the design.
+`cab` sets `HTTP_PROXY` to `127.0.0.1:18080` (gitcabin's unprivileged port; or `gitcabin:8000` from inside the docker network) and `GH_HOST` to `github.localhost`, then `exec`s `gh`. `gh` honors `HTTP_PROXY` for `http://...` URLs (its calls to real `github.com` over HTTPS are unaffected), so a single `cab issue create -R me/cabin --title ...` Just Works without ever touching a privileged port — no `vmnetd`, no port-80 conflicts, no `/etc/hosts` edits. See [`docs/cab.md`](docs/cab.md) for the design.
 
 Stop with `docker compose down`.
 
@@ -148,10 +148,10 @@ For repos that have never been linked to a GitHub upstream, the viewer is implic
 
 ### Browsing the data
 
-The compose stack runs an HTML dashboard alongside the API on `127.0.0.1:8081`:
+The dashboard lives at the same port as the API (`127.0.0.1:18080`), routed by Host header — browsers hit the dashboard, `cab`/`gh` hits the API:
 
 ```sh
-open http://localhost:8081/
+open http://localhost:18080/
 ```
 
 The dashboard reads the same bare repos as the API and lets you browse issues, refs, commits, blames, and tree views. Code refs (`refs/heads/*`) and metadata refs (`refs/issues/*`, `refs/prs/*`, `refs/meta/*`) are presented separately.

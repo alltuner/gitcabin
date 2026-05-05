@@ -12,11 +12,11 @@ This concentration is intentional. The single mode is solid enough to iterate on
 
 The default. `gh` dials `http://api.github.localhost/` over plain HTTP (the one URL shape where `gh` skips TLS — see `internal/ghinstance/host.go` in the gh source). Only this machine can reach gitcabin, and there are no certs to manage.
 
-The wrinkle: `gh` hardcodes port 80 for `github.localhost`, which would normally force the host to bind a privileged port. We sidestep that with `cab` — a 90-line shell wrapper (`scripts/cab`, [design notes](cab.md)) that points `gh`'s `HTTP_PROXY` at gitcabin's unprivileged port (8080 by default) so cleartext requests round-trip through loopback in absolute-URI form. No host-side privileged-port binding, no `vmnetd`, no `/etc/hosts` workarounds.
+The wrinkle: `gh` hardcodes port 80 for `github.localhost`, which would normally force the host to bind a privileged port. We sidestep that with [`cab`](cab.md) — a small Go binary that points `gh`'s `HTTP_PROXY` at gitcabin's unprivileged port (18080 by default) so cleartext requests round-trip through loopback in absolute-URI form. No host-side privileged-port binding, no `vmnetd`, no `/etc/hosts` workarounds.
 
 ### Setup
 
-`compose.yml` binds the gitcabin API to `127.0.0.1:8080` and the dashboard to `127.0.0.1:8081` (both unprivileged). Service names are `gitcabin-api` and `gitcabin-dashboard`:
+`compose.yml` runs a single `gitcabin` service bound to `127.0.0.1:18080` (unprivileged). The combined ASGI app behind that port routes API traffic (Host: `api.github.localhost`) and dashboard traffic (any other Host) to the right handler:
 
 ```sh
 docker compose up -d
@@ -68,4 +68,4 @@ cab api /
 cab api graphql -f query='query { viewer { login } }'
 ```
 
-If `cab auth status` returns `connection refused`, the proxy isn't reachable on `127.0.0.1:8080` — verify the compose stack is running. If it returns a 404, the proxy is forwarding to something other than gitcabin; double-check `compose.yml`. There is no TLS error path in this mode (it's plain HTTP throughout).
+If `cab auth status` returns `connection refused`, the proxy isn't reachable on `127.0.0.1:18080` — verify the compose stack is running. If it returns a 404, the proxy is forwarding to something other than gitcabin; double-check `compose.yml`. There is no TLS error path in this mode (it's plain HTTP throughout).
