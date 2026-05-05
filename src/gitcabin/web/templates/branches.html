@@ -20,14 +20,12 @@
 {% endif %}
 </div>
 
-<h2 class="mb-3 text-lg font-semibold">Tags</h2>
 {% if tags %}
+<h2 class="mb-3 text-lg font-semibold">Tags</h2>
 {% call ui.bordered_list() %}
   {% for ref in tags %}
   {% include "_tag_row.html" %}
   {% endfor %}
 {% endcall %}
-{% else %}
-{% call ui.empty_state() %}No tags.{% endcall %}
 {% endif %}
 {% endblock %}
