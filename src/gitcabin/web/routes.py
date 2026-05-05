@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import mimetypes
 from html import escape as html_escape
 from pathlib import Path
+from posixpath import basename as posix_basename
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -312,6 +314,41 @@ def build_router(settings: Settings) -> APIRouter:
             **_repo_ctx(bare),
         )
 
+    def _serve_blob_bytes(
+        project: str, name: str, ref: str, path: str, *, attachment: bool
+    ) -> Response:
+        """Serve a blob's raw bytes — inline (raw view) or as a download.
+
+        For raw, text-shaped files are served as `text/plain; charset=utf-8`
+        so browsers display them inline rather than offering to download. For
+        downloads, force `application/octet-stream` regardless of file type
+        and add `Content-Disposition: attachment` with the basename.
+        """
+        bare = _open_repo(settings, project, name)
+        commit = code.resolve_ref(bare, ref)
+        if commit is None:
+            raise HTTPException(status_code=404, detail="ref not found")
+        node = code.walk_tree_at_path(commit, path)
+        if node is None or node.type != "blob":
+            raise HTTPException(status_code=404, detail="blob not found")
+        data: bytes = node.data_stream.read()
+        filename = posix_basename(path) or name
+        if attachment:
+            media_type = "application/octet-stream"
+            disposition = f'attachment; filename="{filename}"'
+        else:
+            guessed, _ = mimetypes.guess_type(filename)
+            if guessed is None or guessed.startswith("text/"):
+                media_type = "text/plain; charset=utf-8"
+            else:
+                media_type = guessed
+            disposition = f'inline; filename="{filename}"'
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={"Content-Disposition": disposition},
+        )
+
     def _render_commits(
         request: Request, project: str, name: str, ref: str
     ) -> HTMLResponse:
@@ -537,6 +574,20 @@ def build_router(settings: Settings) -> APIRouter:
     ) -> HTMLResponse:
         return _render_blob(request, project=owner, name=name, ref=ref, path=path)
 
+    @router.get("/{owner}/{name}/raw/{ref}/{path:path}", include_in_schema=False)
+    def project_raw(owner: str, name: str, ref: str, path: str) -> Response:
+        return _serve_blob_bytes(
+            project=owner, name=name, ref=ref, path=path, attachment=False
+        )
+
+    @router.get(
+        "/{owner}/{name}/download/{ref}/{path:path}", include_in_schema=False
+    )
+    def project_download(owner: str, name: str, ref: str, path: str) -> Response:
+        return _serve_blob_bytes(
+            project=owner, name=name, ref=ref, path=path, attachment=True
+        )
+
     @router.get("/{owner}/{name}/commits/{ref}", include_in_schema=False)
     def project_commits(
         request: Request, owner: str, name: str, ref: str
@@ -586,6 +637,18 @@ def build_router(settings: Settings) -> APIRouter:
     ) -> HTMLResponse:
         return _render_blob(request, project="", name=name, ref=ref, path=path)
 
+    @router.get("/{name}/raw/{ref}/{path:path}", include_in_schema=False)
+    def root_raw(name: str, ref: str, path: str) -> Response:
+        return _serve_blob_bytes(
+            project="", name=name, ref=ref, path=path, attachment=False
+        )
+
+    @router.get("/{name}/download/{ref}/{path:path}", include_in_schema=False)
+    def root_download(name: str, ref: str, path: str) -> Response:
+        return _serve_blob_bytes(
+            project="", name=name, ref=ref, path=path, attachment=True
+        )
+
     @router.get("/{name}/commits/{ref}", include_in_schema=False)
     def root_commits(request: Request, name: str, ref: str) -> HTMLResponse:
         return _render_commits(request, project="", name=name, ref=ref)
@@ -606,67 +669,104 @@ def build_router(settings: Settings) -> APIRouter:
 
     # ---- POST actions (project + root) --------------------------------- #
 
-    def _comment_redirect(project: str, name: str, number: int) -> RedirectResponse:
+    def _post_action_response(
+        request: Request, project: str, name: str, number: int
+    ) -> Response:
+        """Return the post-mutation view of an issue.
+
+        For htmx-driven submits (`HX-Request: true`) re-render the issue
+        page directly so the client can swap `<main>` without a redirect
+        round-trip — the GET that a 303 would trigger can hit the browser
+        cache (`_render` sets `private, max-age=10`) and serve a stale
+        pre-mutation page, which is what made the close/reopen state appear
+        to require a manual refresh.
+
+        `HX-Push-Url` rewrites the address bar back to the canonical
+        `/.../issues/{number}` so the URL stays clean even though the
+        request went to `/close`, `/reopen`, or `/comments`.
+
+        Non-htmx submits (curl, JS off) still get the 303 to the issue
+        page — the browser-cache staleness is acceptable there since the
+        round-trip already drops them on a fresh URL.
+        """
+        if request.headers.get("HX-Request") == "true":
+            response = _render_issue(
+                request, project=project, name=name, number=number
+            )
+            response.headers["HX-Push-Url"] = (
+                f"{_build_repo_url_prefix(project, name)}/issues/{number}"
+            )
+            return response
         return RedirectResponse(
             url=f"{_build_repo_url_prefix(project, name)}/issues/{number}",
             status_code=303,
         )
 
+    def _do_add_comment(
+        request: Request, project: str, name: str, number: int, body: str
+    ) -> Response:
+        bare = _open_repo(settings, project, name)
+        if body.strip():
+            if (
+                add_comment(bare, number=number, body=body, author=settings.viewer_login)
+                is None
+            ):
+                raise HTTPException(status_code=404, detail="issue not found")
+        return _post_action_response(request, project, name, number)
+
+    def _do_close(
+        request: Request, project: str, name: str, number: int
+    ) -> Response:
+        bare = _open_repo(settings, project, name)
+        if close_issue(bare, number=number, actor=settings.viewer_login) is None:
+            raise HTTPException(status_code=404, detail="issue not found")
+        return _post_action_response(request, project, name, number)
+
+    def _do_reopen(
+        request: Request, project: str, name: str, number: int
+    ) -> Response:
+        bare = _open_repo(settings, project, name)
+        if reopen_issue(bare, number=number, actor=settings.viewer_login) is None:
+            raise HTTPException(status_code=404, detail="issue not found")
+        return _post_action_response(request, project, name, number)
+
     @router.post(
         "/{owner}/{name}/issues/{number}/comments", include_in_schema=False
     )
     def project_add_comment(
-        owner: str, name: str, number: int, body: str = Form(...)
-    ) -> RedirectResponse:
-        bare = _open_repo(settings, owner, name)
-        if body.strip():
-            if (
-                add_comment(bare, number=number, body=body, author=settings.viewer_login)
-                is None
-            ):
-                raise HTTPException(status_code=404, detail="issue not found")
-        return _comment_redirect(owner, name, number)
+        request: Request,
+        owner: str,
+        name: str,
+        number: int,
+        body: str = Form(...),
+    ) -> Response:
+        return _do_add_comment(request, owner, name, number, body)
 
     @router.post("/{name}/issues/{number}/comments", include_in_schema=False)
     def root_add_comment(
-        name: str, number: int, body: str = Form(...)
-    ) -> RedirectResponse:
-        bare = _open_repo(settings, "", name)
-        if body.strip():
-            if (
-                add_comment(bare, number=number, body=body, author=settings.viewer_login)
-                is None
-            ):
-                raise HTTPException(status_code=404, detail="issue not found")
-        return _comment_redirect("", name, number)
+        request: Request, name: str, number: int, body: str = Form(...)
+    ) -> Response:
+        return _do_add_comment(request, "", name, number, body)
 
     @router.post("/{owner}/{name}/issues/{number}/close", include_in_schema=False)
-    def project_close(owner: str, name: str, number: int) -> RedirectResponse:
-        bare = _open_repo(settings, owner, name)
-        if close_issue(bare, number=number, actor=settings.viewer_login) is None:
-            raise HTTPException(status_code=404, detail="issue not found")
-        return _comment_redirect(owner, name, number)
+    def project_close(
+        request: Request, owner: str, name: str, number: int
+    ) -> Response:
+        return _do_close(request, owner, name, number)
 
     @router.post("/{name}/issues/{number}/close", include_in_schema=False)
-    def root_close(name: str, number: int) -> RedirectResponse:
-        bare = _open_repo(settings, "", name)
-        if close_issue(bare, number=number, actor=settings.viewer_login) is None:
-            raise HTTPException(status_code=404, detail="issue not found")
-        return _comment_redirect("", name, number)
+    def root_close(request: Request, name: str, number: int) -> Response:
+        return _do_close(request, "", name, number)
 
     @router.post("/{owner}/{name}/issues/{number}/reopen", include_in_schema=False)
-    def project_reopen(owner: str, name: str, number: int) -> RedirectResponse:
-        bare = _open_repo(settings, owner, name)
-        if reopen_issue(bare, number=number, actor=settings.viewer_login) is None:
-            raise HTTPException(status_code=404, detail="issue not found")
-        return _comment_redirect(owner, name, number)
+    def project_reopen(
+        request: Request, owner: str, name: str, number: int
+    ) -> Response:
+        return _do_reopen(request, owner, name, number)
 
     @router.post("/{name}/issues/{number}/reopen", include_in_schema=False)
-    def root_reopen(name: str, number: int) -> RedirectResponse:
-        bare = _open_repo(settings, "", name)
-        if reopen_issue(bare, number=number, actor=settings.viewer_login) is None:
-            raise HTTPException(status_code=404, detail="issue not found")
-        return _comment_redirect("", name, number)
+    def root_reopen(request: Request, name: str, number: int) -> Response:
+        return _do_reopen(request, "", name, number)
 
     return router
 

@@ -91,6 +91,38 @@ def test_blob_page_links_to_blame(
 ) -> None:
     response = web_client.get("/octocat/hello/blob/main/README.md")
     assert "/octocat/hello/blame/main/README.md" in response.text
+    # Also wires up raw + download links so users can grab file bytes.
+    assert "/octocat/hello/raw/main/README.md" in response.text
+    assert "/octocat/hello/download/main/README.md" in response.text
+
+
+def test_raw_serves_text_inline(
+    web_client: TestClient, history: tuple[BareRepo, str, str]
+) -> None:
+    response = web_client.get("/octocat/hello/raw/main/README.md")
+    assert response.status_code == 200
+    # Text is served as text/plain so browsers display it inline rather
+    # than offering to download — same shape as GitHub's `/raw/` paths.
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "inline" in response.headers["content-disposition"]
+    assert response.content == b"# v2\n"
+
+
+def test_download_forces_attachment(
+    web_client: TestClient, history: tuple[BareRepo, str, str]
+) -> None:
+    response = web_client.get("/octocat/hello/download/main/README.md")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert 'attachment; filename="README.md"' in response.headers["content-disposition"]
+    assert response.content == b"# v2\n"
+
+
+def test_raw_404_for_missing_blob(
+    web_client: TestClient, history: tuple[BareRepo, str, str]
+) -> None:
+    response = web_client.get("/octocat/hello/raw/main/no-such-file")
+    assert response.status_code == 404
 
 
 def test_diff_truncates_when_oversized(web_client: TestClient, init_repo) -> None:
