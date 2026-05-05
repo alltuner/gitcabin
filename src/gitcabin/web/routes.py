@@ -18,9 +18,9 @@ from gitcabin.storage.issues import (
     IssueState,
     add_comment,
     close_issue,
-    get_issue,
+    get_any_issue,
     list_all_issues,
-    list_comments,
+    list_any_comments,
     reopen_issue,
 )
 from gitcabin.storage import layout
@@ -476,10 +476,10 @@ def build_router(settings: Settings) -> APIRouter:
         request: Request, project: str, name: str, number: int
     ) -> HTMLResponse:
         bare = _open_repo(settings, project, name)
-        issue = get_issue(bare, number)
+        issue = get_any_issue(bare, number)
         if issue is None:
             raise HTTPException(status_code=404, detail="issue not found")
-        comments = list_comments(bare, number)
+        comments = list_any_comments(bare, number)
         return _render(
             request,
             settings,
