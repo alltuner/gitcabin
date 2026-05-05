@@ -29,7 +29,8 @@
   </div>
 </div>
 
-<h3 class="mb-2 text-sm font-semibold">Changed files ({{ detail.changed_paths | length }})</h3>
+{% set _changed_count = detail.changed_paths | length %}
+<h3 class="mb-2 text-sm font-semibold">Changed {{ "files" if _changed_count != 1 else "file" }} ({{ _changed_count }})</h3>
 <div class="mb-6 divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
   {% for change_type, path in detail.changed_paths %}
   <div class="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-900">
