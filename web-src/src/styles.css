@@ -273,6 +273,17 @@ html { scrollbar-gutter: stable; }
 :where([data-theme=dark]) .diff-remove .diff-marker,
 :where([data-theme=dark]) .diff-remove .diff-text { color: rgb(255, 158, 165); }
 
+/* Side-by-side ("split") diff layout. Two paired columns of [no | text]
+   share the table; the new-side gutter gets a left border so the eye can
+   track the column boundary, and each text cell caps at ~50% so a long
+   line on one side doesn't squeeze the other. `.diff-blank` removes the
+   row tint when one side has no counterpart (a removal with no paired
+   addition or vice versa). */
+.diff-table-split { table-layout: fixed; }
+.diff-table-split .diff-text { width: 50%; }
+.diff-table-split .diff-no-new { border-left: 1px solid var(--color-base-300); }
+.diff-blank { background: transparent; }
+
 /* Blame table — needs a custom multi-column layout that Tailwind utility
    classes alone don't make obvious. */
 table.blame {

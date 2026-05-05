@@ -50,6 +50,9 @@ _templates.env.filters["short_sha"] = short_sha
 _templates.env.filters["file_icon"] = file_icon
 _templates.env.filters["ref_label"] = ref_label
 _templates.env.filters["pretty_date"] = pretty_date
+# `paired_lines` reshapes a hunk's lines into side-by-side rows for the
+# split-diff template. Lives in `code` because it operates on DiffLine.
+_templates.env.filters["paired"] = code.paired_lines
 
 
 def _repo_ctx(bare: BareRepo, issues: list | None = None) -> dict[str, object]:

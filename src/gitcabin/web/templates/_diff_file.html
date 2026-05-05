@@ -1,4 +1,4 @@
-{# ABOUTME: One file's diff — header + per-hunk colored line table. Reads `file` (DiffFile). #}
+{# ABOUTME: One file's diff — header + per-hunk side-by-side rendering. Reads `file` (DiffFile). #}
 <details open class="diff-file mb-4 overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
   <summary class="flex cursor-pointer items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm dark:border-gray-800 dark:bg-gray-900">
     <span class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ file.change_type }}</span>
@@ -15,14 +15,18 @@
   {% elif not file.hunks %}
   <div class="px-4 py-3 text-xs italic text-gray-500 dark:text-gray-400">Empty diff.</div>
   {% else %}
-  <table class="diff-table">
+  {# Split view: two paired columns, each carrying its own line-number gutter
+     + text. `paired` reshapes the hunk's flat unified-diff lines into
+     (left, right) tuples so adjacent removals + additions align. #}
+  <table class="diff-table diff-table-split">
     {% for hunk in file.hunks %}
-    <tr class="diff-hunk-header"><td colspan="3"><span class="font-mono text-xs">{{ hunk.header }}</span></td></tr>
-    {% for line in hunk.lines %}
-    <tr class="diff-row diff-{{ line.kind }}">
-      <td class="diff-no">{{ line.old_no if line.old_no is not none else "" }}</td>
-      <td class="diff-no">{{ line.new_no if line.new_no is not none else "" }}</td>
-      <td class="diff-text"><span class="diff-marker">{% if line.kind == 'add' %}+{% elif line.kind == 'remove' %}-{% else %}&nbsp;{% endif %}</span>{{ line.text }}</td>
+    <tr class="diff-hunk-header"><td colspan="4"><span class="font-mono text-xs">{{ hunk.header }}</span></td></tr>
+    {% for left, right in hunk.lines | paired %}
+    <tr class="diff-row">
+      <td class="diff-no diff-no-old {% if left %}diff-{{ left.kind }}{% else %}diff-blank{% endif %}">{{ left.old_no if left and left.old_no is not none else "" }}</td>
+      <td class="diff-text {% if left %}diff-{{ left.kind }}{% else %}diff-blank{% endif %}"><span class="diff-marker">{% if left and left.kind == 'remove' %}-{% else %}&nbsp;{% endif %}</span>{{ left.text if left else "" }}</td>
+      <td class="diff-no diff-no-new {% if right %}diff-{{ right.kind }}{% else %}diff-blank{% endif %}">{{ right.new_no if right and right.new_no is not none else "" }}</td>
+      <td class="diff-text {% if right %}diff-{{ right.kind }}{% else %}diff-blank{% endif %}"><span class="diff-marker">{% if right and right.kind == 'add' %}+{% else %}&nbsp;{% endif %}</span>{{ right.text if right else "" }}</td>
     </tr>
     {% endfor %}
     {% endfor %}

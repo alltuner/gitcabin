@@ -40,18 +40,19 @@ def test_branches_page_lists_heads_and_tags(
     assert "default" in body  # the pill on main
 
 
-def test_commit_view_renders_unified_diff(
+def test_commit_view_renders_split_diff(
     web_client: TestClient, history: tuple[BareRepo, str, str]
 ) -> None:
     _, _, second = history
     response = web_client.get(f"/octocat/hello/commit/{second}")
     assert response.status_code == 200
     body = response.text
-    # Diffs render as a structured table with diff-add / diff-remove rows.
-    assert 'class="diff-table"' in body
+    # Diff renders as a side-by-side table with paired remove/add cells.
+    assert "diff-table-split" in body
     assert "diff-add" in body or "diff-remove" in body
-    # The actual diff content is present somewhere in the page.
+    # Old + new content both appear, so a real edit (v1 → v2) is paired.
     assert "v2" in body
+    assert "v1" in body
 
 
 def test_commit_view_initial_commit_has_no_diff(

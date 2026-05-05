@@ -539,6 +539,43 @@ def commit_detail(commit: Commit) -> CommitDetail:
 _HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
+def paired_lines(
+    lines: tuple[DiffLine, ...],
+) -> tuple[tuple[DiffLine | None, DiffLine | None], ...]:
+    """Reshape unified-diff lines into (left, right) pairs for side-by-side
+    rendering.
+
+    Walks the hunk preserving order, accumulating runs of remove / add lines
+    and flushing them as pairs when context arrives. Within a flush, removes
+    and adds zip 1-to-1 up to the shorter run; trailing extras land in their
+    own row with the other side empty. Mirrors the heuristic GitHub uses to
+    align edits.
+    """
+    rows: list[tuple[DiffLine | None, DiffLine | None]] = []
+    pending_removes: list[DiffLine] = []
+    pending_adds: list[DiffLine] = []
+
+    def flush() -> None:
+        n = max(len(pending_removes), len(pending_adds))
+        for i in range(n):
+            left = pending_removes[i] if i < len(pending_removes) else None
+            right = pending_adds[i] if i < len(pending_adds) else None
+            rows.append((left, right))
+        pending_removes.clear()
+        pending_adds.clear()
+
+    for line in lines:
+        if line.kind == "remove":
+            pending_removes.append(line)
+        elif line.kind == "add":
+            pending_adds.append(line)
+        else:
+            flush()
+            rows.append((line, line))
+    flush()
+    return tuple(rows)
+
+
 def _parse_hunks(patch: str) -> tuple[DiffHunk, ...]:
     """Parse a single file's patch body (no `diff --git`/`---`/`+++` headers).
 
