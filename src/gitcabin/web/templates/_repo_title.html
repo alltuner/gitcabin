@@ -1,0 +1,9 @@
+{# ABOUTME: Repo title line — owner/name as breadcrumb-style links + optional description. #}
+<div class="mb-2 flex items-center gap-3 text-xl">
+  <a href="/{{ owner }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ owner }}</a>
+  <span class="text-gray-400">/</span>
+  <a href="/{{ owner }}/{{ name }}" class="font-semibold text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
+</div>
+{% if description %}
+<p class="mb-4 text-sm text-gray-500 dark:text-gray-400">{{ description }}</p>
+{% endif %}
