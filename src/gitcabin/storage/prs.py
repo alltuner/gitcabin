@@ -69,7 +69,7 @@ class PrDocument(BaseModel):
     gh_pr_id: int | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Pr:
     """A persisted pull request, returned from the writer for resolvers."""
 
@@ -84,7 +84,7 @@ class Pr:
     created_at: str
     updated_at: str
     provenance: Provenance
-    gh_pr_id: int | None
+    gh_pr_id: int | None = None
 
 
 def import_pr(

@@ -74,7 +74,7 @@ class IssueDocument(BaseModel):
     gh_author_id: int | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Issue:
     """A persisted issue, returned from the writer for use by GraphQL resolvers.
 
@@ -92,8 +92,8 @@ class Issue:
     created_at: str
     updated_at: str
     provenance: Provenance
-    gh_issue_id: int | None
-    gh_author_id: int | None
+    gh_issue_id: int | None = None
+    gh_author_id: int | None = None
 
 
 class CommentDocument(BaseModel):
@@ -118,7 +118,7 @@ class CommentDocument(BaseModel):
     gh_author_id: int | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Comment:
     """A comment on an issue.
 
@@ -132,8 +132,8 @@ class Comment:
     author: str
     created_at: str
     provenance: Provenance
-    gh_comment_id: int | None
-    gh_author_id: int | None
+    gh_comment_id: int | None = None
+    gh_author_id: int | None = None
 
 
 def create_issue(repo: BareRepo, *, title: str, body: str, author: str) -> Issue:
