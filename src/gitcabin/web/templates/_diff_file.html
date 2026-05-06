@@ -27,7 +27,12 @@
   {% else %}
   {# Split view: two paired columns, each carrying its own line-number gutter
      + text. `paired` reshapes the hunk's flat unified-diff lines into
-     (left, right) tuples so adjacent removals + additions align. #}
+     (left, right) tuples so adjacent removals + additions align.
+     The `code-scroll` wrapper is the horizontal-overflow safety net: the
+     diff text wraps softly via `word-break: break-word`, but a single
+     unbreakable token (a 500-char URL with no spaces) would still bleed
+     past the page width without something to scroll inside. #}
+  <div class="code-scroll">
   <table class="diff-table diff-table-split">
     {% for hunk in file.hunks %}
     <tr class="diff-hunk-header"><td colspan="4"><span class="font-mono text-xs">{{ hunk.header }}</span></td></tr>
@@ -41,5 +46,6 @@
     {% endfor %}
     {% endfor %}
   </table>
+  </div>
   {% endif %}
 </details>

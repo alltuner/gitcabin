@@ -245,6 +245,20 @@ html { scrollbar-gutter: stable; }
    retheme automatically — DaisyUI swaps the variables on theme change
    and these rules pick that up without per-theme overrides. */
 
+/* Code-shaped views (blob, blame, diff) wrap their inner table in
+   `.code-scroll` so long lines pan inside the panel rather than bleeding
+   past the page width or — worse — being silently clipped by an
+   outer `overflow: hidden`. The wrapper carries the rounded chrome and
+   stays inside the layout; this child takes the horizontal scroll. */
+.code-scroll {
+  overflow-x: auto;
+  /* Prevent the scrollbar from squeezing the content vertically when it
+     appears on hover-scrollbar systems. `overflow-y: hidden` would clip
+     the dropdown menus that some chrome bits open inside; `auto` is the
+     safer default. */
+  overflow-y: visible;
+}
+
 /* Pygments blocks. The .hl class is what HtmlFormatter wraps tokens in.
    Top/bottom padding lives on first/last row cells (not on the wrapper),
    so the linenos column's right-border keeps running edge-to-edge. */
@@ -262,6 +276,13 @@ html { scrollbar-gutter: stable; }
   user-select: none;
   width: 1%;
   vertical-align: top;
+  /* Stick the line-number column to the left edge of the scroll viewport
+     when the user pans horizontally, so the eye keeps its anchor. The
+     opaque background prevents code text from showing through. */
+  position: sticky;
+  left: 0;
+  background: var(--color-base-200);
+  z-index: 1;
 }
 .hl td.code { padding: 0 12px; vertical-align: top; }
 .hl pre { margin: 0; padding: 0; background: transparent; }
@@ -355,11 +376,19 @@ table.blame td.commit {
   border-right: 1px solid var(--color-base-300);
   font-size: 11px;
   padding: 4px 8px;
+  /* Pin the commit gutter to the left edge of the .code-scroll viewport
+     so it stays visible while the user pans horizontally. The run-stripe
+     comes from the parent <tr> via inherit so the sticky cell still
+     alternates with the rest of the row. */
+  position: sticky;
+  left: 0;
+  background: inherit;
+  z-index: 2;
 }
 table.blame td.commit.empty {
   /* Inherit run bg from <tr>; an empty cell still belongs visually to
      the run, so the metadata above continues to "own" these lines. */
-  background: transparent;
+  background: inherit;
 }
 table.blame td.commit .subject {
   font-size: 11px;
@@ -381,6 +410,14 @@ table.blame td.linenum {
   color: color-mix(in srgb, var(--color-base-content) 55%, transparent);
   user-select: none;
   border-right: 1px solid var(--color-base-300);
+  /* Sticky the line-number column to the right of the (also sticky)
+     commit gutter — `left: 280px` matches td.commit's width. The
+     opaque background prevents code text from showing through during
+     a pan. */
+  position: sticky;
+  left: 280px;
+  background: inherit;
+  z-index: 1;
 }
 table.blame td.linenum a {
   color: inherit;

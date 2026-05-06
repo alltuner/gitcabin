@@ -9,7 +9,12 @@
 {% with view_kind = "blame" %}{% include "_ref_breadcrumb.html" %}{% endwith %}
 
 {% set _rest = ref ~ '/' ~ path %}
-<div class="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+{# Outer wrapper: keeps the rounded-md border + chrome from leaking. The
+   inner `.code-scroll` div is the actual horizontal-overflow container —
+   long lines pan inside it instead of breaking the page layout, and the
+   commit + line-number gutters stay sticky on the left so the eye keeps
+   its anchor while panning. #}
+<div class="rounded-md border border-gray-200 dark:border-gray-800">
   {# Same code-panel header as blob.html so the two views are visually
      equivalent. The "Blame" link from blob is replaced with "Code"
      pointing back at the blob view (the inverse hop). #}
@@ -39,6 +44,7 @@
   {% if is_binary %}
   <div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Binary file — line attribution doesn't apply.</div>
   {% else %}
+  <div class="code-scroll">
   <table class="blame">
     <tbody>
       {% for line in lines %}
@@ -58,6 +64,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

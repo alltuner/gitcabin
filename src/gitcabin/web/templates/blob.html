@@ -10,7 +10,10 @@
 
 {% set _rest = ref ~ '/' ~ path %}
 {% set _raw_url = url_for('blob_raw', owner=owner, name=name, rest=_rest).path %}
-<div class="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+{# Outer wrapper carries the rounded chrome; the code-scroll wrapper around
+   the highlighted source is the actual horizontal-overflow container so
+   long lines pan inside it instead of bleeding past the page width. #}
+<div class="rounded-md border border-gray-200 dark:border-gray-800">
   <div class="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
     <span>{{ rendered.size }} bytes</span>
     <div class="flex items-center gap-3">
@@ -47,7 +50,7 @@
   {% elif rendered.is_empty %}
   <div class="p-8 text-center text-sm italic text-gray-500 dark:text-gray-400">Empty file.</div>
   {% else %}
-  {{ rendered.highlighted_html | safe }}
+  <div class="code-scroll">{{ rendered.highlighted_html | safe }}</div>
   {% endif %}
 </div>
 {% endblock %}
