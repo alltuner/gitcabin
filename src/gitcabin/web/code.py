@@ -405,33 +405,52 @@ class _GfmAlertExtension(markdown.Extension):
 
 
 # Tags produced by python-markdown extensions (fenced_code, tables, toc,
-# GFM alerts) that must survive sanitization, plus common inline markup.
+# GFM alerts) that must survive sanitization, plus common inline markup
+# real-world READMEs use (kbd shortcuts, details/summary collapsibles,
+# picture/source for responsive images, sub/sup/mark for inline emphasis).
 _MARKDOWN_TAGS: frozenset[str] = frozenset(
     {
         "h1", "h2", "h3", "h4", "h5", "h6",
         "p", "br", "hr",
         "ul", "ol", "li",
         "blockquote", "div",
-        "pre", "code",
-        "a", "img",
-        "strong", "em", "del",
+        "pre", "code", "kbd", "samp", "var",
+        "a", "img", "picture", "source",
+        "strong", "em", "del", "ins", "mark", "sub", "sup",
         "table", "thead", "tbody", "tr", "td", "th",
         "span",
+        "details", "summary",
     }
 )
 
-# Attribute allowlist per tag.  `class` is needed on span/div/pre/code for
-# pygments token classes and GFM alert classes; `id` on headings for toc
-# anchor targets; `href`/`rel` on anchors; `src`/`alt` on images.
+# Attribute allowlist per tag. None of these enable script execution.
+#   - `class` on span/div/pre/code carries pygments token + GFM alert classes;
+#     `class` on `p` carries the markdown-alert-title class our extension emits.
+#   - `id` on headings is the toc extension's anchor target.
+#   - `align` is the deprecated-but-ubiquitous centering attribute that real
+#     READMEs use on the hero block; ditto `width`/`height` on images.
+#   - `target` / `rel` on `<a>` lets READMEs open external links in a new tab.
+#   - `title` is the universal tooltip attribute — non-load-bearing, safe.
+#   - `srcset` / `sizes` / `media` on picture-shaped tags carries responsive
+#     image hints.
 _MARKDOWN_ATTRIBUTES: dict[str, set[str]] = {
-    "span": {"class"},
-    "div": {"class"},
-    "pre": {"class"},
-    "code": {"class"},
-    "h1": {"id"}, "h2": {"id"}, "h3": {"id"},
-    "h4": {"id"}, "h5": {"id"}, "h6": {"id"},
-    "a": {"href", "rel"},
-    "img": {"src", "alt"},
+    "*": {"class", "title", "id", "dir"},
+    "p": {"class", "title", "align"},
+    "div": {"class", "title", "align"},
+    "span": {"class", "title"},
+    "pre": {"class", "title"},
+    "code": {"class", "title"},
+    "h1": {"id", "class"}, "h2": {"id", "class"}, "h3": {"id", "class"},
+    "h4": {"id", "class"}, "h5": {"id", "class"}, "h6": {"id", "class"},
+    "a": {"href", "rel", "target", "title", "id"},
+    "img": {"src", "alt", "title", "width", "height"},
+    "picture": {"class", "title"},
+    "source": {"src", "srcset", "sizes", "media", "type"},
+    "table": {"class", "align"},
+    "th": {"align", "scope"},
+    "td": {"align"},
+    "details": {"open"},
+    "blockquote": {"class", "cite"},
 }
 
 
