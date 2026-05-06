@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import mimetypes
+import re
 from html import escape as html_escape
 from pathlib import Path
 from posixpath import basename as posix_basename
@@ -12,12 +13,14 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from jinja2 import select_autoescape
 
 from gitcabin.config import Settings
 from gitcabin.permissions import (
     can_change_issue_state,
     viewer_role,
 )
+from gitcabin.storage import layout
 from gitcabin.storage.issues import (
     IssueState,
     add_comment,
@@ -27,7 +30,6 @@ from gitcabin.storage.issues import (
     list_any_comments,
     reopen_any_issue,
 )
-from gitcabin.storage import layout
 from gitcabin.storage.repo import BareRepo
 from gitcabin.web import code
 from gitcabin.web.assets import AssetResolver
@@ -42,6 +44,10 @@ from gitcabin.web.format import (
 _WEB_DIR = Path(__file__).parent
 _DIST_DIR = _WEB_DIR / "static" / "dist"
 _templates = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
+# Set autoescape explicitly rather than relying on starlette's per-version default —
+# select_autoescape turns it on for HTML/XML templates and for `render_template_string`
+# usage so a future starlette default change can't silently disable escaping.
+_templates.env.autoescape = select_autoescape(default_for_string=True, default=True)
 # Templates write `{{ asset('main.css') }}` and get back `/static/dist/main.<hash>.css`.
 # Reading the manifest happens on every call (the file is tiny and rebuilds while
 # the server runs pick up new hashes without a restart).
@@ -57,6 +63,30 @@ _templates.env.filters["pretty_date"] = pretty_date
 # `paired_lines` reshapes a hunk's lines into side-by-side rows for the
 # split-diff template. Lives in `code` because it operates on DiffLine.
 _templates.env.filters["paired"] = code.paired_lines
+
+
+_SAFE_SEGMENT = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def _safe_segment(s: str) -> bool:
+    """Return True iff s is a safe URL path segment (no traversal, no shell chars)."""
+    return bool(_SAFE_SEGMENT.match(s)) and s not in (".", "..")
+
+
+def _check_csrf(request: Request) -> None:
+    """Reject cross-origin POSTs by checking the Origin header.
+
+    Same-origin form submits from browsers may omit Origin — those are
+    allowed. An Origin of "null" comes from sandboxed iframes and is also
+    allowed. Any other Origin that doesn't match the server's own base URL
+    is a cross-site request and gets a 403.
+    """
+    origin = request.headers.get("Origin")
+    if origin is None:
+        return
+    expected = str(request.base_url).rstrip("/")
+    if origin not in (expected, "null"):
+        raise HTTPException(status_code=403, detail="CSRF check failed")
 
 
 def _repo_ctx(bare: BareRepo, issues: list | None = None) -> dict[str, object]:
@@ -164,6 +194,8 @@ def _repo_pushed_at(bare: BareRepo) -> str:
 
 def _open_repo(settings: Settings, project: str, name: str) -> BareRepo:
     """Resolve a (project, name) pair to a BareRepo or 404."""
+    if not _safe_segment(project) or not _safe_segment(name):
+        raise HTTPException(status_code=404, detail="repo not found")
     bare = layout.open_repo(settings.data_dir, project, name)
     if bare is None:
         raise HTTPException(status_code=404, detail="repo not found")
@@ -525,6 +557,8 @@ def build_router(settings: Settings) -> APIRouter:
 
     @router.get("/{owner}", include_in_schema=False, name="owner")
     def owner_page(request: Request, owner: str) -> HTMLResponse:
+        if not _safe_segment(owner):
+            raise HTTPException(status_code=404, detail="not found")
         if not (layout.projects_dir(settings.data_dir) / owner).is_dir():
             raise HTTPException(status_code=404, detail="not found")
         return _render(
@@ -725,6 +759,7 @@ def build_router(settings: Settings) -> APIRouter:
         number: int,
         body: str = Form(...),
     ) -> Response:
+        _check_csrf(request)
         return _do_add_comment(request, owner, name, number, body)
 
     @router.post(
@@ -735,6 +770,7 @@ def build_router(settings: Settings) -> APIRouter:
     def project_close(
         request: Request, owner: str, name: str, number: int
     ) -> Response:
+        _check_csrf(request)
         return _do_close(request, owner, name, number)
 
     @router.post(
@@ -745,6 +781,7 @@ def build_router(settings: Settings) -> APIRouter:
     def project_reopen(
         request: Request, owner: str, name: str, number: int
     ) -> Response:
+        _check_csrf(request)
         return _do_reopen(request, owner, name, number)
 
     return router

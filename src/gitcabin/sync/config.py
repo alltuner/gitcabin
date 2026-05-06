@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import re
+
 from git import Commit
 from git.exc import BadName
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from gitcabin.storage.repo import BareRepo
 
@@ -34,6 +36,17 @@ class SyncConfig(BaseModel):
     gh_viewer_login: str
     last_synced_at: str | None = None
     viewer_repo_role: str | None = None
+
+    @field_validator("gh_owner", "gh_name", mode="before")
+    @classmethod
+    def _validate_segment(cls, v: object) -> object:
+        if (
+            not isinstance(v, str)
+            or not re.match(r"^[a-zA-Z0-9._-]+$", v)
+            or v in (".", "..")
+        ):
+            raise ValueError("invalid repository segment")
+        return v
 
 
 def read_config(repo: BareRepo) -> SyncConfig | None:

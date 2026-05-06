@@ -149,3 +149,16 @@ def test_static_dist_dir_mounted(web_client: TestClient) -> None:
     # Some StaticFiles configurations 404 on bare directory listings; either
     # 200 / 404 is acceptable as long as the response isn't a crash.
     assert response.status_code in {200, 404}
+
+
+def test_dotdot_owner_returns_404(web_client: TestClient) -> None:
+    # FastAPI may normalize some traversal patterns; the explicit allowlist
+    # rejects what slips through (e.g. an owner like "foo.." that contains a
+    # literal ".." substring but isn't a path-traversal segment by itself).
+    response = web_client.get("/foo../bar/issues")
+    assert response.status_code == 404
+
+
+def test_owner_with_slash_returns_404(web_client: TestClient) -> None:
+    response = web_client.get("/foo%2Fbar")
+    assert response.status_code == 404

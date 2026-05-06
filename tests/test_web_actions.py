@@ -212,3 +212,56 @@ def test_no_signed_in_chrome(web_client: TestClient) -> None:
     # If it ever shows up again, we want to know.
     response = web_client.get("/")
     assert "signed in as" not in response.text
+
+
+def test_csrf_rejects_cross_origin_close(
+    web_client: TestClient, client: TestClient, init_repo
+) -> None:
+    init_repo("octocat", "hello")
+    _create(client, "octocat", "hello", "csrf target")
+    response = web_client.post(
+        "/octocat/hello/issues/1/close",
+        headers={"Origin": "https://evil.example.com"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 403
+
+
+def test_csrf_rejects_cross_origin_reopen(
+    web_client: TestClient, client: TestClient, init_repo
+) -> None:
+    init_repo("octocat", "hello")
+    _create(client, "octocat", "hello", "csrf target reopen")
+    web_client.post("/octocat/hello/issues/1/close")
+    response = web_client.post(
+        "/octocat/hello/issues/1/reopen",
+        headers={"Origin": "https://evil.example.com"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 403
+
+
+def test_csrf_rejects_cross_origin_comment(
+    web_client: TestClient, client: TestClient, init_repo
+) -> None:
+    init_repo("octocat", "hello")
+    _create(client, "octocat", "hello", "csrf target comment")
+    response = web_client.post(
+        "/octocat/hello/issues/1/comments",
+        data={"body": "injected"},
+        headers={"Origin": "https://evil.example.com"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 403
+
+
+def test_csrf_allows_no_origin_header(
+    web_client: TestClient, client: TestClient, init_repo
+) -> None:
+    init_repo("octocat", "hello")
+    _create(client, "octocat", "hello", "no-origin close")
+    response = web_client.post(
+        "/octocat/hello/issues/1/close",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303

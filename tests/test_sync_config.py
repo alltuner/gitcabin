@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from gitcabin.storage.repo import BareRepo
 from gitcabin.sync.config import SYNC_REF, SyncConfig, read_config, write_config
@@ -83,3 +84,23 @@ def test_round_trip_preserves_optional_fields(repo: BareRepo) -> None:
     assert reloaded is not None
     assert reloaded.last_synced_at == "2026-05-04T12:00:00Z"
     assert reloaded.viewer_repo_role == "ADMIN"
+
+
+def test_sync_config_rejects_dotdot_owner() -> None:
+    with pytest.raises(ValidationError):
+        SyncConfig(gh_owner="..", gh_name="hello", gh_viewer_login="alice")
+
+
+def test_sync_config_rejects_dotdot_name() -> None:
+    with pytest.raises(ValidationError):
+        SyncConfig(gh_owner="octocat", gh_name="..", gh_viewer_login="alice")
+
+
+def test_sync_config_rejects_slash_in_owner() -> None:
+    with pytest.raises(ValidationError):
+        SyncConfig(gh_owner="../etc/passwd", gh_name="hello", gh_viewer_login="alice")
+
+
+def test_sync_config_accepts_valid_segments() -> None:
+    config = SyncConfig(gh_owner="octo-cat.1", gh_name="my_repo", gh_viewer_login="alice")
+    assert config.gh_owner == "octo-cat.1"
