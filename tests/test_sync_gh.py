@@ -18,7 +18,7 @@ def test_get_json_invokes_gh_api_with_hostname() -> None:
     client = GhClient(host="example.com", runner=runner)
     payload = client.get_json("user")
 
-    assert calls == [["api", "--hostname", "example.com", "user"]]
+    assert calls == [["api", "--hostname", "example.com", "--", "user"]]
     assert payload == {"login": "alice"}
 
 
@@ -39,7 +39,7 @@ def test_get_json_appends_paginate_flag_when_requested() -> None:
 
 def test_gh_login_returns_login_field() -> None:
     def runner(argv: list[str]) -> str:
-        assert argv == ["api", "--hostname", "github.com", "user"]
+        assert argv == ["api", "--hostname", "github.com", "--", "user"]
         return '{"login": "octocat", "id": 1}'
 
     assert gh_login(GhClient(runner=runner)) == "octocat"

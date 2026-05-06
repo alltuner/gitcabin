@@ -58,7 +58,7 @@ class GhClient:
         argv = ["api", "--hostname", self.host]
         if paginate:
             argv.append("--paginate")
-        argv.append(path)
+        argv += ["--", path]
         return json.loads(self.runner(argv))
 
     def post_json(self, path: str, body: dict[str, object]) -> object:
@@ -68,7 +68,7 @@ class GhClient:
         from stdin — robust against arbitrary-content fields like issue bodies
         with newlines, quotes, and unicode that `-f field=value` can mangle.
         """
-        argv = ["api", "--hostname", self.host, "-X", "POST", "--input", "-", path]
+        argv = ["api", "--hostname", self.host, "-X", "POST", "--input", "-", "--", path]
         raw = self.runner(argv, stdin=json.dumps(body))
         return json.loads(raw)
 
@@ -78,7 +78,7 @@ class GhClient:
         Same shape as post_json but with `-X PATCH`. Used to flip an issue's
         state (open ↔ closed) or update other mutable fields on existing items.
         """
-        argv = ["api", "--hostname", self.host, "-X", "PATCH", "--input", "-", path]
+        argv = ["api", "--hostname", self.host, "-X", "PATCH", "--input", "-", "--", path]
         raw = self.runner(argv, stdin=json.dumps(body))
         return json.loads(raw)
 

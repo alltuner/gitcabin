@@ -243,6 +243,7 @@ def _default_branch_pusher(
         f"credential.{url}.helper=!gh auth git-credential",
         "push",
         url,
+        "--",
         refspec,
     )
 
