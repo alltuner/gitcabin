@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 
 # /static is mounted by routes.mount_static onto src/gitcabin/web/static. The
@@ -13,9 +12,8 @@ from pathlib import Path
 STATIC_DIST_PREFIX = "/static/dist/"
 
 
-@dataclass(frozen=True, slots=True)
 class AssetResolver:
-    """Reads bun's manifest.json once and resolves logical names to URLs.
+    """Reads bun's manifest.json and resolves logical names to URLs.
 
     Templates use this via a Jinja global:
 
@@ -24,9 +22,18 @@ class AssetResolver:
     Logical names (`main.css`, `main.js`) are stable across builds; the
     hashed filename behind each one changes whenever the content does.
     Browsers cache aggressively because the URL itself is the version.
+
+    The parsed manifest is cached on the instance and invalidated when the
+    file's mtime changes — rebuilds during a running server still pick up
+    new hashes without a restart, while warm renders avoid re-reading and
+    re-parsing the file for every asset() call in a template.
     """
 
-    dist_dir: Path
+    __slots__ = ("dist_dir", "_cache")
+
+    def __init__(self, dist_dir: Path) -> None:
+        self.dist_dir = dist_dir
+        self._cache: tuple[float, dict[str, str]] | None = None
 
     def __call__(self, name: str) -> str:
         manifest = self._manifest()
@@ -36,12 +43,12 @@ class AssetResolver:
         return STATIC_DIST_PREFIX + manifest.get(name, name)
 
     def _manifest(self) -> dict[str, str]:
-        # Read the manifest fresh on every call. The cost is one ~100B file
-        # read per page render — well below the noise floor — and it means
-        # rebuilding the bundle while the server is running picks up the new
-        # hashes without a restart. Production deploys aren't churning enough
-        # for this to matter.
+        path = self.dist_dir / "manifest.json"
         try:
-            return json.loads((self.dist_dir / "manifest.json").read_text())
+            mtime = path.stat().st_mtime
         except FileNotFoundError:
+            self._cache = None
             return {}
+        if self._cache is None or self._cache[0] != mtime:
+            self._cache = (mtime, json.loads(path.read_text()))
+        return self._cache[1]
