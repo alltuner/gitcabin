@@ -73,5 +73,5 @@ def write_config(repo: BareRepo, config: SyncConfig) -> None:
 def _maybe_commit(repo: BareRepo, ref: str) -> Commit | None:
     try:
         return repo.repo.commit(ref)
-    except BadName, ValueError:
+    except (BadName, ValueError):
         return None
