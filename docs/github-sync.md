@@ -24,9 +24,9 @@ This doc focuses specifically on **authorship attribution and edit affordances**
 | GraphQL surfaces synced PRs + viewer_can_* | `gitcabin.graphql_schema` | done |
 | CLI `gitcabin sync identity / link / pull / push` | `gitcabin.cli` | done |
 | Resumable push (crash safety) | — | not built ([#12](https://github.com/alltuner/gitcabin/issues/12)) |
-| Push-then-pull orchestration | — | not built ([#13](https://github.com/alltuner/gitcabin/issues/13)) |
+| Push-then-pull orchestration | `gitcabin.cli` (`gitcabin sync sync`) | done |
 | `viewer_repo_role` auto-fetch | partially built | broken ([#16](https://github.com/alltuner/gitcabin/issues/16)) |
-| Web dashboard reads viewer_can_* | — | not built ([#17](https://github.com/alltuner/gitcabin/issues/17)) |
+| Web dashboard reads viewer_can_* | `gitcabin.web.routes` | done (close/reopen gated; synced badge rendered) |
 | `gh_author_id` for rename stability | `gitcabin.storage.issues`, `gitcabin.sync.pull` | done |
 
 End-to-end smoke test verified at commit `9e6383d` against `alltuner/gitcabin-sync-smoke`: pull recovered both issues + the comment + the closed-state of issue 2; push of a local draft created issue 3 upstream (with its comment), renumbered locally from `refs/issues/local/1` to `refs/issues/3`, and stamped `provenance: SYNCED_BIDIR` + the upstream `gh_issue_id`.

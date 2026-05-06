@@ -42,6 +42,23 @@ def _build_parser() -> argparse.ArgumentParser:
     p_push = sub.add_parser("push", help="push local-only issues + comments to GitHub")
     p_push.add_argument("local", help="local repo as <owner>/<name>")
 
+    p_sync = sub.add_parser(
+        "sync",
+        help="push local changes then pull from GitHub (push-only / pull-only with flags)",
+    )
+    p_sync.add_argument("local", help="local repo as <owner>/<name>")
+    direction = p_sync.add_mutually_exclusive_group()
+    direction.add_argument(
+        "--push-only",
+        action="store_true",
+        help="skip the pull step (alias for `gitcabin sync push <local>`)",
+    )
+    direction.add_argument(
+        "--pull-only",
+        action="store_true",
+        help="skip the push step (alias for `gitcabin sync pull <local>`)",
+    )
+
     return parser
 
 
@@ -57,6 +74,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_pull(settings, args.local)
     if args.cmd == "push":
         return _cmd_push(settings, args.local)
+    if args.cmd == "sync":
+        return _cmd_sync(
+            settings, args.local, push_only=args.push_only, pull_only=args.pull_only
+        )
     return 2
 
 
@@ -175,6 +196,59 @@ def _cmd_push(settings: Settings, local: str) -> int:
 
     pushed = push_local_issues(repo, GhClient(), config)
     print(f"pushed {len(pushed)} issues")
+    return 0
+
+
+def _cmd_sync(
+    settings: Settings,
+    local: str,
+    *,
+    push_only: bool,
+    pull_only: bool,
+    client: GhClient | None = None,
+) -> int:
+    """Push then pull. Default order keeps local edits from being clobbered.
+
+    Pull is GitHub-wins; any locally created issue / comment that hadn't been
+    pushed yet gets passed over silently if pull happens first. Pushing first
+    means those local-only items are upstream by the time pull overwrites
+    things, so the only blobs pull rewrites are ones whose authoritative copy
+    really does live on GitHub. `--push-only` and `--pull-only` are escape
+    hatches when the user wants one half of the round-trip.
+
+    `client` is the injection seam for tests — the CLI default constructs a
+    real GhClient that shells out to `gh api`.
+    """
+    repo = _open_local(settings, local)
+    if repo is None:
+        print(f"unknown local repo: {local}", file=sys.stderr)
+        return 1
+    config = read_config(repo)
+    if config is None:
+        print(f"{local} is not linked. run `gitcabin sync link` first.", file=sys.stderr)
+        return 1
+
+    if client is None:
+        client = GhClient()
+
+    if not pull_only:
+        pushed = push_local_issues(repo, client, config)
+        print(f"pushed {len(pushed)} issues")
+
+    if push_only:
+        return 0
+
+    # Re-read the config because push may have updated it (e.g. renumbering
+    # local refs onto upstream slots, last-pushed bookkeeping).
+    config = read_config(repo) or config
+    issues = pull_issues(repo, client, config)
+    prs = pull_prs(repo, client, config)
+    comments = pull_comments(repo, client, config)
+    write_config(
+        repo,
+        config.model_copy(update={"last_synced_at": datetime.now(tz=UTC).isoformat()}),
+    )
+    print(f"pulled {len(issues)} issues, {len(prs)} PRs, {len(comments)} comments")
     return 0
 
 
