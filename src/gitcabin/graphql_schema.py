@@ -18,6 +18,7 @@ from gitcabin.permissions import (
     can_delete_comment,
     can_edit_comment,
     can_edit_issue,
+    viewer_role,
 )
 from gitcabin.storage.issues import (
     Comment as StorageComment,
@@ -50,7 +51,6 @@ from gitcabin.storage.prs import (
     list_synced_pr_comments,
 )
 from gitcabin.storage.repo import BareRepo
-from gitcabin.sync.config import read_config as read_sync_config
 
 # ---- Enums --------------------------------------------------------------- #
 
@@ -350,27 +350,6 @@ def _user_for(login: str) -> User:
     return User(id=ids.user_id(login), login=login, name=None, database_id=None)
 
 
-def _viewer_role(bare: BareRepo | None) -> RepoRole:
-    """Resolve the viewer's role on the linked GitHub repo (or ADMIN if local-only).
-
-    Local-only repos that have never been linked to GitHub are implicitly
-    ADMIN — the user owns the bare repo on their disk. Linked repos cache
-    the actual role in SyncConfig.viewer_repo_role at sync time.
-    """
-    if bare is None:
-        return RepoRole.ADMIN
-    config = read_sync_config(bare)
-    if config is None or config.viewer_repo_role is None:
-        return RepoRole.ADMIN
-    try:
-        return RepoRole(config.viewer_repo_role)
-    except ValueError:
-        # Forward-compat: if upstream introduces a new role we don't know,
-        # default to the safest interpretation (read-only). User won't get
-        # write affordances they're not entitled to.
-        return RepoRole.READ
-
-
 def _to_gql_issue(
     stored: StorageIssue, owner: str, name: str, viewer: str, role: RepoRole
 ) -> Issue:
@@ -473,7 +452,7 @@ class Issue:
             return IssueCommentConnection(nodes=[], total_count=0, page_info=empty_page)
         stored = list_any_comments(bare, coords.number)
         viewer = settings.viewer_login
-        role = _viewer_role(bare)
+        role = viewer_role(bare)
         nodes = [
             _to_gql_comment(c, coords.owner, coords.name, coords.number, viewer, role)
             for c in stored
@@ -560,7 +539,7 @@ class PullRequest:
             return IssueCommentConnection(nodes=[], total_count=0, page_info=empty_page)
         stored = list_synced_pr_comments(bare, coords.number)
         viewer = settings.viewer_login
-        role = _viewer_role(bare)
+        role = viewer_role(bare)
         nodes = [
             _to_gql_comment(c, coords.owner, coords.name, coords.number, viewer, role)
             for c in stored
@@ -754,7 +733,7 @@ class Repository:
         page = all_stored[:limit]
 
         viewer = settings.viewer_login
-        role = _viewer_role(bare)
+        role = viewer_role(bare)
         return IssueConnection(
             nodes=[_to_gql_issue(i, self.owner.login, self.name, viewer, role) for i in page],
             page_info=PageInfo(has_next_page=limit < total, end_cursor=None),
@@ -772,7 +751,7 @@ class Repository:
         if stored is None:
             return None
         return _to_gql_issue(
-            stored, self.owner.login, self.name, settings.viewer_login, _viewer_role(bare)
+            stored, self.owner.login, self.name, settings.viewer_login, viewer_role(bare)
         )
 
     @strawberry.field
@@ -788,7 +767,7 @@ class Repository:
         if bare is None:
             return None
         viewer = settings.viewer_login
-        role = _viewer_role(bare)
+        role = viewer_role(bare)
         pr = get_any_pr(bare, number)
         if pr is not None:
             return _to_gql_pr(pr, self.owner.login, self.name, viewer, role)
@@ -806,7 +785,7 @@ class Repository:
         if stored is None:
             return None
         return _to_gql_pr(
-            stored, self.owner.login, self.name, settings.viewer_login, _viewer_role(bare)
+            stored, self.owner.login, self.name, settings.viewer_login, viewer_role(bare)
         )
 
     @strawberry.field
@@ -841,7 +820,7 @@ class Repository:
         limit = first if first is not None else total
         page = all_stored[:limit]
         viewer = settings.viewer_login
-        role = _viewer_role(bare)
+        role = viewer_role(bare)
         return PullRequestConnection(
             nodes=[_to_gql_pr(p, self.owner.login, self.name, viewer, role) for p in page],
             page_info=PageInfo(has_next_page=limit < total, end_cursor=None),
@@ -1156,7 +1135,7 @@ class Mutation:
 
         return CreateIssuePayload(
             issue=_to_gql_issue(
-                stored, coords.owner, coords.name, settings.viewer_login, _viewer_role(repo)
+                stored, coords.owner, coords.name, settings.viewer_login, viewer_role(repo)
             )
         )
 
@@ -1181,7 +1160,7 @@ class Mutation:
         if existing is None:
             raise ValueError(f"Unknown issueId: {input.issue_id!r}")
         viewer = settings.viewer_login
-        role = _viewer_role(bare)
+        role = viewer_role(bare)
         if not can_change_issue_state(existing, viewer, role):
             raise PermissionError(
                 f"viewer {viewer!r} cannot change state of issue authored by "
@@ -1232,7 +1211,7 @@ class Mutation:
                     coords.name,
                     coords.number,
                     settings.viewer_login,
-                    _viewer_role(bare),
+                    viewer_role(bare),
                 ),
             ),
         )
@@ -1273,7 +1252,7 @@ class Mutation:
             raise ValueError(f"Unknown issue id: {input.id!r}")
         return UpdateIssuePayload(
             issue=_to_gql_issue(
-                stored, coords.owner, coords.name, viewer, _viewer_role(bare)
+                stored, coords.owner, coords.name, viewer, viewer_role(bare)
             )
         )
 
@@ -1322,7 +1301,7 @@ class Mutation:
                 coords.name,
                 coords.issue_number,
                 viewer,
-                _viewer_role(bare),
+                viewer_role(bare),
             ),
         )
 
@@ -1350,7 +1329,7 @@ class Mutation:
         if existing is None:
             raise ValueError(f"Unknown comment id: {input.id!r}")
         viewer = settings.viewer_login
-        role = _viewer_role(bare)
+        role = viewer_role(bare)
         if not can_delete_comment(existing, viewer, role):
             raise PermissionError(
                 f"viewer {viewer!r} (role {role.value}) cannot delete comment "

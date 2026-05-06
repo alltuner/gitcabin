@@ -22,6 +22,7 @@
     Closed
   </span>
   {% endif %}
+  {% with provenance = issue.provenance %}{% include "_synced_badge.html" %}{% endwith %}
   <span class="text-sm text-gray-500 dark:text-gray-400">
     <strong class="text-gray-700 dark:text-gray-300">{{ issue.author }}</strong>
     opened this issue
@@ -46,10 +47,12 @@
 
 {% for c in comments %}
 <div class="mb-4 overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-  <div class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+  <div class="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
     <strong class="text-gray-900 dark:text-gray-100">{{ c.author }}</strong>
-    commented
-    <time datetime="{{ c.created_at }}" title="{{ c.created_at }}">{{ c.created_at | relative_time }}</time>
+    <span>commented
+      <time datetime="{{ c.created_at }}" title="{{ c.created_at }}">{{ c.created_at | relative_time }}</time>
+    </span>
+    {% with provenance = c.provenance %}{% include "_synced_badge.html" %}{% endwith %}
   </div>
   <div class="whitespace-pre-wrap break-words px-4 py-3 text-sm">{{ c.body }}</div>
 </div>
@@ -82,30 +85,32 @@
    collision on the issue ref. The Comment button uses `form=` to stay
    visually grouped here while still submitting #comment-form. #}
 <div class="mt-3 flex items-center justify-end gap-2">
-  {% if issue.state.value == "OPEN" %}
-  <form
-    method="post"
-    action="{{ url_for('issue_close', owner=owner, name=name, number=issue.number).path }}"
-  >
-    <button
-      type="submit"
-      class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+  {% if viewer_can_close_or_reopen %}
+    {% if issue.state.value == "OPEN" %}
+    <form
+      method="post"
+      action="{{ url_for('issue_close', owner=owner, name=name, number=issue.number).path }}"
     >
-      Close issue
-    </button>
-  </form>
-  {% else %}
-  <form
-    method="post"
-    action="{{ url_for('issue_reopen', owner=owner, name=name, number=issue.number).path }}"
-  >
-    <button
-      type="submit"
-      class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+      <button
+        type="submit"
+        class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+      >
+        Close issue
+      </button>
+    </form>
+    {% else %}
+    <form
+      method="post"
+      action="{{ url_for('issue_reopen', owner=owner, name=name, number=issue.number).path }}"
     >
-      Reopen issue
-    </button>
-  </form>
+      <button
+        type="submit"
+        class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+      >
+        Reopen issue
+      </button>
+    </form>
+    {% endif %}
   {% endif %}
   <button
     type="submit"

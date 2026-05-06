@@ -1,0 +1,11 @@
+{# ABOUTME: Small "synced" pill rendered next to issues / comments that came down from GitHub.
+   ABOUTME: Caller passes `provenance`; partial no-ops for LOCAL_ONLY so call sites stay simple. #}
+{% if provenance and provenance.value != "LOCAL_ONLY" %}
+<span
+  class="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400"
+  title="Synced from GitHub upstream"
+>
+  {% with icon_class = "h-3 w-3" %}{% include "icons/upstream.html" %}{% endwith %}
+  synced
+</span>
+{% endif %}

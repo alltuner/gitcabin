@@ -6,6 +6,8 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from gitcabin.ids import repo_id
+from gitcabin.storage.issues import IssueState, import_issue
+from gitcabin.sync.config import SyncConfig, write_config
 
 CREATE_ISSUE = """
 mutation IssueCreate($input: CreateIssueInput!) {
@@ -91,6 +93,60 @@ def test_action_404_for_unknown_issue(web_client: TestClient, init_repo) -> None
     init_repo("octocat", "hello")
     response = web_client.post("/octocat/hello/issues/999/close")
     assert response.status_code == 404
+
+
+def test_close_returns_403_when_viewer_lacks_permission(
+    web_client: TestClient, init_repo
+) -> None:
+    # Synced issue authored by someone other than the viewer, in a repo the
+    # viewer only has READ on. The dashboard already hides the close button
+    # in this case; the server-side gate is the security boundary.
+    bare = init_repo("octocat", "hello")
+    write_config(
+        bare,
+        SyncConfig(
+            gh_owner="octocat",
+            gh_name="hello",
+            gh_viewer_login="david",
+            viewer_repo_role="READ",
+        ),
+    )
+    import_issue(
+        bare,
+        number=42,
+        title="not yours to close",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=1234,
+    )
+    response = web_client.post("/octocat/hello/issues/42/close", follow_redirects=False)
+    assert response.status_code == 403
+
+
+def test_synced_issue_renders_synced_badge(web_client: TestClient, init_repo) -> None:
+    bare = init_repo("octocat", "hello")
+    import_issue(
+        bare,
+        number=42,
+        title="from upstream",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=999,
+    )
+    page = web_client.get("/octocat/hello/issues/42")
+    assert "synced" in page.text
+    assert "Synced from GitHub upstream" in page.text
+
+
+def test_local_issue_does_not_render_synced_badge(
+    web_client: TestClient, client: TestClient, init_repo
+) -> None:
+    init_repo("octocat", "hello")
+    _create(client, "octocat", "hello", "drafted locally")
+    page = web_client.get("/octocat/hello/issues/1")
+    assert "Synced from GitHub upstream" not in page.text
 
 
 def test_close_via_htmx_returns_updated_page_inline(

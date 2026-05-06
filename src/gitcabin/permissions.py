@@ -6,6 +6,8 @@ from __future__ import annotations
 from enum import StrEnum
 
 from gitcabin.storage.issues import Comment, Issue
+from gitcabin.storage.repo import BareRepo
+from gitcabin.sync.config import read_config as read_sync_config
 
 
 class RepoRole(StrEnum):
@@ -74,3 +76,24 @@ def can_delete_comment(comment: Comment, viewer: str, role: RepoRole) -> bool:
     if comment.author == viewer:
         return True
     return role is RepoRole.ADMIN
+
+
+def viewer_role(bare: BareRepo | None) -> RepoRole:
+    """Resolve the viewer's role on the linked GitHub repo (or ADMIN if local-only).
+
+    Local-only repos that have never been linked to GitHub are implicitly
+    ADMIN — the user owns the bare repo on their disk. Linked repos cache
+    the actual role in SyncConfig.viewer_repo_role at sync time.
+    """
+    if bare is None:
+        return RepoRole.ADMIN
+    config = read_sync_config(bare)
+    if config is None or config.viewer_repo_role is None:
+        return RepoRole.ADMIN
+    try:
+        return RepoRole(config.viewer_repo_role)
+    except ValueError:
+        # Forward-compat: if upstream introduces a new role we don't know,
+        # default to the safest interpretation (read-only). User won't get
+        # write affordances they're not entitled to.
+        return RepoRole.READ

@@ -14,14 +14,18 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from gitcabin.config import Settings
+from gitcabin.permissions import (
+    can_change_issue_state,
+    viewer_role,
+)
 from gitcabin.storage.issues import (
     IssueState,
     add_comment,
-    close_issue,
+    close_any_issue,
     get_any_issue,
     list_all_issues,
     list_any_comments,
-    reopen_issue,
+    reopen_any_issue,
 )
 from gitcabin.storage import layout
 from gitcabin.storage.repo import BareRepo
@@ -488,6 +492,7 @@ def build_router(settings: Settings) -> APIRouter:
         if issue is None:
             raise HTTPException(status_code=404, detail="issue not found")
         comments = list_any_comments(bare, number)
+        role = viewer_role(bare)
         return _render(
             request,
             settings,
@@ -496,6 +501,9 @@ def build_router(settings: Settings) -> APIRouter:
             name=name,
             issue=issue,
             comments=comments,
+            viewer_can_close_or_reopen=can_change_issue_state(
+                issue, settings.viewer_login, role
+            ),
             **_repo_ctx(bare),
         )
 
@@ -677,7 +685,8 @@ def build_router(settings: Settings) -> APIRouter:
         request: Request, project: str, name: str, number: int
     ) -> Response:
         bare = _open_repo(settings, project, name)
-        if close_issue(bare, number=number, actor=settings.viewer_login) is None:
+        _check_can_change_issue_state(bare, number)
+        if close_any_issue(bare, number=number, actor=settings.viewer_login) is None:
             raise HTTPException(status_code=404, detail="issue not found")
         return _post_action_response(request, project, name, number)
 
@@ -685,9 +694,24 @@ def build_router(settings: Settings) -> APIRouter:
         request: Request, project: str, name: str, number: int
     ) -> Response:
         bare = _open_repo(settings, project, name)
-        if reopen_issue(bare, number=number, actor=settings.viewer_login) is None:
+        _check_can_change_issue_state(bare, number)
+        if reopen_any_issue(bare, number=number, actor=settings.viewer_login) is None:
             raise HTTPException(status_code=404, detail="issue not found")
         return _post_action_response(request, project, name, number)
+
+    def _check_can_change_issue_state(bare: BareRepo, number: int) -> None:
+        """403 if the viewer can't close / reopen this issue.
+
+        Mirror of the GraphQL `can_change_issue_state` gate. The dashboard
+        already hides the button when this returns False, but a hand-crafted
+        POST would otherwise bypass the check — this is the security
+        boundary, the template is just UX.
+        """
+        issue = get_any_issue(bare, number)
+        if issue is None:
+            raise HTTPException(status_code=404, detail="issue not found")
+        if not can_change_issue_state(issue, settings.viewer_login, viewer_role(bare)):
+            raise HTTPException(status_code=403, detail="not permitted")
 
     @router.post(
         "/{owner}/{name}/issues/{number}/comments",
