@@ -4,10 +4,10 @@
 <nav class="mb-6 -mx-4 border-b border-gray-200 px-4 dark:border-gray-800">
   <ul class="-mb-px flex gap-6 text-sm">
     {% set tabs = [
-      ("code", "Code", "/" ~ owner ~ "/" ~ name),
-      ("issues", "Issues", "/" ~ owner ~ "/" ~ name ~ "/issues"),
-      ("commits", "Commits", "/" ~ owner ~ "/" ~ name ~ "/commits/" ~ (default_branch or "main")),
-      ("branches", "Branches", "/" ~ owner ~ "/" ~ name ~ "/branches"),
+      ("code",     "Code",     url_for('repo',     owner=owner, name=name).path),
+      ("issues",   "Issues",   url_for('issues',   owner=owner, name=name).path),
+      ("commits",  "Commits",  url_for('commits',  owner=owner, name=name, ref=default_branch or "main").path),
+      ("branches", "Branches", url_for('branches', owner=owner, name=name).path),
     ] %}
     {% for key, label, href in tabs %}
     <li>

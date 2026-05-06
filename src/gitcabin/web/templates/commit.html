@@ -27,7 +27,7 @@
     <span class="text-gray-300 dark:text-gray-600">·</span>
     <span>parent{% if detail.parents | length > 1 %}s{% endif %}</span>
     {% for p in detail.parents %}
-    {{ ui.sha_chip(p, p | short_sha, "/" ~ owner ~ "/" ~ name ~ "/commit/" ~ p) }}
+    {{ ui.sha_chip(p, p | short_sha, url_for('commit', owner=owner, name=name, sha=p).path) }}
     {% endfor %}
     {% endif %}
   </div>
@@ -39,7 +39,7 @@
   {% for change_type, path in detail.changed_paths %}
   <div class="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-900">
     <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ change_type }}</span>
-    <a href="/{{ owner }}/{{ name }}/blob/{{ detail.sha }}/{{ path }}" class="font-mono text-sm text-blue-600 hover:underline dark:text-blue-400">{{ path }}</a>
+    <a href="{{ url_for('blob', owner=owner, name=name, rest=detail.sha ~ '/' ~ path).path }}" class="font-mono text-sm text-blue-600 hover:underline dark:text-blue-400">{{ path }}</a>
   </div>
   {% endfor %}
 </div>

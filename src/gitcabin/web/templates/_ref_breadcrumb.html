@@ -4,6 +4,7 @@
 {% set _kind = view_kind | default("tree") %}
 {% set _path = path | default("") %}
 {% set _path_suffix = ("/" ~ _path) if _path else "" %}
+{% set _branches_url = url_for('branches', owner=owner, name=name).path %}
 {# `ref` is a SHA when the URL pins to a specific commit (e.g. clicking
    a file in a commit's changed-files list lands on `/blob/<sha>/<path>`).
    The branch dropdown is dropped in that case — "switch to a branch"
@@ -15,7 +16,7 @@
 <nav class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
   {% if _is_sha %}
   <a
-    href="/{{ owner }}/{{ name }}/commit/{{ ref }}"
+    href="{{ url_for('commit', owner=owner, name=name, sha=ref).path }}"
     class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1 font-mono text-xs text-gray-900 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
     title="View commit details">
     {% with icon_class = "h-4 w-4 text-gray-500 dark:text-gray-400" %}{% include "icons/commit.html" %}{% endwith %}
@@ -43,13 +44,8 @@
       <div class="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Branches</div>
       <ul class="menu menu-sm w-full p-0">
         {% for b in branches %}
-        {% if _kind == "blob" %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blob/" ~ b.name ~ _path_suffix %}
-        {% elif _kind == "blame" %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blame/" ~ b.name ~ _path_suffix %}
-        {% else %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/tree/" ~ b.name ~ _path_suffix %}
-        {% endif %}
+        {% set _route = "blob" if _kind == "blob" else ("blame" if _kind == "blame" else "tree") %}
+        {% set _href = url_for(_route, owner=owner, name=name, rest=b.name ~ _path_suffix).path %}
         <li>
           <a href="{{ _href }}" class="flex items-center justify-between gap-2 font-mono text-xs {% if b.name == ref %}font-semibold text-blue-600 dark:text-blue-400{% endif %}">
             <span class="truncate">{{ b.name }}</span>
@@ -65,13 +61,8 @@
       <div class="mt-2 px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Tags</div>
       <ul class="menu menu-sm w-full p-0">
         {% for t in tags %}
-        {% if _kind == "blob" %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blob/" ~ t.name ~ _path_suffix %}
-        {% elif _kind == "blame" %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/blame/" ~ t.name ~ _path_suffix %}
-        {% else %}
-          {% set _href = "/" ~ owner ~ "/" ~ name ~ "/tree/" ~ t.name ~ _path_suffix %}
-        {% endif %}
+        {% set _route = "blob" if _kind == "blob" else ("blame" if _kind == "blame" else "tree") %}
+        {% set _href = url_for(_route, owner=owner, name=name, rest=t.name ~ _path_suffix).path %}
         <li>
           <a href="{{ _href }}" class="font-mono text-xs {% if t.name == ref %}font-semibold text-blue-600 dark:text-blue-400{% endif %}">
             <span class="truncate">{{ t.name }}</span>
@@ -93,7 +84,7 @@
      zero tags is the no-releases-yet case (no point showing "0 Tags"). #}
   {% if (branches | length) > 1 %}
   <a
-    href="/{{ owner }}/{{ name }}/branches"
+    href="{{ _branches_url }}"
     class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100">
     {% with icon_class = "h-4 w-4" %}{% include "icons/branch.html" %}{% endwith %}
     <span><strong class="font-semibold text-gray-900 dark:text-gray-100">{{ branches | length }}</strong> Branches</span>
@@ -101,7 +92,7 @@
   {% endif %}
   {% if tags %}
   <a
-    href="/{{ owner }}/{{ name }}/branches"
+    href="{{ _branches_url }}"
     class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100">
     {% with icon_class = "h-4 w-4" %}{% include "icons/tag.html" %}{% endwith %}
     <span><strong class="font-semibold text-gray-900 dark:text-gray-100">{{ tags | length }}</strong> {{ "Tags" if (tags | length) != 1 else "Tag" }}</span>
@@ -115,13 +106,13 @@
      floating label. #}
   {% if crumb_segments %}
   <div class="font-mono text-sm">
-    <a href="/{{ owner }}/{{ name }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
+    <a href="{{ url_for('repo', owner=owner, name=name).path }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
     {% for c in crumb_segments %}
       <span class="text-gray-400">/</span>
       {% if loop.last %}
       <span class="text-gray-900 dark:text-gray-100">{{ c.name }}</span>
       {% else %}
-      <a href="/{{ owner }}/{{ name }}/tree/{{ ref }}/{{ c.path }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ c.name }}</a>
+      <a href="{{ url_for('tree', owner=owner, name=name, rest=ref ~ '/' ~ c.path).path }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ c.name }}</a>
       {% endif %}
     {% endfor %}
   </div>

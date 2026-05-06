@@ -22,6 +22,34 @@ When adding a new file-type icon, prefer pulling from the same source (pin the s
 
 The chrome icons (cabin, issue_*, theme_*, upstream, branch, chevron_*) remain hand-rolled monochrome glyphs that take `currentColor` — those live outside the tree view and are recolored by callers.
 
+### URLs in templates: always `url_for`, never hardcoded paths
+
+Every internal route is named (`@router.get(..., name="…")` in
+`gitcabin/web/routes.py`). Templates must build URLs with starlette's
+`url_for(...)` helper, calling `.path` for a relative URL:
+
+```jinja
+<a href="{{ url_for('repo', owner=owner, name=name).path }}">…</a>
+<a href="{{ url_for('blob', owner=owner, name=name, rest=ref ~ '/' ~ path).path }}">…</a>
+<a href="{{ url_for('commit', owner=owner, name=name, sha=c.sha).path }}">…</a>
+```
+
+The current route names: `dashboard`, `pygments_css`, `owner`, `repo`,
+`tree`, `blob`, `blob_raw`, `blob_download`, `commits`, `commit`,
+`branches`, `blame`, `issues`, `issue`, `issue_add_comment`,
+`issue_close`, `issue_reopen`. The catch-all `tree` / `blob` / `blame`
+/ `blob_raw` / `blob_download` routes take a `rest:path` parameter —
+build it as `ref ~ '/' ~ path` (or just `ref` for tree at root).
+
+Server-side URL constructions (`RedirectResponse(url=…)`, etc.) use
+`request.url_for(name, …).path` — same names, same arguments. Never
+hardcode `/{owner}/{name}/...` strings; they drift, break, and miss
+escaping.
+
+The one literal-URL exception is `empty_repo.html`'s
+`git push http://github.localhost/owner/name.git` — a remote URL the
+user is meant to copy, not a gitcabin route.
+
 ### Reusable template chunks live in their own `_*.html` files
 
 Beyond icons, anything reused across pages is its own template:

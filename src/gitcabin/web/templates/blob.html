@@ -8,27 +8,26 @@
 
 {% with view_kind = "blob" %}{% include "_ref_breadcrumb.html" %}{% endwith %}
 
+{% set _rest = ref ~ '/' ~ path %}
+{% set _raw_url = url_for('blob_raw', owner=owner, name=name, rest=_rest).path %}
 <div class="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
   <div class="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
     <span>{{ rendered.size }} bytes</span>
     <div class="flex items-center gap-3">
-      <a href="/{{ owner }}/{{ name }}/blame/{{ ref }}/{{ path }}" class="text-blue-600 hover:underline dark:text-blue-400">Blame</a>
-      {# Raw + download bypass htmx — they return non-HTML responses
-         (file bytes) that should land as a real navigation, not be
-         swapped into <main>. #}
+      <a href="{{ url_for('blame', owner=owner, name=name, rest=_rest).path }}" class="text-blue-600 hover:underline dark:text-blue-400">Blame</a>
+      {# Raw + download return non-HTML responses (file bytes) — plain
+         anchors are fine, no htmx in play. #}
       <a
-        href="/{{ owner }}/{{ name }}/raw/{{ ref }}/{{ path }}"
+        href="{{ _raw_url }}"
         target="_blank"
         rel="noopener"
-        hx-boost="false"
         title="View raw"
         aria-label="View raw"
         class="inline-flex items-center text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400">
         {% with icon_class = "h-4 w-4" %}{% include "icons/raw.html" %}{% endwith %}
       </a>
       <a
-        href="/{{ owner }}/{{ name }}/download/{{ ref }}/{{ path }}"
-        hx-boost="false"
+        href="{{ url_for('blob_download', owner=owner, name=name, rest=_rest).path }}"
         download
         title="Download file"
         aria-label="Download file"
@@ -41,7 +40,7 @@
   <div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">File too large to render inline.</div>
   {% elif rendered.is_image %}
   <div class="flex items-center justify-center bg-gray-50 p-8 dark:bg-gray-900">
-    <img src="/{{ owner }}/{{ name }}/raw/{{ ref }}/{{ path }}" alt="{{ path }}" class="max-w-full">
+    <img src="{{ _raw_url }}" alt="{{ path }}" class="max-w-full">
   </div>
   {% elif rendered.is_binary %}
   <div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Binary file — preview not available.</div>

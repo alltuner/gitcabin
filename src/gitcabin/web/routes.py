@@ -501,7 +501,7 @@ def build_router(settings: Settings) -> APIRouter:
 
     # ---- top-level routes ----------------------------------------------- #
 
-    @router.get("/", include_in_schema=False)
+    @router.get("/", include_in_schema=False, name="dashboard")
     def root(request: Request) -> HTMLResponse:
         return _render(
             request,
@@ -510,12 +510,12 @@ def build_router(settings: Settings) -> APIRouter:
             owners=_list_owners(settings),
         )
 
-    @router.get("/highlight.css", include_in_schema=False)
+    @router.get("/highlight.css", include_in_schema=False, name="pygments_css")
     def pygments_css() -> Response:
         # Registered before `/{owner}` so the catch-all doesn't swallow it.
         return Response(content=code.pygments_stylesheet(), media_type="text/css")
 
-    @router.get("/{owner}", include_in_schema=False)
+    @router.get("/{owner}", include_in_schema=False, name="owner")
     def owner_page(request: Request, owner: str) -> HTMLResponse:
         if not (layout.projects_dir(settings.data_dir) / owner).is_dir():
             raise HTTPException(status_code=404, detail="not found")
@@ -527,7 +527,7 @@ def build_router(settings: Settings) -> APIRouter:
             repos=_list_repos(settings, owner),
         )
 
-    @router.get("/{owner}/{name}", include_in_schema=False)
+    @router.get("/{owner}/{name}", include_in_schema=False, name="repo")
     def project_overview(
         request: Request, owner: str, name: str
     ) -> HTMLResponse:
@@ -557,7 +557,7 @@ def build_router(settings: Settings) -> APIRouter:
             raise HTTPException(status_code=404, detail="path required")
         return bare, ref, path
 
-    @router.get("/{owner}/{name}/tree/{rest:path}", include_in_schema=False)
+    @router.get("/{owner}/{name}/tree/{rest:path}", include_in_schema=False, name="tree")
     def project_tree(
         request: Request, owner: str, name: str, rest: str
     ) -> Response:
@@ -566,60 +566,63 @@ def build_router(settings: Settings) -> APIRouter:
         # main is the default) renders identically to `/{owner}/{name}`,
         # so redirect there to keep one URL per page.
         if not path and ref == code.head_ref_name(bare):
-            return RedirectResponse(url=f"/{owner}/{name}", status_code=302)
+            return RedirectResponse(
+                url=request.url_for("repo", owner=owner, name=name).path,
+                status_code=302,
+            )
         return _render_tree(request, project=owner, name=name, ref=ref, path=path)
 
-    @router.get("/{owner}/{name}/blob/{rest:path}", include_in_schema=False)
+    @router.get("/{owner}/{name}/blob/{rest:path}", include_in_schema=False, name="blob")
     def project_blob(
         request: Request, owner: str, name: str, rest: str
     ) -> HTMLResponse:
         _, ref, path = _resolve_ref_url(owner, name, rest, require_path=True)
         return _render_blob(request, project=owner, name=name, ref=ref, path=path)
 
-    @router.get("/{owner}/{name}/raw/{rest:path}", include_in_schema=False)
+    @router.get("/{owner}/{name}/raw/{rest:path}", include_in_schema=False, name="blob_raw")
     def project_raw(owner: str, name: str, rest: str) -> Response:
         _, ref, path = _resolve_ref_url(owner, name, rest, require_path=True)
         return _serve_blob_bytes(
             project=owner, name=name, ref=ref, path=path, attachment=False
         )
 
-    @router.get("/{owner}/{name}/download/{rest:path}", include_in_schema=False)
+    @router.get("/{owner}/{name}/download/{rest:path}", include_in_schema=False, name="blob_download")
     def project_download(owner: str, name: str, rest: str) -> Response:
         _, ref, path = _resolve_ref_url(owner, name, rest, require_path=True)
         return _serve_blob_bytes(
             project=owner, name=name, ref=ref, path=path, attachment=True
         )
 
-    @router.get("/{owner}/{name}/commits/{ref:path}", include_in_schema=False)
+    @router.get("/{owner}/{name}/commits/{ref:path}", include_in_schema=False, name="commits")
     def project_commits(
         request: Request, owner: str, name: str, ref: str
     ) -> HTMLResponse:
         return _render_commits(request, project=owner, name=name, ref=ref)
 
-    @router.get("/{owner}/{name}/commit/{sha}", include_in_schema=False)
+    @router.get("/{owner}/{name}/commit/{sha}", include_in_schema=False, name="commit")
     def project_commit(
         request: Request, owner: str, name: str, sha: str
     ) -> HTMLResponse:
         return _render_commit(request, project=owner, name=name, sha=sha)
 
-    @router.get("/{owner}/{name}/branches", include_in_schema=False)
+    @router.get("/{owner}/{name}/branches", include_in_schema=False, name="branches")
     def project_branches(request: Request, owner: str, name: str) -> HTMLResponse:
         return _render_branches(request, project=owner, name=name)
 
-    @router.get("/{owner}/{name}/blame/{rest:path}", include_in_schema=False)
+    @router.get("/{owner}/{name}/blame/{rest:path}", include_in_schema=False, name="blame")
     def project_blame(
         request: Request, owner: str, name: str, rest: str
     ) -> HTMLResponse:
         _, ref, path = _resolve_ref_url(owner, name, rest, require_path=True)
         return _render_blame(request, project=owner, name=name, ref=ref, path=path)
 
-    @router.get("/{owner}/{name}/issues", include_in_schema=False)
+    @router.get("/{owner}/{name}/issues", include_in_schema=False, name="issues")
     def project_issues(
         request: Request, owner: str, name: str, state: str = "open"
     ) -> HTMLResponse:
         return _render_issues(request, project=owner, name=name, state=state)
 
-    @router.get("/{owner}/{name}/issues/{number}", include_in_schema=False)
+    @router.get("/{owner}/{name}/issues/{number}", include_in_schema=False, name="issue")
     def project_issue(
         request: Request, owner: str, name: str, number: int
     ) -> HTMLResponse:
@@ -647,7 +650,9 @@ def build_router(settings: Settings) -> APIRouter:
         page — the browser-cache staleness is acceptable there since the
         round-trip already drops them on a fresh URL.
         """
-        url = f"/{project}/{name}/issues/{number}"
+        url = request.url_for(
+            "issue", owner=project, name=name, number=number
+        ).path
         if request.headers.get("HX-Request") == "true":
             response = _render_issue(
                 request, project=project, name=name, number=number
@@ -685,7 +690,9 @@ def build_router(settings: Settings) -> APIRouter:
         return _post_action_response(request, project, name, number)
 
     @router.post(
-        "/{owner}/{name}/issues/{number}/comments", include_in_schema=False
+        "/{owner}/{name}/issues/{number}/comments",
+        include_in_schema=False,
+        name="issue_add_comment",
     )
     def project_add_comment(
         request: Request,
@@ -696,13 +703,21 @@ def build_router(settings: Settings) -> APIRouter:
     ) -> Response:
         return _do_add_comment(request, owner, name, number, body)
 
-    @router.post("/{owner}/{name}/issues/{number}/close", include_in_schema=False)
+    @router.post(
+        "/{owner}/{name}/issues/{number}/close",
+        include_in_schema=False,
+        name="issue_close",
+    )
     def project_close(
         request: Request, owner: str, name: str, number: int
     ) -> Response:
         return _do_close(request, owner, name, number)
 
-    @router.post("/{owner}/{name}/issues/{number}/reopen", include_in_schema=False)
+    @router.post(
+        "/{owner}/{name}/issues/{number}/reopen",
+        include_in_schema=False,
+        name="issue_reopen",
+    )
     def project_reopen(
         request: Request, owner: str, name: str, number: int
     ) -> Response:

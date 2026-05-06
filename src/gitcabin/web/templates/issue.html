@@ -62,7 +62,7 @@
 <form
   id="comment-form"
   method="post"
-  action="/{{ owner }}/{{ name }}/issues/{{ issue.number }}/comments"
+  action="{{ url_for('issue_add_comment', owner=owner, name=name, number=issue.number).path }}"
   class="mt-6"
 >
   <label for="comment-body" class="mb-2 block text-sm font-semibold">Add a comment</label>
@@ -85,7 +85,7 @@
   {% if issue.state.value == "OPEN" %}
   <form
     method="post"
-    action="/{{ owner }}/{{ name }}/issues/{{ issue.number }}/close"
+    action="{{ url_for('issue_close', owner=owner, name=name, number=issue.number).path }}"
   >
     <button
       type="submit"
@@ -97,7 +97,7 @@
   {% else %}
   <form
     method="post"
-    action="/{{ owner }}/{{ name }}/issues/{{ issue.number }}/reopen"
+    action="{{ url_for('issue_reopen', owner=owner, name=name, number=issue.number).path }}"
   >
     <button
       type="submit"

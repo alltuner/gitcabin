@@ -1,9 +1,9 @@
 {# ABOUTME: Tag row — name + tip commit metadata (no default badge, no date). Reads `ref`, `owner`, `name`. #}
 {% import "_macros.html" as ui %}
 <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
-  <a href="/{{ owner }}/{{ name }}/tree/{{ ref.name }}" class="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400">{{ ref.name }}</a>
+  <a href="{{ url_for('tree', owner=owner, name=name, rest=ref.name).path }}" class="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400">{{ ref.name }}</a>
   <div class="ml-auto flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-    {{ ui.sha_chip(ref.target_sha, ref.target_short_sha, "/" ~ owner ~ "/" ~ name ~ "/commit/" ~ ref.target_sha) }}
+    {{ ui.sha_chip(ref.target_sha, ref.target_short_sha, url_for('commit', owner=owner, name=name, sha=ref.target_sha).path) }}
     <span>{{ ref.target_subject }}</span>
   </div>
 </div>
