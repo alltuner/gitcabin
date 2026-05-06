@@ -184,12 +184,18 @@ def _list_repos(settings: Settings, owner: str) -> list[dict[str, object]]:
 
 def _repo_pushed_at(bare: BareRepo) -> str:
     """ISO timestamp for the latest commit on any branch, or the dir mtime."""
+    import subprocess
     from datetime import UTC, datetime
 
-    commits = list(bare.repo.iter_commits("--all"))
-    if not commits:
+    try:
+        result = bare.run_git(
+            "log", "--all", "--max-count=1", "--format=%aI"
+        ).strip()
+    except subprocess.CalledProcessError:
+        result = ""
+    if not result:
         return datetime.fromtimestamp(bare.path.stat().st_mtime, tz=UTC).isoformat()
-    return max(c.authored_datetime for c in commits).isoformat()
+    return result
 
 
 def _open_repo(settings: Settings, project: str, name: str) -> BareRepo:

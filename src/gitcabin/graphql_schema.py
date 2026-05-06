@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
@@ -1019,16 +1020,24 @@ def _repo_timestamps(bare: BareRepo) -> tuple[str, str]:
     """Return (created_at, pushed_at) as ISO-8601 strings.
 
     pushed_at is the latest commit author date across all branches; created_at
-    is the oldest commit. With no commits at all (a fresh `git init`), both
-    fall back to the bare directory's mtime so the field still has a real
-    value gh can render.
+    is the oldest. Both come from a one-shot `git log --max-count=1` so the
+    cost stays O(1) even for repos with thousands of commits. With no commits
+    at all (a fresh `git init`), both fall back to the bare directory's mtime
+    so the field still has a real value gh can render.
     """
-    commits = list(bare.repo.iter_commits("--all"))
-    if not commits:
+    try:
+        newest = bare.run_git(
+            "log", "--all", "--max-count=1", "--format=%aI"
+        ).strip()
+        oldest = bare.run_git(
+            "log", "--all", "--reverse", "--max-count=1", "--format=%aI"
+        ).strip()
+    except subprocess.CalledProcessError:
+        newest = oldest = ""
+    if not newest:
         mtime = datetime.fromtimestamp(bare.path.stat().st_mtime, tz=UTC).isoformat()
         return (mtime, mtime)
-    dates = sorted(c.authored_datetime for c in commits)
-    return (dates[0].isoformat(), dates[-1].isoformat())
+    return (oldest, newest)
 
 
 @strawberry.type
