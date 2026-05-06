@@ -56,8 +56,11 @@ class IssueDocument(BaseModel):
     a single `git update-ref` (no payload rewrite). `extra='ignore'` keeps us
     forward-compatible with the older format that did include `number`.
 
-    `provenance` and `gh_issue_id` default to LOCAL_ONLY / None so older payloads
-    that predate the sync subsystem load with the right semantics.
+    `provenance`, `gh_issue_id`, and `gh_author_id` default to LOCAL_ONLY /
+    None so older payloads that predate the sync subsystem load with the
+    right semantics. `gh_author_id` is the stable numeric `user.id` GitHub
+    assigns; sync writes it from the upstream payload and matches against
+    it (rather than the login string) when reconciling renamed users.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -68,6 +71,7 @@ class IssueDocument(BaseModel):
     state: IssueState
     provenance: Provenance = Provenance.LOCAL_ONLY
     gh_issue_id: int | None = None
+    gh_author_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +93,7 @@ class Issue:
     updated_at: str
     provenance: Provenance
     gh_issue_id: int | None
+    gh_author_id: int | None
 
 
 class CommentDocument(BaseModel):
@@ -98,8 +103,10 @@ class CommentDocument(BaseModel):
     filename, and the timestamp is the commit's author date. Same forward-compat
     contract as IssueDocument: extra fields are ignored.
 
-    `provenance` and `gh_comment_id` default to LOCAL_ONLY / None so older
-    payloads that predate the sync subsystem load with the right semantics.
+    `provenance`, `gh_comment_id`, and `gh_author_id` default to LOCAL_ONLY
+    / None so older payloads that predate the sync subsystem load with the
+    right semantics. `gh_author_id` is the stable numeric `user.id` from
+    GitHub for rename-stable identity matching.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -108,6 +115,7 @@ class CommentDocument(BaseModel):
     author: str
     provenance: Provenance = Provenance.LOCAL_ONLY
     gh_comment_id: int | None = None
+    gh_author_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +133,7 @@ class Comment:
     created_at: str
     provenance: Provenance
     gh_comment_id: int | None
+    gh_author_id: int | None
 
 
 def create_issue(repo: BareRepo, *, title: str, body: str, author: str) -> Issue:
@@ -479,6 +488,7 @@ def _comment_from_entry(repo: BareRepo, ref: str, name: str, doc: CommentDocumen
         created_at=_comment_created_at(repo, ref, name) or "",
         provenance=doc.provenance,
         gh_comment_id=doc.gh_comment_id,
+        gh_author_id=doc.gh_author_id,
     )
 
 
@@ -596,6 +606,7 @@ def add_comment(repo: BareRepo, *, number: int, body: str, author: str) -> Comme
         created_at=created_at,
         provenance=doc.provenance,
         gh_comment_id=doc.gh_comment_id,
+        gh_author_id=doc.gh_author_id,
     )
 
 
@@ -669,6 +680,7 @@ def _read_issue_at(commit: Commit, number: int) -> Issue:
         updated_at=updated_at,
         provenance=doc.provenance,
         gh_issue_id=doc.gh_issue_id,
+        gh_author_id=doc.gh_author_id,
     )
 
 
@@ -785,6 +797,7 @@ def import_issue(
     author: str,
     state: IssueState,
     gh_issue_id: int,
+    gh_author_id: int | None = None,
     provenance: Provenance = Provenance.SYNCED_FROM_GITHUB,
     authored_at: str | None = None,
 ) -> Issue:
@@ -798,6 +811,10 @@ def import_issue(
 
     `authored_at` controls the commit's author + committer dates so the
     on-disk log matches the upstream timeline. Pass GitHub's `created_at`.
+
+    `gh_author_id` is GitHub's stable numeric user.id for the issue author —
+    persisted alongside the login so renames upstream are still recognisable
+    after the next pull.
     """
     doc = IssueDocument(
         title=title,
@@ -806,6 +823,7 @@ def import_issue(
         state=state,
         provenance=provenance,
         gh_issue_id=gh_issue_id,
+        gh_author_id=gh_author_id,
     )
     payload = doc.model_dump_json(indent=2)
     blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
@@ -853,6 +871,7 @@ def import_comment(
     body: str,
     author: str,
     gh_comment_id: int,
+    gh_author_id: int | None = None,
     provenance: Provenance = Provenance.SYNCED_FROM_GITHUB,
     authored_at: str | None = None,
 ) -> Comment | None:
@@ -877,6 +896,7 @@ def import_comment(
         author=author,
         provenance=provenance,
         gh_comment_id=gh_comment_id,
+        gh_author_id=gh_author_id,
     )
     payload = doc.model_dump_json(indent=2)
     blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
@@ -926,6 +946,7 @@ def import_comment(
         created_at=created_at,
         provenance=provenance,
         gh_comment_id=gh_comment_id,
+        gh_author_id=gh_author_id,
     )
 
 
@@ -1017,6 +1038,7 @@ def _list_comments_at(repo: BareRepo, ref: str) -> list[Comment]:
                 created_at=created_at,
                 provenance=doc.provenance,
                 gh_comment_id=doc.gh_comment_id,
+                gh_author_id=doc.gh_author_id,
             )
         )
     comments.sort(key=lambda c: c.number)

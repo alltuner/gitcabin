@@ -75,6 +75,7 @@ def test_create_issue_tree_contains_issue_json(repo: BareRepo) -> None:
         "state": "OPEN",
         "provenance": "LOCAL_ONLY",
         "gh_issue_id": None,
+        "gh_author_id": None,
     }
 
 
@@ -270,6 +271,7 @@ def test_add_comment_writes_blob_under_comments_subtree(repo: BareRepo) -> None:
         "author": "bob",
         "provenance": "LOCAL_ONLY",
         "gh_comment_id": None,
+        "gh_author_id": None,
     }
 
 

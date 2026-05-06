@@ -61,13 +61,7 @@ def _import_one(repo: BareRepo, gh_issue: dict[str, Any]) -> Issue:
         if str(gh_issue.get("state", "open")).lower() == "closed"
         else IssueState.OPEN
     )
-    user = gh_issue.get("user")
-    if isinstance(user, dict) and "login" in user:
-        author = str(user["login"])
-    else:
-        # GitHub returns null user for items by deleted accounts ("ghost" UI).
-        # Mirror that behavior with a tombstone author.
-        author = "ghost"
+    author, gh_author_id = _extract_author(gh_issue.get("user"))
     return import_issue(
         repo,
         number=int(gh_issue["number"]),
@@ -76,8 +70,23 @@ def _import_one(repo: BareRepo, gh_issue: dict[str, Any]) -> Issue:
         author=author,
         state=state,
         gh_issue_id=int(gh_issue["id"]),
+        gh_author_id=gh_author_id,
         authored_at=gh_issue.get("created_at"),
     )
+
+
+def _extract_author(user: Any) -> tuple[str, int | None]:
+    """Pull `(login, id)` from a GitHub `user` payload.
+
+    GitHub returns null user for items by deleted accounts ("ghost" UI).
+    Mirror that behavior with a tombstone author and no stable id.
+    """
+    if isinstance(user, dict) and "login" in user:
+        author = str(user["login"])
+        raw_id = user.get("id")
+        gh_author_id = int(raw_id) if isinstance(raw_id, int) else None
+        return author, gh_author_id
+    return "ghost", None
 
 
 def pull_comments(repo: BareRepo, client: GhClient, config: SyncConfig) -> list[Comment]:
@@ -139,11 +148,7 @@ def _import_one_comment(
     refs/issues/<n> means it's an issue comment, refs/prs/<n> means PR.
     Numbers are unique across both within a repo, so there's never both.
     """
-    user = gh_comment.get("user")
-    if isinstance(user, dict) and "login" in user:
-        author = str(user["login"])
-    else:
-        author = "ghost"
+    author, gh_author_id = _extract_author(gh_comment.get("user"))
     body = str(gh_comment.get("body") or "")
     gh_comment_id = int(gh_comment["id"])
     authored_at = gh_comment.get("created_at")
@@ -155,6 +160,7 @@ def _import_one_comment(
             body=body,
             author=author,
             gh_comment_id=gh_comment_id,
+            gh_author_id=gh_author_id,
             authored_at=authored_at,
         )
     if _load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
@@ -164,6 +170,7 @@ def _import_one_comment(
             body=body,
             author=author,
             gh_comment_id=gh_comment_id,
+            gh_author_id=gh_author_id,
             authored_at=authored_at,
         )
     return None

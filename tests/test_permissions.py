@@ -24,6 +24,7 @@ def _issue(author: str, provenance: Provenance = Provenance.LOCAL_ONLY) -> Issue
         updated_at="2026-01-01T00:00:00Z",
         provenance=provenance,
         gh_issue_id=None,
+        gh_author_id=None,
     )
 
 
@@ -35,6 +36,7 @@ def _comment(author: str, provenance: Provenance = Provenance.LOCAL_ONLY) -> Com
         created_at="2026-01-01T00:00:00Z",
         provenance=provenance,
         gh_comment_id=None,
+        gh_author_id=None,
     )
 
 

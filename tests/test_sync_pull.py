@@ -186,14 +186,23 @@ def test_import_issue_with_authored_at_sets_commit_date(repo: BareRepo) -> None:
 
 
 def _issue_payload(
-    number: int, title: str, body: str, login: str, gh_id: int, state: str = "open"
+    number: int,
+    title: str,
+    body: str,
+    login: str,
+    gh_id: int,
+    state: str = "open",
+    user_id: int | None = None,
 ) -> dict[str, object]:
+    user: dict[str, object] = {"login": login}
+    if user_id is not None:
+        user["id"] = user_id
     return {
         "number": number,
         "id": gh_id,
         "title": title,
         "body": body,
-        "user": {"login": login},
+        "user": user,
         "state": state,
         "created_at": "2025-01-01T00:00:00Z",
     }
@@ -282,6 +291,35 @@ def test_pull_issues_handles_null_user_as_ghost(
     assert issue.author == "ghost"
 
 
+def test_pull_issues_captures_gh_author_id_from_user_payload(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    # GitHub's stable numeric `user.id` lets us match a user across login
+    # renames. Sync persists it on the issue alongside the login string.
+    payload = [_issue_payload(5, "t", "", "alice", gh_id=55, user_id=42)]
+
+    pull_issues(repo, GhClient(runner=lambda _argv: json.dumps(payload)), config)
+
+    issue = get_synced_issue(repo, 5)
+    assert issue is not None
+    assert issue.author == "alice"
+    assert issue.gh_author_id == 42
+
+
+def test_pull_issues_leaves_gh_author_id_none_when_user_id_missing(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    # Older GitHub payloads (or our test fixtures) may omit `user.id`. The
+    # author login still imports; the numeric id is just None.
+    payload = [_issue_payload(5, "t", "", "alice", gh_id=55)]
+
+    pull_issues(repo, GhClient(runner=lambda _argv: json.dumps(payload)), config)
+
+    issue = get_synced_issue(repo, 5)
+    assert issue is not None
+    assert issue.gh_author_id is None
+
+
 def test_pull_issues_re_pull_replaces_existing_data(
     repo: BareRepo, config: SyncConfig
 ) -> None:
@@ -339,6 +377,7 @@ def test_import_comment_writes_blob_at_gh_id_filename(repo: BareRepo) -> None:
         "author": "bob",
         "provenance": "SYNCED_FROM_GITHUB",
         "gh_comment_id": 999000111,
+        "gh_author_id": None,
     }
 
 
@@ -383,13 +422,20 @@ def test_list_synced_comments_returns_each_comment_in_id_order(repo: BareRepo) -
 
 
 def _comment_payload(
-    comment_id: int, issue_number: int, body: str, login: str
+    comment_id: int,
+    issue_number: int,
+    body: str,
+    login: str,
+    user_id: int | None = None,
 ) -> dict[str, object]:
+    user: dict[str, object] = {"login": login}
+    if user_id is not None:
+        user["id"] = user_id
     return {
         "id": comment_id,
         "issue_url": f"https://api.github.com/repos/octo/hello/issues/{issue_number}",
         "body": body,
-        "user": {"login": login},
+        "user": user,
         "created_at": "2025-01-02T00:00:00Z",
     }
 
@@ -433,6 +479,28 @@ def test_pull_comments_imports_each_comment_under_its_issue(
     assert [c.body for c in on_one] == ["first on issue 1", "second on issue 1"]
     on_two = list_synced_comments(repo, 2)
     assert [c.body for c in on_two] == ["first on issue 2"]
+
+
+def test_pull_comments_captures_gh_author_id_from_user_payload(
+    repo: BareRepo, config: SyncConfig
+) -> None:
+    import_issue(
+        repo,
+        number=1,
+        title="t",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=11,
+    )
+    payload = [_comment_payload(101, 1, "hi", "bob", user_id=42)]
+
+    pull_comments(repo, GhClient(runner=lambda _argv: json.dumps(payload)), config)
+
+    on_one = list_synced_comments(repo, 1)
+    assert len(on_one) == 1
+    assert on_one[0].author == "bob"
+    assert on_one[0].gh_author_id == 42
 
 
 def test_pull_comments_skips_comments_for_unknown_issues(

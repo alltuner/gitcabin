@@ -205,4 +205,5 @@ def test_pr_comment_uses_gh_id_filename(repo: BareRepo) -> None:
         "author": "bob",
         "provenance": "SYNCED_FROM_GITHUB",
         "gh_comment_id": 999,
+        "gh_author_id": None,
     }

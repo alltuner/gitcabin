@@ -280,6 +280,7 @@ def import_pr_comment(
     body: str,
     author: str,
     gh_comment_id: int,
+    gh_author_id: int | None = None,
     provenance: Provenance = Provenance.SYNCED_FROM_GITHUB,
     authored_at: str | None = None,
 ) -> Comment | None:
@@ -299,6 +300,7 @@ def import_pr_comment(
         author=author,
         provenance=provenance,
         gh_comment_id=gh_comment_id,
+        gh_author_id=gh_author_id,
     )
     payload = doc.model_dump_json(indent=2)
     blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
@@ -348,6 +350,7 @@ def import_pr_comment(
         created_at=created_at,
         provenance=provenance,
         gh_comment_id=gh_comment_id,
+        gh_author_id=gh_author_id,
     )
 
 
