@@ -17,6 +17,7 @@ from jinja2 import select_autoescape
 
 from gitcabin.config import Settings
 from gitcabin.permissions import (
+    RepoRole,
     can_change_issue_state,
     viewer_role,
 )
@@ -32,6 +33,7 @@ from gitcabin.storage.issues import (
     reopen_any_issue,
 )
 from gitcabin.storage.repo import BareRepo
+from gitcabin.storage.timestamps import repo_pushed_at
 from gitcabin.web import code
 from gitcabin.web.assets import AssetResolver
 from gitcabin.web.format import (
@@ -72,6 +74,23 @@ _SAFE_SEGMENT = re.compile(r"^[a-zA-Z0-9._-]+$")
 def _safe_segment(s: str) -> bool:
     """Return True iff s is a safe URL path segment (no traversal, no shell chars)."""
     return bool(_SAFE_SEGMENT.match(s)) and s not in (".", "..")
+
+
+def _cached_viewer_role(request: Request, bare: BareRepo) -> RepoRole:
+    """Return `viewer_role(bare)` reusing a cache scoped to this request.
+
+    A single mutation handler (e.g. closeIssue) checks permission and then
+    re-renders the issue page; both paths need the role. Without a cache
+    that's two sync-config reads on the same bare repo per request.
+    """
+    cache: dict[Path, RepoRole] = getattr(request.state, "viewer_role_cache", None) or {}
+    if not cache:
+        request.state.viewer_role_cache = cache
+    cached = cache.get(bare.path)
+    if cached is None:
+        cached = viewer_role(bare)
+        cache[bare.path] = cached
+    return cached
 
 
 def _check_csrf(request: Request) -> None:
@@ -176,28 +195,12 @@ def _list_repos(settings: Settings, owner: str) -> list[dict[str, object]]:
             {
                 "name": entry.name[: -len(".git")],
                 "description": None,
-                "pushed_at": _repo_pushed_at(bare),
+                "pushed_at": repo_pushed_at(bare),
                 "upstream": upstream,
             }
         )
     out.sort(key=lambda r: r["pushed_at"], reverse=True)
     return out
-
-
-def _repo_pushed_at(bare: BareRepo) -> str:
-    """ISO timestamp for the latest commit on any branch, or the dir mtime."""
-    import subprocess
-    from datetime import UTC, datetime
-
-    try:
-        result = bare.run_git(
-            "log", "--all", "--max-count=1", "--format=%aI"
-        ).strip()
-    except subprocess.CalledProcessError:
-        result = ""
-    if not result:
-        return datetime.fromtimestamp(bare.path.stat().st_mtime, tz=UTC).isoformat()
-    return result
 
 
 def _open_repo(settings: Settings, project: str, name: str) -> BareRepo:
@@ -459,24 +462,9 @@ def build_router(settings: Settings) -> APIRouter:
         request: Request, project: str, name: str, ref: str, path: str
     ) -> HTMLResponse:
         bare = _open_repo(settings, project, name)
-        commit = code.resolve_ref(bare, ref)
-        if commit is None:
-            raise HTTPException(status_code=404, detail="ref not found")
-        node = code.walk_tree_at_path(commit, path)
-        if node is None or node.type != "blob":
+        result = code.blame_blob(bare, ref, path)
+        if result is None:
             raise HTTPException(status_code=404, detail="blob not found")
-        # Skip the blame walk for binary blobs — line attribution doesn't
-        # make sense for a sequence of bytes. Detect via the same NUL-byte
-        # heuristic git uses internally.
-        sample = node.data_stream.read(8192)
-        is_binary = b"\x00" in sample
-        if is_binary:
-            lines: list[code.BlameLine] = []
-        else:
-            blame_lines = code.blame_blob(bare, ref, path)
-            if blame_lines is None:
-                raise HTTPException(status_code=404, detail="blob not found")
-            lines = blame_lines
         return _render(
             request,
             settings,
@@ -485,9 +473,9 @@ def build_router(settings: Settings) -> APIRouter:
             name=name,
             ref=ref,
             path=path,
-            lines=lines,
-            blob_size=node.size,
-            is_binary=is_binary,
+            lines=result.lines,
+            blob_size=result.blob_size,
+            is_binary=result.is_binary,
             crumb_segments=_path_crumbs(path),
             branches=code.list_branches(bare),
             tags=code.list_tags(bare),
@@ -536,7 +524,7 @@ def build_router(settings: Settings) -> APIRouter:
         if issue is None:
             raise HTTPException(status_code=404, detail="issue not found")
         comments = list_any_comments(bare, number)
-        role = viewer_role(bare)
+        role = _cached_viewer_role(request, bare)
         return _render(
             request,
             settings,
@@ -565,7 +553,16 @@ def build_router(settings: Settings) -> APIRouter:
     @router.get("/highlight.css", include_in_schema=False, name="pygments_css")
     def pygments_css() -> Response:
         # Registered before `/{owner}` so the catch-all doesn't swallow it.
-        return Response(content=code.pygments_stylesheet(), media_type="text/css")
+        # The stylesheet content only changes when pygments is upgraded, so
+        # a one-day public cache lets the browser skip the round-trip on
+        # subsequent page loads. We don't bump a version in the URL, so
+        # `immutable` would be too aggressive — `max-age` plus revalidation
+        # is enough.
+        return Response(
+            content=code.pygments_stylesheet(),
+            media_type="text/css",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
     @router.get("/{owner}", include_in_schema=False, name="owner")
     def owner_page(request: Request, owner: str) -> HTMLResponse:
@@ -731,7 +728,7 @@ def build_router(settings: Settings) -> APIRouter:
         request: Request, project: str, name: str, number: int
     ) -> Response:
         bare = _open_repo(settings, project, name)
-        _check_can_change_issue_state(bare, number)
+        _check_can_change_issue_state(request, bare, number)
         if close_any_issue(bare, number=number, actor=settings.viewer_login) is None:
             raise HTTPException(status_code=404, detail="issue not found")
         return _post_action_response(request, project, name, number)
@@ -740,12 +737,14 @@ def build_router(settings: Settings) -> APIRouter:
         request: Request, project: str, name: str, number: int
     ) -> Response:
         bare = _open_repo(settings, project, name)
-        _check_can_change_issue_state(bare, number)
+        _check_can_change_issue_state(request, bare, number)
         if reopen_any_issue(bare, number=number, actor=settings.viewer_login) is None:
             raise HTTPException(status_code=404, detail="issue not found")
         return _post_action_response(request, project, name, number)
 
-    def _check_can_change_issue_state(bare: BareRepo, number: int) -> None:
+    def _check_can_change_issue_state(
+        request: Request, bare: BareRepo, number: int
+    ) -> None:
         """403 if the viewer can't close / reopen this issue.
 
         Mirror of the GraphQL `can_change_issue_state` gate. The dashboard
@@ -756,7 +755,9 @@ def build_router(settings: Settings) -> APIRouter:
         issue = get_any_issue(bare, number)
         if issue is None:
             raise HTTPException(status_code=404, detail="issue not found")
-        if not can_change_issue_state(issue, settings.viewer_login, viewer_role(bare)):
+        if not can_change_issue_state(
+            issue, settings.viewer_login, _cached_viewer_role(request, bare)
+        ):
             raise HTTPException(status_code=403, detail="not permitted")
 
     @router.post(

@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-import subprocess
-from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Annotated
@@ -52,6 +50,7 @@ from gitcabin.storage.prs import (
     list_synced_pr_comments,
 )
 from gitcabin.storage.repo import BareRepo
+from gitcabin.storage.timestamps import repo_timestamps
 
 # ---- Enums --------------------------------------------------------------- #
 
@@ -351,6 +350,25 @@ def _user_for(login: str) -> User:
     return User(id=ids.user_id(login), login=login, name=None, database_id=None)
 
 
+def _cached_viewer_role(info: strawberry.Info, bare: BareRepo) -> RepoRole:
+    """Return `viewer_role(bare)` reusing a per-request cache.
+
+    Resolving the role re-reads the sync config (a commit + blob walk),
+    which adds up when a single GraphQL query selects e.g. `comments`
+    on a hundred issues — Strawberry calls each resolver independently,
+    and without a cache every one of them reloads the same config.
+
+    The cache lives on the request's GraphQL context dict, so it spans
+    one query and is discarded when the response is sent.
+    """
+    cache: dict[Path, RepoRole] = info.context.setdefault("_viewer_role_cache", {})
+    cached = cache.get(bare.path)
+    if cached is None:
+        cached = viewer_role(bare)
+        cache[bare.path] = cached
+    return cached
+
+
 def _to_gql_issue(
     stored: StorageIssue, owner: str, name: str, viewer: str, role: RepoRole
 ) -> Issue:
@@ -453,7 +471,7 @@ class Issue:
             return IssueCommentConnection(nodes=[], total_count=0, page_info=empty_page)
         stored = list_any_comments(bare, coords.number)
         viewer = settings.viewer_login
-        role = viewer_role(bare)
+        role = _cached_viewer_role(info, bare)
         nodes = [
             _to_gql_comment(c, coords.owner, coords.name, coords.number, viewer, role)
             for c in stored
@@ -540,7 +558,7 @@ class PullRequest:
             return IssueCommentConnection(nodes=[], total_count=0, page_info=empty_page)
         stored = list_synced_pr_comments(bare, coords.number)
         viewer = settings.viewer_login
-        role = viewer_role(bare)
+        role = _cached_viewer_role(info, bare)
         nodes = [
             _to_gql_comment(c, coords.owner, coords.name, coords.number, viewer, role)
             for c in stored
@@ -734,7 +752,7 @@ class Repository:
         page = all_stored[:limit]
 
         viewer = settings.viewer_login
-        role = viewer_role(bare)
+        role = _cached_viewer_role(info, bare)
         return IssueConnection(
             nodes=[_to_gql_issue(i, self.owner.login, self.name, viewer, role) for i in page],
             page_info=PageInfo(has_next_page=limit < total, end_cursor=None),
@@ -752,7 +770,8 @@ class Repository:
         if stored is None:
             return None
         return _to_gql_issue(
-            stored, self.owner.login, self.name, settings.viewer_login, viewer_role(bare)
+            stored, self.owner.login, self.name, settings.viewer_login,
+            _cached_viewer_role(info, bare),
         )
 
     @strawberry.field
@@ -768,7 +787,7 @@ class Repository:
         if bare is None:
             return None
         viewer = settings.viewer_login
-        role = viewer_role(bare)
+        role = _cached_viewer_role(info, bare)
         pr = get_any_pr(bare, number)
         if pr is not None:
             return _to_gql_pr(pr, self.owner.login, self.name, viewer, role)
@@ -786,7 +805,8 @@ class Repository:
         if stored is None:
             return None
         return _to_gql_pr(
-            stored, self.owner.login, self.name, settings.viewer_login, viewer_role(bare)
+            stored, self.owner.login, self.name, settings.viewer_login,
+            _cached_viewer_role(info, bare),
         )
 
     @strawberry.field
@@ -821,7 +841,7 @@ class Repository:
         limit = first if first is not None else total
         page = all_stored[:limit]
         viewer = settings.viewer_login
-        role = viewer_role(bare)
+        role = _cached_viewer_role(info, bare)
         return PullRequestConnection(
             nodes=[_to_gql_pr(p, self.owner.login, self.name, viewer, role) for p in page],
             page_info=PageInfo(has_next_page=limit < total, end_cursor=None),
@@ -953,7 +973,7 @@ class RepositoryConnection:
 
 def _to_gql_repository(bare: BareRepo, owner: str, name: str) -> Repository:
     """Build a Repository from on-disk state. Used by the repo list resolver."""
-    created_at, pushed_at = _repo_timestamps(bare)
+    created_at, pushed_at = repo_timestamps(bare)
     return Repository(
         id=ids.repo_id(owner, name),
         name=name,
@@ -1014,42 +1034,6 @@ def _build_repo_connection(
         total_count=total,
         page_info=PageInfo(has_next_page=limit < total, end_cursor=None),
     )
-
-
-def _repo_timestamps(bare: BareRepo) -> tuple[str, str]:
-    """Return (created_at, pushed_at) as ISO-8601 strings.
-
-    pushed_at is the latest commit author date across all branches: a
-    one-shot `git log --max-count=1` returns it in O(1). created_at is the
-    oldest reachable commit's author date: `--max-parents=0` filters to
-    root commits (typically one per repo) and we take the oldest among
-    them. This stays O(roots) which is effectively O(1) for real repos.
-
-    `--reverse --max-count=1` does NOT work for finding the oldest commit:
-    git applies --max-count during traversal (newest-first) and only then
-    reverses, so the result is still the newest commit.
-
-    With no commits at all (a fresh `git init`), both timestamps fall back
-    to the bare directory's mtime so the field still has a real value gh
-    can render.
-    """
-    try:
-        newest = bare.run_git(
-            "log", "--all", "--max-count=1", "--format=%aI"
-        ).strip()
-        # Root-commit dates, one per line; pick the smallest. There's
-        # almost always exactly one (the initial commit) but a repo could
-        # have multiple roots from grafted branches.
-        roots = bare.run_git(
-            "log", "--all", "--max-parents=0", "--format=%aI"
-        ).strip()
-    except subprocess.CalledProcessError:
-        newest = roots = ""
-    if not newest:
-        mtime = datetime.fromtimestamp(bare.path.stat().st_mtime, tz=UTC).isoformat()
-        return (mtime, mtime)
-    oldest = min(roots.splitlines()) if roots else newest
-    return (oldest, newest)
 
 
 @strawberry.type
@@ -1156,7 +1140,8 @@ class Mutation:
 
         return CreateIssuePayload(
             issue=_to_gql_issue(
-                stored, coords.owner, coords.name, settings.viewer_login, viewer_role(repo)
+                stored, coords.owner, coords.name, settings.viewer_login,
+                _cached_viewer_role(info, repo),
             )
         )
 
@@ -1181,7 +1166,7 @@ class Mutation:
         if existing is None:
             raise ValueError(f"Unknown issueId: {input.issue_id!r}")
         viewer = settings.viewer_login
-        role = viewer_role(bare)
+        role = _cached_viewer_role(info, bare)
         if not can_change_issue_state(existing, viewer, role):
             raise PermissionError(
                 f"viewer {viewer!r} cannot change state of issue authored by "
@@ -1232,7 +1217,7 @@ class Mutation:
                     coords.name,
                     coords.number,
                     settings.viewer_login,
-                    viewer_role(bare),
+                    _cached_viewer_role(info, bare),
                 ),
             ),
         )
@@ -1273,7 +1258,8 @@ class Mutation:
             raise ValueError(f"Unknown issue id: {input.id!r}")
         return UpdateIssuePayload(
             issue=_to_gql_issue(
-                stored, coords.owner, coords.name, viewer, viewer_role(bare)
+                stored, coords.owner, coords.name, viewer,
+                _cached_viewer_role(info, bare),
             )
         )
 
@@ -1322,7 +1308,7 @@ class Mutation:
                 coords.name,
                 coords.issue_number,
                 viewer,
-                viewer_role(bare),
+                _cached_viewer_role(info, bare),
             ),
         )
 
@@ -1350,7 +1336,7 @@ class Mutation:
         if existing is None:
             raise ValueError(f"Unknown comment id: {input.id!r}")
         viewer = settings.viewer_login
-        role = viewer_role(bare)
+        role = _cached_viewer_role(info, bare)
         if not can_delete_comment(existing, viewer, role):
             raise PermissionError(
                 f"viewer {viewer!r} (role {role.value}) cannot delete comment "

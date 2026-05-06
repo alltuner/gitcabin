@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import functools
+
 from pygments.formatters import HtmlFormatter
 
 _PYGMENTS_LIGHT_STYLE = "default"
@@ -38,6 +40,7 @@ def _scoped_style_defs(formatter: HtmlFormatter, prefix: str) -> str:
     return "\n".join(out)
 
 
+@functools.lru_cache(maxsize=1)
 def pygments_stylesheet() -> str:
     """The CSS Pygments needs for the `.hl` class our formatter emits.
 
@@ -46,6 +49,9 @@ def pygments_stylesheet() -> str:
     DaisyUI's theme-controller :has() selector, or prefers-color-scheme
     fallback in `system` mode). The dark rules are emitted with three
     different prefix selectors so they fire under each of those triggers.
+
+    Cached at module level — output only changes when pygments itself is
+    upgraded, so recomputing per request is wasted work.
     """
     chunks: list[str] = []
     light = HtmlFormatter(style=_PYGMENTS_LIGHT_STYLE, cssclass="hl")

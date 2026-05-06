@@ -157,6 +157,21 @@ class RefSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class BlameResult:
+    """Outcome of `blame_blob` for a single file at a given ref.
+
+    `lines` is empty when `is_binary` is True — line attribution doesn't
+    apply to binary blobs and we skip the blame walk entirely. `blob_size`
+    is the on-disk byte count, surfaced in the page header alongside the
+    binary-fallback notice when relevant.
+    """
+
+    lines: list[BlameLine]
+    blob_size: int
+    is_binary: bool
+
+
+@dataclass(frozen=True, slots=True)
 class BlameLine:
     """One line of blame output. The first line of any run-of-same-commit lines
     keeps the commit metadata; subsequent contiguous lines reuse it.
@@ -821,22 +836,37 @@ def _highlight_per_line(filename: str, text: str) -> list[str] | None:
     return body.split("\n")
 
 
-def blame_blob(bare: BareRepo, ref: str, path: str) -> list[BlameLine] | None:
-    """Run `git blame` and return per-line attribution. None if path absent."""
+def blame_blob(bare: BareRepo, ref: str, path: str) -> BlameResult | None:
+    """Run `git blame` and return per-line attribution.
+
+    Returns None when the ref doesn't resolve or the path isn't a blob.
+    Binary blobs return a `BlameResult` with `is_binary=True` and an
+    empty `lines` list — line attribution doesn't apply to a sequence of
+    bytes, so we skip the blame walk entirely. The blob is read exactly
+    once (binary detection, decoding, and highlighting share the same
+    bytes).
+    """
     commit = resolve_ref(bare, ref)
     if commit is None:
         return None
     node = walk_tree_at_path(commit, path)
     if node is None or node.type != "blob":
         return None
+
+    raw = node.data_stream.read()
+    blob_size = node.size
+    # Detect binary via the same NUL-byte heuristic git uses internally —
+    # a NUL in the first 8KB means binary.
+    if b"\x00" in raw[:8192]:
+        return BlameResult(lines=[], blob_size=blob_size, is_binary=True)
+
     blame = bare.repo.blame(ref, path)
     if blame is None:
-        return []
+        return BlameResult(lines=[], blob_size=blob_size, is_binary=False)
 
     # Pygments-highlight the file once so each blame line can reuse the
     # tokenization in its own cell. Done outside the per-line loop because
     # tokenization is file-level (a string can span lines, etc).
-    raw = node.data_stream.read()
     try:
         decoded = raw.decode()
     except UnicodeDecodeError:
@@ -880,7 +910,7 @@ def blame_blob(bare: BareRepo, ref: str, path: str) -> list[BlameLine] | None:
                 )
             )
             last_sha = blame_commit.hexsha
-    return out
+    return BlameResult(lines=out, blob_size=blob_size, is_binary=False)
 
 
 def _summarize(c: Commit) -> CommitSummary:

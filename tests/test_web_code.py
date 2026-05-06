@@ -177,6 +177,15 @@ def test_pygments_stylesheet_is_served(web_client: TestClient) -> None:
     assert ".hl" in response.text
 
 
+def test_pygments_stylesheet_has_long_cache_control(web_client: TestClient) -> None:
+    # The stylesheet only changes when pygments is upgraded — let the browser
+    # cache it for a day so subsequent page loads skip the round-trip.
+    response = web_client.get("/highlight.css")
+    cache_control = response.headers.get("cache-control", "")
+    assert "public" in cache_control
+    assert "max-age=86400" in cache_control
+
+
 def test_repo_overview_handles_empty_repo(web_client: TestClient, init_repo, settings) -> None:
     # Fresh bare repo, no commits — overview should render without raising
     # and tell the user the repo is empty.
