@@ -17,11 +17,16 @@ from gitcabin.storage.issues import (
     get_synced_issue,
     list_synced_comments,
 )
+from gitcabin.storage.prs import (
+    LOCAL_PR_REF_PREFIX,
+    create_local_pr,
+    get_synced_pr,
+)
 from gitcabin.storage.repo import BareRepo
 from gitcabin.sync.config import SyncConfig
 from gitcabin.sync.gh import GhClient
 from gitcabin.sync.pending import read_pending
-from gitcabin.sync.push import push_local_issues
+from gitcabin.sync.push import push_local_issues, push_local_prs
 
 
 @pytest.fixture
@@ -43,15 +48,19 @@ class _CountingGh:
         self,
         *,
         first_issue_number: int = 41,
+        first_pr_number: int = 51,
         first_comment_id: int = 8_100_000_000,
         fail_after_issue_post: bool = False,
         fail_after_comment_index: int | None = None,
     ) -> None:
         self.calls: list[tuple[list[str], str | None]] = []
         self.issues_posted = 0
+        self.prs_posted = 0
         self.comments_posted = 0
         self.next_issue_number = first_issue_number
         self.next_issue_id = 9_000_000
+        self.next_pr_number = first_pr_number
+        self.next_pr_id = 7_000_000
         self.next_comment_id = first_comment_id
         self.fail_after_issue_post = fail_after_issue_post
         self.fail_after_comment_index = fail_after_comment_index
@@ -61,6 +70,27 @@ class _CountingGh:
         method = self._method(argv)
         path = argv[-1]
         body = json.loads(stdin) if stdin else {}
+
+        if method == "POST" and path.endswith("/pulls"):
+            self.prs_posted += 1
+            number = self.next_pr_number
+            self.next_pr_number += 1
+            gh_id = self.next_pr_id
+            self.next_pr_id += 1
+            return json.dumps(
+                {
+                    "number": number,
+                    "id": gh_id,
+                    "title": body.get("title", ""),
+                    "body": body.get("body", ""),
+                    "head": {"ref": body.get("head", "").split(":")[-1]},
+                    "base": {"ref": body.get("base", "")},
+                    "state": "open",
+                    "draft": body.get("draft", False),
+                    "created_at": "2026-05-04T10:00:00Z",
+                    "user": {"login": "alice-on-github"},
+                }
+            )
 
         if method == "POST" and path.endswith("/issues"):
             self.issues_posted += 1
@@ -200,3 +230,80 @@ def test_crash_mid_comment_loop_does_not_double_post_earlier_comments(
     saved_ids_set = set(saved_ids)
     matched = [c.gh_comment_id for c in comments if c.gh_comment_id in saved_ids_set]
     assert sorted(matched) == sorted(saved_ids)
+
+
+# ---- PR resume protocol ----------------------------------------------- #
+
+
+def _no_branch_push(*_: object, **__: object) -> None:
+    """Stub BranchPusher that never touches the network — these tests
+    exercise the PR-POST resume window, not the upstream branch upload."""
+    return None
+
+
+def test_pr_crash_after_post_does_not_re_post_on_retry(
+    repo: BareRepo,
+    config: SyncConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Force a crash *after* the upstream PR POST returns and pending state
+    has been written, but *before* the local re-import lands. A retry must
+    reuse the cached gh_number rather than POSTing a duplicate PR upstream.
+    """
+    create_local_pr(
+        repo,
+        title="add tests",
+        body="describe what was added",
+        author="david",
+        head_ref="alice-on-github:tests",
+        base_ref="main",
+    )
+
+    # Crash inside import_pr — that's the first step *after* record_pr_pushed
+    # writes the pending entry, which is exactly the window we want to
+    # exercise. Patching it on the push module mirrors how it's imported.
+    import gitcabin.sync.push as push_mod
+
+    crashed = {"value": False}
+
+    def crashing_import_pr(*args: object, **kwargs: object) -> object:
+        crashed["value"] = True
+        raise RuntimeError("simulated crash after PR POST")
+
+    monkeypatch.setattr(push_mod, "import_pr", crashing_import_pr)
+
+    crashing = _CountingGh(first_pr_number=51)
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        push_local_prs(repo, _client_for(crashing), config, push_branch=_no_branch_push)
+
+    # The PR POST went through; pending state now holds the upstream slot.
+    assert crashed["value"] is True
+    assert crashing.prs_posted == 1
+    pending = read_pending(repo)
+    assert f"{LOCAL_PR_REF_PREFIX}/1" in pending.prs
+    assert pending.prs[f"{LOCAL_PR_REF_PREFIX}/1"].gh_number == 51
+
+    # Local ref still in place because cleanup hasn't run yet.
+    assert repo.run_git("for-each-ref", LOCAL_PR_REF_PREFIX) != ""
+
+    # Restore the real import_pr for the retry.
+    monkeypatch.undo()
+
+    # Retry with a fresh runner that allocates from a different number-space;
+    # if the retry POSTs again, the synced ref would land at 999, not 51.
+    healthy = _CountingGh(first_pr_number=999)
+    pushed = push_local_prs(
+        repo, _client_for(healthy), config, push_branch=_no_branch_push
+    )
+    assert healthy.prs_posted == 0  # the load-bearing assertion
+    assert len(pushed) == 1
+    assert pushed[0].number == 51  # original gh_number, not retry's 999
+
+    synced = get_synced_pr(repo, 51)
+    assert synced is not None
+    assert synced.provenance is Provenance.SYNCED_BIDIR
+
+    # Pending entry cleared after the protocol completed.
+    assert read_pending(repo).prs == {}
+    # Local ref retired.
+    assert repo.run_git("for-each-ref", LOCAL_PR_REF_PREFIX) == ""

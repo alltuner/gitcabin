@@ -50,18 +50,34 @@ class PendingIssuePush(BaseModel):
     comments: list[PushedComment] = []
 
 
+class PendingPrPush(BaseModel):
+    """The durable state of a partially completed `_push_one_pr` invocation.
+
+    Written immediately after the upstream PR POST succeeds; removed once
+    the local re-import + ref cleanup completes. PRs don't carry a comment
+    sub-protocol the way issues do — the body is the only "comment-shaped"
+    content and lands as part of the same POST.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    kind: str = "pr"
+    gh_number: int
+    gh_id: int
+    authored_at: str | None = None
+
+
 class PendingState(BaseModel):
     """The whole `refs/meta/sync-pending` document.
 
     Keyed by local-ref path (e.g. `refs/issues/local/3`) so the same
-    document can carry pending state for multiple in-flight items. Today
-    only issues are tracked; PRs follow the same pattern when #12's PR
-    half lands.
+    document can carry pending state for multiple in-flight items.
     """
 
     model_config = ConfigDict(extra="ignore")
 
     issues: dict[str, PendingIssuePush] = {}
+    prs: dict[str, PendingPrPush] = {}
 
 
 def read_pending(repo: BareRepo) -> PendingState:
@@ -104,7 +120,16 @@ def clear_issue(repo: BareRepo, local_ref: str) -> None:
     if local_ref not in state.issues:
         return
     new_issues = {k: v for k, v in state.issues.items() if k != local_ref}
-    write_pending(repo, PendingState(issues=new_issues))
+    write_pending(repo, PendingState(issues=new_issues, prs=state.prs))
+
+
+def clear_pr(repo: BareRepo, local_ref: str) -> None:
+    """Remove the pending PR entry for `local_ref` after a successful push."""
+    state = read_pending(repo)
+    if local_ref not in state.prs:
+        return
+    new_prs = {k: v for k, v in state.prs.items() if k != local_ref}
+    write_pending(repo, PendingState(issues=state.issues, prs=new_prs))
 
 
 def record_issue_pushed(
@@ -119,6 +144,23 @@ def record_issue_pushed(
     the upstream POST and any further side effects."""
     state = read_pending(repo)
     state.issues[local_ref] = PendingIssuePush(
+        gh_number=gh_number, gh_id=gh_id, authored_at=authored_at
+    )
+    write_pending(repo, state)
+
+
+def record_pr_pushed(
+    repo: BareRepo,
+    local_ref: str,
+    *,
+    gh_number: int,
+    gh_id: int,
+    authored_at: str | None,
+) -> None:
+    """Stamp a freshly-POSTed PR into pending state — call this between
+    the upstream POST and any further side effects."""
+    state = read_pending(repo)
+    state.prs[local_ref] = PendingPrPush(
         gh_number=gh_number, gh_id=gh_id, authored_at=authored_at
     )
     write_pending(repo, state)

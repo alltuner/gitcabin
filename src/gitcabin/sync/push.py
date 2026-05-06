@@ -27,9 +27,15 @@ from gitcabin.sync.config import SyncConfig
 from gitcabin.sync.gh import GhClient
 from gitcabin.sync.pending import (
     clear_issue as clear_pending_issue,
+)
+from gitcabin.sync.pending import (
+    clear_pr as clear_pending_pr,
+)
+from gitcabin.sync.pending import (
     read_pending,
     record_comment_pushed,
     record_issue_pushed,
+    record_pr_pushed,
 )
 
 
@@ -302,12 +308,12 @@ def push_local_prs(
       2. Re-import as SYNCED_BIDIR at refs/prs/<gh_number>.
       3. Drop refs/prs/local/<n>.
 
-    The PR-side resume protocol is still TODO: push_local_issues writes its
-    in-flight state to `refs/meta/sync-pending`, but `_push_one_pr` doesn't
-    yet. A failure between the upstream POST and the local re-import leaves
-    the upstream PR with no local counterpart and a retry would create a
-    duplicate. The fix is the same shape as the issue path; see
-    `gitcabin.sync.pending`.
+    Crash safety: the upstream PR POST result (gh_number, gh_id, created_at)
+    is durably recorded into `refs/meta/sync-pending` before any further
+    work runs. A retry consults that record first and skips the re-POST for
+    PRs GitHub already accepted, so a crash between the POST and the local
+    re-import can resume without double-publishing. See
+    `gitcabin.sync.pending` for the storage format.
     """
     out: list[Pr] = []
     for pr in list_local_prs(repo):
@@ -325,42 +331,68 @@ def _push_one_pr(
     *,
     push_branch: BranchPusher,
 ) -> Pr:
-    """Execute the per-PR push protocol described in push_local_prs."""
+    """Execute the per-PR push protocol described in push_local_prs.
+
+    Resumable: the upstream PR id is persisted to refs/meta/sync-pending
+    immediately after the POST returns, so a crash before the local
+    re-import can recover without re-POSTing the PR upstream.
+    """
     base = f"repos/{config.gh_owner}/{config.gh_name}"
+    local_ref = f"{LOCAL_PR_REF_PREFIX}/{pr.number}"
+    pending = read_pending(repo).prs.get(local_ref)
 
     # 0. Push the head branch first if we own it locally. The POST in step 1
     # would otherwise 422 with "head ref does not exist" against a fresh
     # GitHub repo. Cross-fork PRs and branches that exist only on the
     # user's working tree (not the bare repo) are skipped — those are the
     # legacy manual-push cases and continue to work as before.
-    branch = branch_for_push(pr.head_ref, config.gh_viewer_login)
-    if branch is not None and _has_local_branch(repo, branch):
-        push_branch(
-            repo,
-            gh_owner=config.gh_owner,
-            gh_name=config.gh_name,
-            host=client.host,
-            branch=branch,
-        )
+    #
+    # On retry (pending is set) we skip the branch push too: GitHub already
+    # accepted the PR, which means it already saw the head branch — there's
+    # nothing left to upload. Re-pushing would be a redundant network call.
+    if pending is None:
+        branch = branch_for_push(pr.head_ref, config.gh_viewer_login)
+        if branch is not None and _has_local_branch(repo, branch):
+            push_branch(
+                repo,
+                gh_owner=config.gh_owner,
+                gh_name=config.gh_name,
+                host=client.host,
+                branch=branch,
+            )
 
-    # 1. POST the PR upstream. GitHub's response carries the assigned number,
-    # id, and timestamps we want on the SYNCED_BIDIR re-import.
-    created = _expect_dict(
-        client.post_json(
-            f"{base}/pulls",
-            {
-                "title": pr.title,
-                "body": pr.body,
-                "head": pr.head_ref,
-                "base": pr.base_ref,
-                "draft": pr.is_draft,
-            },
-        ),
-        "POST /pulls response",
-    )
-    gh_number = int(created["number"])
-    gh_id = int(created["id"])
-    pr_authored_at = str(created.get("created_at") or "") or None
+    # 1. POST the PR upstream — unless we already did and the prior push
+    # crashed before reaching the cleanup. The pending record is the durable
+    # "we already paid for this slot" receipt that prevents a duplicate POST
+    # on retry.
+    if pending is None:
+        created = _expect_dict(
+            client.post_json(
+                f"{base}/pulls",
+                {
+                    "title": pr.title,
+                    "body": pr.body,
+                    "head": pr.head_ref,
+                    "base": pr.base_ref,
+                    "draft": pr.is_draft,
+                },
+            ),
+            "POST /pulls response",
+        )
+        gh_number = int(created["number"])
+        gh_id = int(created["id"])
+        pr_authored_at = str(created.get("created_at") or "") or None
+        record_pr_pushed(
+            repo,
+            local_ref,
+            gh_number=gh_number,
+            gh_id=gh_id,
+            authored_at=pr_authored_at,
+        )
+    else:
+        gh_number = pending.gh_number
+        gh_id = pending.gh_id
+        pr_authored_at = pending.authored_at
 
     # 2. Re-import as SYNCED_BIDIR under the upstream number. PR comments
     # aren't part of this protocol — they live on the issue/comment side
@@ -382,6 +414,9 @@ def _push_one_pr(
     )
 
     # 3. Drop the local ref.
-    repo.run_git("update-ref", "-d", f"{LOCAL_PR_REF_PREFIX}/{pr.number}")
+    repo.run_git("update-ref", "-d", local_ref)
+
+    # 4. Clear the pending record — the protocol is complete for this PR.
+    clear_pending_pr(repo, local_ref)
 
     return pushed
