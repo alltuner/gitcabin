@@ -700,7 +700,7 @@ class Repository:
             return None
         try:
             head_ref = bare.repo.head.reference.name
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             # Detached HEAD or no commits yet — gh tolerates a null here.
             return None
         return Ref(name=head_ref)

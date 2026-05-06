@@ -84,7 +84,7 @@ class Counter:
         """The current counters commit, or None if the ref doesn't exist."""
         try:
             return self.repo.repo.commit(COUNTERS_REF)
-        except BadName, ValueError:
+        except (BadName, ValueError):
             return None
 
     def _read_value(self, commit: Commit | None) -> int:

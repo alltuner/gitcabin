@@ -160,7 +160,7 @@ def head_ref_name(bare: BareRepo) -> str | None:
     """Return the symbolic HEAD's ref name, or None on detached HEAD/empty repo."""
     try:
         return bare.repo.head.reference.name
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -178,7 +178,7 @@ def resolve_ref(bare: BareRepo, ref: str) -> Commit | None:
     """Resolve a ref string (branch / tag / sha) to a Commit, or None."""
     try:
         return bare.repo.commit(ref)
-    except BadName, ValueError:
+    except (BadName, ValueError):
         return None
 
 
@@ -192,7 +192,7 @@ def walk_tree_at_path(commit: Commit, path: str) -> Tree | Blob | None:
             continue
         try:
             node = node[segment]  # type: ignore[index]
-        except KeyError, TypeError:
+        except (KeyError, TypeError):
             return None
     return node
 

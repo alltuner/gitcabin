@@ -629,7 +629,7 @@ def _load_commit(repo: BareRepo, ref: str) -> Commit | None:
     """Resolve `ref` to a Commit, or None if the ref doesn't exist."""
     try:
         return repo.repo.commit(ref)
-    except BadName, ValueError:
+    except (BadName, ValueError):
         return None
 
 
