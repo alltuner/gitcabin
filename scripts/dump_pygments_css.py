@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import sys
 
-from gitcabin.web.code import pygments_stylesheet
+from gitcabin.web.pygments_css import pygments_stylesheet
 
 
 def main() -> None:

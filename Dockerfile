@@ -17,16 +17,29 @@
 FROM oven/bun:1 AS assets
 WORKDIR /work
 
+# build.ts shells out to `uv run python scripts/dump_pygments_css.py`
+# during the bundle (pygments tokens get inlined into the Tailwind output),
+# so the bun stage needs uv on PATH. Pull it from the official image —
+# fastest way, no compile step. The uv binary is self-contained; it brings
+# its own python at first use.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 # Cache deps in a separate layer. bun.lock pins everything we install.
 COPY web-src/package.json web-src/bun.lock ./web-src/
 RUN cd web-src && bun install --frozen-lockfile
 
-# Bundler input + the templates Tailwind 4's @source directive scans. The
-# templates are read-only here (this stage doesn't run the Python app), but
-# tailwindcss needs to see their HTML to know which utility classes to emit.
+# Bundler input plus the project metadata + source `uv run` needs. The
+# templates are what Tailwind 4's @source directive scans (the bun stage
+# doesn't run the Python app, but tailwindcss needs the HTML to know which
+# utility classes to emit). pyproject.toml + uv.lock + src/ + scripts/ are
+# what `uv run scripts/dump_pygments_css.py` resolves at bundle time. All
+# of this stays in stage 1 — the runtime image only copies the bundled
+# CSS/JS out of /work/src/gitcabin/web/static/dist/.
 COPY web-src/build.ts web-src/src/ ./web-src/
 COPY web-src/src/ ./web-src/src/
-COPY src/gitcabin/web/templates/ ./src/gitcabin/web/templates/
+COPY pyproject.toml uv.lock README.md LICENSE ./
+COPY src/ ./src/
+COPY scripts/ ./scripts/
 
 # Build the bundle. `CLEAN=1 bun run build` writes hashed files + manifest.json
 # to ./src/gitcabin/web/static/dist/ — the runtime stage copies from there.
