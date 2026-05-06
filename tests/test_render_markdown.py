@@ -96,3 +96,12 @@ def test_details_summary_preserved() -> None:
 def test_kbd_preserved() -> None:
     result = render_markdown("Press <kbd>Ctrl</kbd>.")
     assert "<kbd>" in result
+
+
+def test_render_markdown_does_not_leak_toc_between_calls() -> None:
+    # The toc extension accumulates headings across calls if reset() isn't
+    # invoked. Two renders with the same source must produce identical output.
+    src = "# A\n\n[TOC]\n\n## B"
+    a = render_markdown(src)
+    b = render_markdown(src)
+    assert a == b

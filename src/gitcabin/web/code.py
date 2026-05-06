@@ -34,6 +34,29 @@ README_CANDIDATES: tuple[str, ...] = (
 MAX_BLOB_RENDER_BYTES = 1_000_000
 
 
+# HtmlFormatter is stateless across format() calls — share one configured
+# instance per call site instead of rebuilding the css class registry on
+# every blob / blame line.
+#
+# `anchorlinenos` wraps each line number in `<a href="#L<n>">` and gives
+# the corresponding code line `id="L<n>"` so users can deep-link to a
+# specific line. Pygments hardcodes a hyphen in its anchor format
+# (`L-1`, `L-2`); render_blob rewrites those to `L1`, `L2` to match
+# GitHub's `#L42` convention so links pasted between the two services
+# Just Work.
+_BLOB_FORMATTER = HtmlFormatter(
+    linenos="table",
+    cssclass="hl",
+    wrapcode=True,
+    anchorlinenos=True,
+    lineanchors="L",
+)
+
+# `nowrap=True` strips the `<div><pre>` wrapper so callers can splice
+# the colored spans into their own per-line cells.
+_BLAME_LINE_FORMATTER = HtmlFormatter(nowrap=True)
+
+
 @dataclass(frozen=True, slots=True)
 class TreeEntry:
     """One row in a file-listing view (a tree subdir, blob, or symlink)."""
@@ -454,6 +477,13 @@ _MARKDOWN_ATTRIBUTES: dict[str, set[str]] = {
 }
 
 
+# Building a Markdown instance registers every extension's processors;
+# reuse one and call .reset() to clear per-call state (toc, footnotes).
+_MD = markdown.Markdown(
+    extensions=["fenced_code", "tables", "toc", _GfmAlertExtension()]
+)
+
+
 def render_markdown(text: str) -> str:
     """Render Markdown to sanitized HTML.
 
@@ -462,10 +492,7 @@ def render_markdown(text: str) -> str:
     browser. Structural markup produced by the fenced_code, tables, toc,
     and GFM alert extensions is preserved.
     """
-    md = markdown.Markdown(
-        extensions=["fenced_code", "tables", "toc", _GfmAlertExtension()]
-    )
-    raw_html = md.convert(text)
+    raw_html = _MD.reset().convert(text)
     return nh3.clean(
         raw_html,
         tags=_MARKDOWN_TAGS,
@@ -549,22 +576,10 @@ def render_blob(blob: Blob) -> RenderedBlob:
         lexer = guess_lexer_for_filename(blob.name, text)
     except ClassNotFound:
         lexer = get_lexer_by_name("text")
-    # `anchorlinenos` wraps each line number in `<a href="#L<n>">` and gives
-    # the corresponding code line `id="L<n>"` so users can deep-link to a
-    # specific line. Pygments hardcodes a hyphen in its anchor format
-    # (`L-1`, `L-2`); rewriting to `L1`, `L2` matches GitHub's `#L42`
-    # convention so links pasted between the two services Just Work.
-    formatter = HtmlFormatter(
-        linenos="table",
-        cssclass="hl",
-        wrapcode=True,
-        anchorlinenos=True,
-        lineanchors="L",
-    )
     html = re.sub(
         r'(name|id|href)="(#?)L-(\d+)"',
         r'\1="\2L\3"',
-        highlight(text, lexer, formatter),
+        highlight(text, lexer, _BLOB_FORMATTER),
     )
     return RenderedBlob(
         name=blob.name,
@@ -795,16 +810,14 @@ def _summarize_refs(bare: BareRepo, refs) -> list[RefSummary]:  # type: ignore[n
 def _highlight_per_line(filename: str, text: str) -> list[str] | None:
     """Highlight `text` with pygments and return one HTML string per line.
 
-    `nowrap=True` strips the `<div><pre>` wrapper so callers can splice
-    the colored spans into their own per-line cells. Returns None if no
-    lexer matches the filename — caller falls back to plain text.
+    Returns None if no lexer matches the filename — caller falls back to
+    plain text.
     """
     try:
         lexer = guess_lexer_for_filename(filename, text)
     except ClassNotFound:
         return None
-    formatter = HtmlFormatter(nowrap=True)
-    body = highlight(text, lexer, formatter)
+    body = highlight(text, lexer, _BLAME_LINE_FORMATTER)
     return body.split("\n")
 
 
