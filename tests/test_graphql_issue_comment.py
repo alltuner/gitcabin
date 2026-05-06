@@ -97,3 +97,33 @@ def test_comments_empty_for_new_issue(client: TestClient, init_repo) -> None:
     comments = payload["data"]["repository"]["issue"]["comments"]
     assert comments["totalCount"] == 0
     assert comments["nodes"] == []
+
+
+def test_add_comment_works_on_synced_issue(client: TestClient, init_repo) -> None:
+    from gitcabin.storage.issues import IssueState, import_issue
+
+    bare = init_repo("octocat", "hello")
+    import_issue(
+        bare,
+        number=42,
+        title="from upstream",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=999,
+    )
+    payload = _post(
+        client,
+        GH_ADD_COMMENT,
+        {
+            "input": {
+                "subjectId": issue_id("octocat", "hello", 42),
+                "body": "graphql reply on synced",
+            }
+        },
+    )
+    assert "errors" not in payload, payload
+    assert (
+        payload["data"]["addComment"]["commentEdge"]["node"]["body"]
+        == "graphql reply on synced"
+    )

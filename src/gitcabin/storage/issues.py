@@ -549,7 +549,28 @@ def add_comment(repo: BareRepo, *, number: int, body: str, author: str) -> Comme
     Comments live at comments/<NNNN>.json with NNNN sequential within the issue.
     Returns the new Comment, or None if the issue doesn't exist.
     """
-    ref = _ref_for(number)
+    return _add_comment_at(repo, _ref_for(number), body, author)
+
+
+def add_any_comment(
+    repo: BareRepo, *, number: int, body: str, author: str
+) -> Comment | None:
+    """Append a comment to an issue in either namespace, preferring the synced ref.
+
+    Resolves the same way as get_any_issue: synced wins on collision. The
+    new comment lands at refs/issues/<n>:comments/<NNNN>.json or
+    refs/issues/local/<n>:comments/<NNNN>.json depending on which ref
+    holds the issue. Returns None only if neither ref exists.
+    """
+    if _load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
+        return _add_comment_at(repo, f"{ISSUE_REF_PREFIX}/{number}", body, author)
+    return add_comment(repo, number=number, body=body, author=author)
+
+
+def _add_comment_at(
+    repo: BareRepo, ref: str, body: str, author: str
+) -> Comment | None:
+    """Shared body for add_comment / add_any_comment — append to a specific ref."""
     current = _load_commit(repo, ref)
     if current is None:
         return None

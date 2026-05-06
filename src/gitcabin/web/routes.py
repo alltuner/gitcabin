@@ -23,7 +23,7 @@ from gitcabin.permissions import (
 from gitcabin.storage import layout
 from gitcabin.storage.issues import (
     IssueState,
-    add_comment,
+    add_any_comment,
     close_any_issue,
     get_any_issue,
     list_all_issues,
@@ -715,7 +715,7 @@ def build_router(settings: Settings) -> APIRouter:
         bare = _open_repo(settings, project, name)
         if body.strip():
             if (
-                add_comment(bare, number=number, body=body, author=settings.viewer_login)
+                add_any_comment(bare, number=number, body=body, author=settings.viewer_login)
                 is None
             ):
                 raise HTTPException(status_code=404, detail="issue not found")

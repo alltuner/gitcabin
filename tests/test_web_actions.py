@@ -265,3 +265,26 @@ def test_csrf_allows_no_origin_header(
         follow_redirects=False,
     )
     assert response.status_code == 303
+
+
+def test_comment_form_works_on_synced_issue(
+    web_client: TestClient, init_repo
+) -> None:
+    bare = init_repo("octocat", "hello")
+    import_issue(
+        bare,
+        number=42,
+        title="from upstream",
+        body="",
+        author="alice",
+        state=IssueState.OPEN,
+        gh_issue_id=999,
+    )
+    response = web_client.post(
+        "/octocat/hello/issues/42/comments",
+        data={"body": "reply on a synced issue"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    follow = web_client.get("/octocat/hello/issues/42")
+    assert "reply on a synced issue" in follow.text

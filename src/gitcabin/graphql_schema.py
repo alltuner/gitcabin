@@ -28,7 +28,7 @@ from gitcabin.storage.issues import (
     Issue as StorageIssue,
 )
 from gitcabin.storage.issues import (
-    add_comment as storage_add_comment,
+    add_any_comment as storage_add_comment,
 )
 from gitcabin.storage.issues import (
     close_any_issue as storage_close_issue,
