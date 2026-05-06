@@ -104,7 +104,8 @@ cab issue view 1 -R me/cabin --comments
 cab issue edit 1 -R me/cabin --title "Renamed"
 cab issue edit 1 -R me/cabin --body "Updated body"
 
-# Close. Reopening locally isn't wired up yet; manage state with edit.
+# Close. The reopen mutation isn't exposed over GraphQL yet (the
+# dashboard reopens via its own POST endpoint — see /issues/<n>/reopen).
 cab issue close 1 -R me/cabin
 ```
 
@@ -190,7 +191,7 @@ gitcabin sync pull me/cabin
 # pulled 12 issues, 3 PRs, 47 comments
 ```
 
-**Push local-only issues to GitHub.** Walks `refs/issues/local/*`, posts each to GitHub, gets back the upstream number, and renumbers the ref to match. The local ref is dropped only after the new synced ref is fully populated.
+**Push local-only issues to GitHub.** Walks `refs/issues/local/*`, posts each to GitHub, gets back the upstream number, and renumbers the ref to match. The local ref is dropped only after the new synced ref is fully populated. Each upstream side effect (issue POST, then each comment POST) is durably recorded in `refs/meta/sync-pending` before the next runs, so a crash mid-push can resume without re-publishing items GitHub already accepted.
 
 ```sh
 gitcabin sync push me/cabin
@@ -199,12 +200,26 @@ gitcabin sync push me/cabin
 
 After push, the issue's `provenance` becomes `SYNCED_BIDIR` and its author is rewritten to the gh-side login (whoever gh authenticated as on github.com). The original local number is gone — `gh issue view 41` works, `gh issue view <old-local>` doesn't.
 
+**Push, then pull, in one command.** Re-pull is GitHub-wins, so running pull on its own can clobber local-only items that were never pushed. `gitcabin sync sync` runs the push first so local-only drafts land upstream before pull rewrites the synced refs. `--push-only` and `--pull-only` are escape hatches for the one-direction case.
+
+```sh
+gitcabin sync sync me/cabin
+# pushed 0 issues
+# pulled 12 issues, 3 PRs, 47 comments
+```
+
+**Run sync inside the docker container.** `gh` is installed in the runtime image and the host's `~/.config/gh` is bind-mounted read-only, so `docker compose exec` reuses your host login without re-authenticating. On macOS, where `gh auth login` stores the token in Keychain rather than `hosts.yml`, pass it through with `-e GH_TOKEN`:
+
+```sh
+docker compose exec -e GH_TOKEN=$(gh auth token --hostname github.com) \
+  gitcabin gitcabin sync sync me/cabin
+```
+
 **Sync mode trade-offs you should know:**
 
-- *Re-pull clobbers local edits on synced items.* If you close a synced issue locally and then run `pull` again, GitHub's open state will overwrite yours. A push-then-pull orchestration is tracked at [#13](https://github.com/alltuner/gitcabin/issues/13).
-- *Push isn't crash-safe yet.* If `push` dies between the upstream POST and the local renumbering, retrying creates a duplicate issue on GitHub. Tracked at [#12](https://github.com/alltuner/gitcabin/issues/12).
-- *PR push isn't built.* You can pull PRs to read them, but creating a PR from gitcabin needs local-branch infrastructure that doesn't exist yet ([#14](https://github.com/alltuner/gitcabin/issues/14)).
-- *`gh_author_id` isn't tracked.* If a GitHub user renames, items they authored on synced issues will keep their old login locally until the next pull updates the display ([#18](https://github.com/alltuner/gitcabin/issues/18)).
+- *Re-pull is GitHub-wins.* `gitcabin sync sync` mitigates the common case (local-only items pushed before pull) but doesn't yet detect *edits* to already-synced items. Closing a synced issue locally still gets clobbered on the next pull.
+- *PR push for cross-fork branches.* `gitcabin sync push` creates same-repo PRs end-to-end (pushing the head branch through `gh auth git-credential` first), but cross-fork PRs (`head_ref="other:branch"`) still need the manual `git push` workflow because gitcabin has no remote for someone else's fork.
+- *PR push isn't crash-safe yet.* The issue path (`_push_one`) records pending state to `refs/meta/sync-pending` and resumes cleanly; the PR path (`_push_one_pr`) doesn't yet — same shape, not wired in.
 
 The full design and outstanding gaps live in [`docs/github-sync.md`](docs/github-sync.md).
 

@@ -415,7 +415,8 @@ cab issue view 1 -R me/cabin --comments
 cab issue edit 1 -R me/cabin --title "Renamed"
 cab issue edit 1 -R me/cabin --body  "Updated body"
 
-<span class="c"># close. Reopening locally isn't wired up yet; manage state with edit.</span>
+<span class="c"># close. The reopen mutation isn't exposed over GraphQL yet (the</span>
+<span class="c"># dashboard reopens via its own POST endpoint — see /issues/&lt;n&gt;/reopen).</span>
 cab issue close 1 -R me/cabin
 
 <span class="c"># comment</span>
@@ -487,11 +488,18 @@ cab issue comment 1 -R me/cabin --body "A reply"</code></pre>
       <p>Pull from GitHub. Pulls issues into <code>refs/issues/&lt;gh-number&gt;</code>, PRs into <code>refs/prs/&lt;gh-number&gt;</code>, and comments under each ref's <code>comments/</code> subtree. Re-pulls overwrite — GitHub wins when there's a conflict:</p>
 <pre><code>gitcabin sync pull me/cabin
 <span class="c"># pulled 12 issues, 3 PRs, 47 comments</span></code></pre>
-      <p>Push local-only issues to GitHub. Walks <code>refs/issues/local/*</code>, posts each, gets back the upstream number, and renumbers the ref to match. The local ref is dropped only after the new synced ref is fully populated:</p>
+      <p>Push local-only issues to GitHub. Walks <code>refs/issues/local/*</code>, posts each, gets back the upstream number, and renumbers the ref to match. The local ref is dropped only after the new synced ref is fully populated. Each upstream side effect lands in <code>refs/meta/sync-pending</code> before the next, so a crash mid-push resumes without double-publishing:</p>
 <pre><code>gitcabin sync push me/cabin
 <span class="c"># pushed 1 issues</span></code></pre>
       <p>After push, the issue's <code>provenance</code> becomes <code>SYNCED_BIDIR</code> and its author is rewritten to the gh-side login.</p>
-      <p>Caveats worth knowing: re-pull clobbers local edits on synced items; push isn't crash-safe yet (a death between upstream POST and local renumbering creates a duplicate); PR push isn't built (you can pull PRs to read them, but creating one needs local-branch infra that isn't there); <code>gh_author_id</code> isn't tracked yet, so renames upstream show stale logins until the next pull. Full design and outstanding gaps in <a href="https://github.com/alltuner/gitcabin/blob/main/docs/github-sync.md"><code>docs/github-sync.md</code></a>.</p>
+      <p>Push then pull in one shot — useful because re-pull is GitHub-wins, so pulling on its own can clobber local-only drafts that were never pushed. <code>--push-only</code> / <code>--pull-only</code> short-circuit either side:</p>
+<pre><code>gitcabin sync sync me/cabin
+<span class="c"># pushed 0 issues</span>
+<span class="c"># pulled 12 issues, 3 PRs, 47 comments</span></code></pre>
+      <p>Run sync inside the container. <code>gh</code> ships in the runtime image, and the host's <code>~/.config/gh</code> is bind-mounted read-only. On macOS the token lives in Keychain (not <code>hosts.yml</code>), so pass it through with <code>-e GH_TOKEN</code>:</p>
+<pre><code>docker compose exec -e GH_TOKEN=$(gh auth token --hostname github.com) \
+  gitcabin gitcabin sync sync me/cabin</code></pre>
+      <p>Caveats worth knowing: pull is still GitHub-wins for *edits* to already-synced items (closing a synced issue locally gets clobbered next pull); cross-fork PR push (<code>head_ref="other:branch"</code>) still needs the manual <code>git push</code> workflow because gitcabin has no remote for someone else's fork; PR push isn't crash-safe yet (the issue path is, the PR path isn't wired up). Full design and outstanding gaps in <a href="https://github.com/alltuner/gitcabin/blob/main/docs/github-sync.md"><code>docs/github-sync.md</code></a>.</p>
     </section>
 
     <section id="modes">

@@ -11,17 +11,18 @@ web-src/                          tracked input
 ├── build.ts                      bundler entrypoint
 └── src/
     ├── main.ts                   imports htmx + htmx-ext-preload
-    └── styles.css                @import "tailwindcss" + custom rules
+    ├── styles.css                @import "tailwindcss" + custom rules
+    └── highlight.css             generated — pygments tokens, gitignored
 
 src/gitcabin/web/static/dist/     gitignored output
 ├── manifest.json                 logical name → hashed filename
-├── main.<sha256>.css             Tailwind 4 + custom rules, minified
+├── main.<sha256>.css             Tailwind 4 + pygments + custom rules, minified
 └── main.<bunhash>.js             htmx + extension, minified
 ```
 
 ## How it gets to the user
 
-1. `bun run build` (or `bun run watch` during dev) emits hashed files plus `manifest.json` into `static/dist/`.
+1. `bun run build` (or `bun run watch` during dev) regenerates `web-src/src/highlight.css` (via `uv run scripts/dump_pygments_css.py`, which calls `gitcabin.web.pygments_css.pygments_stylesheet`) and emits hashed files plus `manifest.json` into `static/dist/`. The pygments CSS is `@import`-ed by `styles.css`, so its tokens land in the same hashed bundle as the Tailwind output.
 2. FastAPI's static handler serves anything under `/static/` directly. Files under `/static/dist/` get `Cache-Control: public, max-age=31536000, immutable` because their URL is content-addressed — same content, same URL, forever.
 3. Templates write `{{ asset('main.css') }}` (Jinja2 global, registered in `routes.py`). The `AssetResolver` in `gitcabin.web.assets` reads `manifest.json` per render and returns `/static/dist/main.<hash>.css`.
 4. Browsers cache aggressively because the URL changes whenever the content does — perfect cache hit rate without staleness.
@@ -69,7 +70,7 @@ Production (image build):
 docker compose build              # multi-stage Dockerfile runs bun + uv
 ```
 
-The first stage uses `oven/bun:1`, runs `bun install --frozen-lockfile` and `CLEAN=1 bun run build`, then the runtime stage `COPY --from=assets`.
+The first stage uses `oven/bun:1` and pulls `uv` from the official `ghcr.io/astral-sh/uv` image alongside it; the bun stage runs `bun install --frozen-lockfile` and `CLEAN=1 bun run build`, where `build.ts` shells out to `uv run` for the pygments dump. The runtime stage then `COPY --from=assets` brings only the bundled `static/dist/` across — `pyproject.toml` and the gitcabin source live in the bun stage just long enough to satisfy `uv run`.
 
 ## Versioning policy
 
