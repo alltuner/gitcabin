@@ -1,0 +1,148 @@
+# ABOUTME: Per-repo pending-push state at refs/meta/sync-pending — survives crashes mid-push.
+# ABOUTME: Mirrors the sync.config pattern; one ref carries one JSON blob, advanced per write.
+
+from __future__ import annotations
+
+from git import Commit
+from git.exc import BadName
+from pydantic import BaseModel, ConfigDict
+
+from gitcabin.storage.repo import BareRepo
+
+# A single ref carries the pending-push state. Each write appends a commit so
+# the history is auditable; the in-flight push owns this ref for the duration
+# of its protocol. Repos that have never started a push simply don't have it.
+PENDING_REF = "refs/meta/sync-pending"
+
+
+class PushedComment(BaseModel):
+    """One comment that has already been posted upstream during the current push.
+
+    `local_index` is the position of the comment within the local issue's
+    `list_comments(...)` output — the only stable handle we have, since
+    local comments are numbered sequentially and reused across pushes.
+    Persisting `gh_id` lets the resume path skip a re-POST that would
+    otherwise create a duplicate upstream comment.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    local_index: int
+    gh_id: int
+    authored_at: str | None = None
+
+
+class PendingIssuePush(BaseModel):
+    """The durable state of a partially completed `_push_one` invocation.
+
+    Written immediately after the upstream issue POST succeeds; updated as
+    each comment POSTs come back; removed once the local re-import + ref
+    cleanup completes. Used by retry to figure out which steps are already
+    done.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    kind: str = "issue"
+    gh_number: int
+    gh_id: int
+    authored_at: str | None = None
+    comments: list[PushedComment] = []
+
+
+class PendingState(BaseModel):
+    """The whole `refs/meta/sync-pending` document.
+
+    Keyed by local-ref path (e.g. `refs/issues/local/3`) so the same
+    document can carry pending state for multiple in-flight items. Today
+    only issues are tracked; PRs follow the same pattern when #12's PR
+    half lands.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    issues: dict[str, PendingIssuePush] = {}
+
+
+def read_pending(repo: BareRepo) -> PendingState:
+    """Return the current pending document, or an empty one if the ref is absent."""
+    commit = _maybe_commit(repo, PENDING_REF)
+    if commit is None:
+        return PendingState()
+    blob = commit.tree["pending.json"]
+    raw = blob.data_stream.read().decode()
+    return PendingState.model_validate_json(raw)
+
+
+def write_pending(repo: BareRepo, state: PendingState) -> None:
+    """Persist the pending document, advancing refs/meta/sync-pending by one commit."""
+    payload = state.model_dump_json(indent=2)
+    blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
+    tree_sha = repo.run_git("mktree", input=f"100644 blob {blob_sha}\tpending.json\n").strip()
+
+    args: list[str] = [
+        "-c",
+        "user.name=gitcabin-sync",
+        "-c",
+        "user.email=sync@gitcabin.local",
+        "commit-tree",
+        tree_sha,
+        "-m",
+        "sync-pending: update",
+    ]
+    parent = _maybe_commit(repo, PENDING_REF)
+    if parent is not None:
+        args += ["-p", parent.hexsha]
+
+    commit_sha = repo.run_git(*args).strip()
+    repo.run_git("update-ref", PENDING_REF, commit_sha)
+
+
+def clear_issue(repo: BareRepo, local_ref: str) -> None:
+    """Remove the pending entry for `local_ref` after a successful push."""
+    state = read_pending(repo)
+    if local_ref not in state.issues:
+        return
+    new_issues = {k: v for k, v in state.issues.items() if k != local_ref}
+    write_pending(repo, PendingState(issues=new_issues))
+
+
+def record_issue_pushed(
+    repo: BareRepo,
+    local_ref: str,
+    *,
+    gh_number: int,
+    gh_id: int,
+    authored_at: str | None,
+) -> None:
+    """Stamp a freshly-POSTed issue into pending state — call this between
+    the upstream POST and any further side effects."""
+    state = read_pending(repo)
+    state.issues[local_ref] = PendingIssuePush(
+        gh_number=gh_number, gh_id=gh_id, authored_at=authored_at
+    )
+    write_pending(repo, state)
+
+
+def record_comment_pushed(
+    repo: BareRepo,
+    local_ref: str,
+    *,
+    local_index: int,
+    gh_id: int,
+    authored_at: str | None,
+) -> None:
+    """Append a posted comment to the pending entry for `local_ref`."""
+    state = read_pending(repo)
+    entry = state.issues[local_ref]
+    entry.comments.append(
+        PushedComment(local_index=local_index, gh_id=gh_id, authored_at=authored_at)
+    )
+    write_pending(repo, state)
+
+
+def _maybe_commit(repo: BareRepo, ref: str) -> Commit | None:
+    try:
+        return repo.repo.commit(ref)
+    except (BadName, ValueError):
+        return None

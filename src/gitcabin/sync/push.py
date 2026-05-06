@@ -25,6 +25,12 @@ from gitcabin.storage.prs import (
 from gitcabin.storage.repo import BareRepo
 from gitcabin.sync.config import SyncConfig
 from gitcabin.sync.gh import GhClient
+from gitcabin.sync.pending import (
+    clear_issue as clear_pending_issue,
+    read_pending,
+    record_comment_pushed,
+    record_issue_pushed,
+)
 
 
 def _expect_dict(value: object, what: str) -> dict[str, Any]:
@@ -57,11 +63,12 @@ def push_local_issues(repo: BareRepo, client: GhClient, config: SyncConfig) -> l
     that's the GitHub-side login whose tokens gh actually used to create
     the upstream items, so the local `author` field is rewritten to match.
 
-    A crash between steps 1 and 6 leaves a partial state where GitHub has
-    the issue but the local ref hasn't been retired. A retry would create
-    a second upstream issue (duplicate). Making this resumable is on the
-    sync-state-tracking work in a later commit; for now it's a known
-    limitation.
+    Crash safety: each upstream side effect (issue POST, then each comment
+    POST) is durably recorded into `refs/meta/sync-pending` before the next
+    one runs. A retry consults that record first and skips re-POSTs for items
+    GitHub already accepted, so a crash anywhere in the protocol can resume
+    without double-publishing. See `gitcabin.sync.pending` for the storage
+    format.
 
     Returns the list of pushed issues in their post-push (SYNCED_BIDIR) form.
     """
@@ -76,26 +83,56 @@ def push_local_issues(repo: BareRepo, client: GhClient, config: SyncConfig) -> l
 def _push_one(
     repo: BareRepo, client: GhClient, config: SyncConfig, issue: Issue
 ) -> Issue:
-    """Execute the per-issue push protocol described in push_local_issues."""
+    """Execute the per-issue push protocol described in push_local_issues.
+
+    Resumable: the upstream issue ID + each posted comment ID are persisted
+    to refs/meta/sync-pending as they happen, so a crash mid-protocol can
+    recover without re-POSTing items GitHub already accepted.
+    """
     local_comments = list_comments(repo, issue.number)
     base = f"repos/{config.gh_owner}/{config.gh_name}"
+    local_ref = f"{LOCAL_ISSUE_REF_PREFIX}/{issue.number}"
+    pending = read_pending(repo).issues.get(local_ref)
 
-    # 1. Create the issue upstream.
-    created = _expect_dict(
-        client.post_json(
-            f"{base}/issues",
-            {"title": issue.title, "body": issue.body},
-        ),
-        "POST /issues response",
-    )
-    gh_number = int(created["number"])
-    gh_id = int(created["id"])
-    issue_authored_at = str(created.get("created_at") or "") or None
+    # 1. Create the issue upstream — unless we already did and the prior push
+    # crashed before reaching the cleanup. The pending record is the durable
+    # "we already paid for this slot" receipt that prevents a duplicate POST
+    # on retry.
+    if pending is None:
+        created = _expect_dict(
+            client.post_json(
+                f"{base}/issues",
+                {"title": issue.title, "body": issue.body},
+            ),
+            "POST /issues response",
+        )
+        gh_number = int(created["number"])
+        gh_id = int(created["id"])
+        issue_authored_at = str(created.get("created_at") or "") or None
+        record_issue_pushed(
+            repo,
+            local_ref,
+            gh_number=gh_number,
+            gh_id=gh_id,
+            authored_at=issue_authored_at,
+        )
+    else:
+        gh_number = pending.gh_number
+        gh_id = pending.gh_id
+        issue_authored_at = pending.authored_at
 
-    # 2. Push each local comment.
+    # 2. Push each local comment, skipping those already POSTed in a prior
+    # attempt. Persist each new gh_id immediately so a second crash
+    # doesn't double-post the same comment.
+    already_pushed = {c.local_index: c for c in (pending.comments if pending else [])}
     pushed_comment_ids: list[tuple[int, str | None, str, str]] = []
-    # Each tuple: (gh_comment_id, authored_at, original_body, original_author).
-    for comment in local_comments:
+    for index, comment in enumerate(local_comments):
+        prior = already_pushed.get(index)
+        if prior is not None:
+            pushed_comment_ids.append(
+                (prior.gh_id, prior.authored_at, comment.body, config.gh_viewer_login)
+            )
+            continue
         cresp = _expect_dict(
             client.post_json(
                 f"{base}/issues/{gh_number}/comments",
@@ -103,13 +140,17 @@ def _push_one(
             ),
             "POST .../comments response",
         )
+        gh_comment_id = int(cresp["id"])
+        comment_authored_at = str(cresp.get("created_at") or "") or None
+        record_comment_pushed(
+            repo,
+            local_ref,
+            local_index=index,
+            gh_id=gh_comment_id,
+            authored_at=comment_authored_at,
+        )
         pushed_comment_ids.append(
-            (
-                int(cresp["id"]),
-                str(cresp.get("created_at") or "") or None,
-                comment.body,
-                config.gh_viewer_login,
-            )
+            (gh_comment_id, comment_authored_at, comment.body, config.gh_viewer_login)
         )
 
     # 3. Close upstream if the local state was CLOSED — POST always creates open.
@@ -142,7 +183,10 @@ def _push_one(
         )
 
     # 6. Drop the old local ref now that it's mirrored upstream + locally.
-    repo.run_git("update-ref", "-d", f"{LOCAL_ISSUE_REF_PREFIX}/{issue.number}")
+    repo.run_git("update-ref", "-d", local_ref)
+
+    # 7. Clear the pending record — the protocol is complete for this issue.
+    clear_pending_issue(repo, local_ref)
 
     return pushed_issue
 
@@ -257,9 +301,12 @@ def push_local_prs(
       2. Re-import as SYNCED_BIDIR at refs/prs/<gh_number>.
       3. Drop refs/prs/local/<n>.
 
-    Same crash-window as push_local_issues: a failure after the upstream
-    POST but before update-ref leaves the upstream PR with no local
-    counterpart, and a retry would create a duplicate. Tracked at #12.
+    The PR-side resume protocol is still TODO: push_local_issues writes its
+    in-flight state to `refs/meta/sync-pending`, but `_push_one_pr` doesn't
+    yet. A failure between the upstream POST and the local re-import leaves
+    the upstream PR with no local counterpart and a retry would create a
+    duplicate. The fix is the same shape as the issue path; see
+    `gitcabin.sync.pending`.
     """
     out: list[Pr] = []
     for pr in list_local_prs(repo):

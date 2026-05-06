@@ -23,7 +23,7 @@ This doc focuses specifically on **authorship attribution and edit affordances**
 | GraphQL surfaces synced issues + viewer_can_* | `gitcabin.graphql_schema` | done |
 | GraphQL surfaces synced PRs + viewer_can_* | `gitcabin.graphql_schema` | done |
 | CLI `gitcabin sync identity / link / pull / push` | `gitcabin.cli` | done |
-| Resumable push (crash safety) | — | not built ([#12](https://github.com/alltuner/gitcabin/issues/12)) |
+| Resumable push (crash safety) | `gitcabin.sync.pending` | done (issues + their comments — `refs/meta/sync-pending`) |
 | Push-then-pull orchestration | `gitcabin.cli` (`gitcabin sync sync`) | done |
 | `viewer_repo_role` auto-fetch | partially built | broken ([#16](https://github.com/alltuner/gitcabin/issues/16)) |
 | Web dashboard reads viewer_can_* | `gitcabin.web.routes` | done (close/reopen gated; synced badge rendered) |
