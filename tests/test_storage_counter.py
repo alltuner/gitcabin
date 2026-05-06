@@ -53,3 +53,17 @@ def test_concurrent_allocations_are_unique(repo: BareRepo) -> None:
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda _: counter.next(), range(80)))
     assert sorted(results) == list(range(1, 81))
+
+
+def test_counter_next_does_not_shell_out(repo: BareRepo, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The pygit2-based implementation does the whole hash + mktree + commit-tree
+    # + ref-update dance in-process. If anything inside next() falls back to a
+    # `git` subprocess we want to know — that's the regression we just removed.
+    import subprocess
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError(f"unexpected subprocess call: {args!r} {kwargs!r}")
+
+    monkeypatch.setattr(subprocess, "run", fail)
+    assert Counter(repo, "issues").next() == 1
+    assert Counter(repo, "issues").next() == 2

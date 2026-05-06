@@ -15,6 +15,7 @@ dependencies = [
     "jinja2>=3.1.6",
     "markdown>=3.10.2",
     "nh3>=0.2",
+    "pygit2>=1.16",
     "pygments>=2.20.0",
     "python-multipart>=0.0.27",
 ]
