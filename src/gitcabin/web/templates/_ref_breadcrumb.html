@@ -104,17 +104,22 @@
      repo-name link anchors the path so a single segment ("src") still
      reads as a breadcrumb ("widget-store / src") rather than a
      floating label. #}
+  {# Whitespace stripping (`{%- … -%}`) keeps the path row visually tight:
+     without it, Jinja's newlines + indentation render as full spaces,
+     so the slashes drift away from their surrounding segment names.
+     The slash itself gets a small horizontal margin so the row breathes
+     just enough to read as a breadcrumb instead of a slug. #}
   {% if crumb_segments %}
   <div class="font-mono text-sm">
     <a href="{{ url_for('repo', owner=owner, name=name).path }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ name }}</a>
-    {% for c in crumb_segments %}
-      <span class="text-gray-400">/</span>
-      {% if loop.last %}
-      <span class="text-gray-900 dark:text-gray-100">{{ c.name }}</span>
-      {% else %}
-      <a href="{{ url_for('tree', owner=owner, name=name, rest=ref ~ '/' ~ c.path).path }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ c.name }}</a>
-      {% endif %}
-    {% endfor %}
+    {%- for c in crumb_segments -%}
+      <span class="mx-1 text-gray-400">/</span>
+      {%- if loop.last -%}
+        <span class="text-gray-900 dark:text-gray-100">{{ c.name }}</span>
+      {%- else -%}
+        <a href="{{ url_for('tree', owner=owner, name=name, rest=ref ~ '/' ~ c.path).path }}" class="text-blue-600 hover:underline dark:text-blue-400">{{ c.name }}</a>
+      {%- endif -%}
+    {%- endfor -%}
   </div>
   {% endif %}
 </nav>
