@@ -58,6 +58,26 @@ If you ever want to force re-registration (eg after `cab logout`), `cab login` d
 
 ---
 
+## Running GitHub sync
+
+`gitcabin sync` ships inside the runtime image (`gh` and `git` are both installed in the Dockerfile), and the host's `~/.config/gh/` is bind-mounted read-only into the container at `/home/app/.config/gh/`. That covers everything in your host gh config except the OAuth token itself on macOS — Keychain-backed tokens aren't visible inside the container. Pass the token through with `-e GH_TOKEN`:
+
+```sh
+docker compose exec -e GH_TOKEN=$(gh auth token --hostname github.com) \
+  gitcabin gitcabin sync pull me/cabin              # pull issues + PRs + comments
+
+docker compose exec -e GH_TOKEN=$(gh auth token --hostname github.com) \
+  gitcabin gitcabin sync push me/cabin              # push local-only items upstream
+```
+
+On Linux hosts where gh stores tokens in `hosts.yml` directly (rather than the Secret Service / kwallet), the bind mount alone is enough — no `GH_TOKEN` needed. On macOS or anywhere `gh auth login` chose Keychain, the env var path is the simplest workaround. (You can also opt into file-based storage with `gh auth login --insecure-storage` on the host; gh will then write the token into `hosts.yml` and the bind mount alone will work.)
+
+The mount is read-only on purpose: a compromised container can't write to your host's `hosts.yml`. The container runs as uid 1000 (matching the typical first-user uid on Linux hosts) so file ownership lines up both ways.
+
+If you'd rather not mount your gh credentials into the container, the host-side flow still works — install gitcabin via `uv sync` and run `uv run python -m gitcabin sync …` directly on the host.
+
+---
+
 ## Verifying it works
 
 After `cab login` (or any first invocation that auto-registers), all three of these should succeed without error:

@@ -51,8 +51,22 @@ FROM python:3.14-slim
 
 # git is required at runtime: the storage layer shells out to git plumbing
 # (hash-object, mktree, commit-tree, update-ref) for every metadata write.
-# python:3.14-slim doesn't include it.
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+# gh is required when sync runs inside the container (`docker compose exec
+# gitcabin gitcabin sync …`); the user's host-side ~/.config/gh is bind-
+# mounted in compose so the container's gh inherits the same auth token.
+# python:3.14-slim doesn't include either.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates curl gnupg git && \
+    install -d -m 0755 /etc/apt/keyrings && \
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /etc/apt/keyrings/githubcli-archive-keyring.gpg && \
+    chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends gh && \
+    apt-get purge -y --auto-remove curl gnupg && \
+    rm -rf /var/lib/apt/lists/*
 
 # Pull uv from its official image — fastest way to get the binary, no compile
 # step, version pinned by the tag we choose.

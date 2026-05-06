@@ -46,6 +46,12 @@ services:
       # purpose: David can `cd ./data/projects/owner/name.git && git log` to
       # inspect state with native tooling. Excluded from git via .gitignore.
       - ./data:/app/data
+      # Host's gh credentials, read-only. Lets `docker compose exec gitcabin
+      # gitcabin sync …` reuse the host login (same OAuth token from
+      # `gh auth login` on the host) without re-authing inside the container.
+      # Read-only so a compromised container can't pollute the host's
+      # hosts.yml. Optional — sync only needs it; the dashboard doesn't.
+      - ${HOME}/.config/gh:/home/app/.config/gh:ro
     restart: unless-stopped
     develop:
       watch:
