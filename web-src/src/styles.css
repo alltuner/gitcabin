@@ -162,6 +162,45 @@ html { scrollbar-gutter: stable; }
 }
 .markdown-body blockquote > :first-child { margin-top: 0; }
 .markdown-body blockquote > :last-child { margin-bottom: 0; }
+
+/* GFM alerts — `> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]`
+   / `[!CAUTION]` blockquotes get rewritten by `_GfmAlertProcessor`
+   into `<div class="markdown-alert markdown-alert-<kind>">` with a
+   leading `<p class="markdown-alert-title">` row. The colored left
+   border + title pull the eye the same way GitHub's renderer does.
+   Each alert kind picks its accent from a CSS variable so dark mode
+   can override with a brighter shade in one place. */
+.markdown-body .markdown-alert {
+  padding: 0.5em 1em;
+  margin: 1.1rem 0;
+  border-left: 0.25em solid var(--alert-accent, var(--color-base-300));
+  color: var(--color-base-content);
+  background: transparent;
+}
+.markdown-body .markdown-alert > :first-child { margin-top: 0; }
+.markdown-body .markdown-alert > :last-child { margin-bottom: 0; }
+.markdown-body .markdown-alert-title {
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--alert-accent, var(--color-base-content));
+  text-transform: capitalize;
+}
+.markdown-body .markdown-alert-note      { --alert-accent: #0969da; }
+.markdown-body .markdown-alert-tip       { --alert-accent: #1a7f37; }
+.markdown-body .markdown-alert-important { --alert-accent: #8250df; }
+.markdown-body .markdown-alert-warning   { --alert-accent: #9a6700; }
+.markdown-body .markdown-alert-caution   { --alert-accent: #cf222e; }
+:where([data-theme=dark]) .markdown-body .markdown-alert-note,
+:where(:root:has(input.theme-controller[value=dark]:checked)) .markdown-body .markdown-alert-note      { --alert-accent: #58a6ff; }
+:where([data-theme=dark]) .markdown-body .markdown-alert-tip,
+:where(:root:has(input.theme-controller[value=dark]:checked)) .markdown-body .markdown-alert-tip       { --alert-accent: #3fb950; }
+:where([data-theme=dark]) .markdown-body .markdown-alert-important,
+:where(:root:has(input.theme-controller[value=dark]:checked)) .markdown-body .markdown-alert-important { --alert-accent: #a371f7; }
+:where([data-theme=dark]) .markdown-body .markdown-alert-warning,
+:where(:root:has(input.theme-controller[value=dark]:checked)) .markdown-body .markdown-alert-warning   { --alert-accent: #d29922; }
+:where([data-theme=dark]) .markdown-body .markdown-alert-caution,
+:where(:root:has(input.theme-controller[value=dark]:checked)) .markdown-body .markdown-alert-caution   { --alert-accent: #f85149; }
 .markdown-body hr {
   height: 1px;
   margin: 1.5em 0;

@@ -360,9 +360,54 @@ def find_readme(tree: Tree) -> Blob | None:
     return None
 
 
+_GFM_ALERT_RE = re.compile(
+    r"^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*", re.IGNORECASE
+)
+
+
+class _GfmAlertProcessor(markdown.treeprocessors.Treeprocessor):
+    """Render GFM alerts — `> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` /
+    `[!WARNING]` / `[!CAUTION]` — as styled callout cards the way
+    GitHub does.
+
+    Walks every `<blockquote>` after parsing. If the first paragraph
+    begins with the alert marker, the marker is stripped from the
+    text, the element is rewritten to a `<div class="markdown-alert
+    markdown-alert-<kind>">`, and a labelled title row is prepended.
+    Standard blockquotes (no marker) pass through untouched.
+    """
+
+    def run(self, root):  # type: ignore[no-untyped-def]
+        from xml.etree.ElementTree import Element
+
+        for blockquote in list(root.iter("blockquote")):
+            first = next(iter(blockquote), None)
+            if first is None or first.tag != "p" or not first.text:
+                continue
+            match = _GFM_ALERT_RE.match(first.text)
+            if match is None:
+                continue
+            kind = match.group(1).lower()
+            first.text = first.text[match.end():].lstrip() or None
+            if not first.text and not list(first):
+                blockquote.remove(first)
+            blockquote.tag = "div"
+            blockquote.set("class", f"markdown-alert markdown-alert-{kind}")
+            title = Element("p", {"class": "markdown-alert-title"})
+            title.text = kind.capitalize()
+            blockquote.insert(0, title)
+
+
+class _GfmAlertExtension(markdown.Extension):
+    def extendMarkdown(self, md: markdown.Markdown) -> None:
+        md.treeprocessors.register(_GfmAlertProcessor(md), "gfm-alerts", priority=8)
+
+
 def render_markdown(text: str) -> str:
     """Render Markdown to HTML. Trusted source (repo author == operator)."""
-    md = markdown.Markdown(extensions=["fenced_code", "tables", "toc"])
+    md = markdown.Markdown(
+        extensions=["fenced_code", "tables", "toc", _GfmAlertExtension()]
+    )
     return md.convert(text)
 
 
