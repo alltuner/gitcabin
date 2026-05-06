@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 
 import markdown
+import nh3
 from git import Blob, Commit, Tree
 from git.exc import BadName
 from pygments import highlight
@@ -403,12 +404,57 @@ class _GfmAlertExtension(markdown.Extension):
         md.treeprocessors.register(_GfmAlertProcessor(md), "gfm-alerts", priority=8)
 
 
+# Tags produced by python-markdown extensions (fenced_code, tables, toc,
+# GFM alerts) that must survive sanitization, plus common inline markup.
+_MARKDOWN_TAGS: frozenset[str] = frozenset(
+    {
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        "p", "br", "hr",
+        "ul", "ol", "li",
+        "blockquote", "div",
+        "pre", "code",
+        "a", "img",
+        "strong", "em", "del",
+        "table", "thead", "tbody", "tr", "td", "th",
+        "span",
+    }
+)
+
+# Attribute allowlist per tag.  `class` is needed on span/div/pre/code for
+# pygments token classes and GFM alert classes; `id` on headings for toc
+# anchor targets; `href`/`rel` on anchors; `src`/`alt` on images.
+_MARKDOWN_ATTRIBUTES: dict[str, set[str]] = {
+    "span": {"class"},
+    "div": {"class"},
+    "pre": {"class"},
+    "code": {"class"},
+    "h1": {"id"}, "h2": {"id"}, "h3": {"id"},
+    "h4": {"id"}, "h5": {"id"}, "h6": {"id"},
+    "a": {"href", "rel"},
+    "img": {"src", "alt"},
+}
+
+
 def render_markdown(text: str) -> str:
-    """Render Markdown to HTML. Trusted source (repo author == operator)."""
+    """Render Markdown to sanitized HTML.
+
+    Raw HTML and unsafe URI schemes (javascript:, data:) are stripped so
+    README content from synced upstreams cannot execute scripts in the
+    browser. Structural markup produced by the fenced_code, tables, toc,
+    and GFM alert extensions is preserved.
+    """
     md = markdown.Markdown(
         extensions=["fenced_code", "tables", "toc", _GfmAlertExtension()]
     )
-    return md.convert(text)
+    raw_html = md.convert(text)
+    return nh3.clean(
+        raw_html,
+        tags=_MARKDOWN_TAGS,
+        clean_content_tags={"script", "style"},
+        attributes=_MARKDOWN_ATTRIBUTES,
+        url_schemes={"http", "https", "mailto"},
+        link_rel=None,
+    )
 
 
 _IMAGE_EXTENSIONS = frozenset(
