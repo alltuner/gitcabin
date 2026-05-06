@@ -26,6 +26,7 @@ from gitcabin.storage.issues import (
     add_any_comment,
     close_any_issue,
     get_any_issue,
+    issue_counts,
     list_all_issues,
     list_any_comments,
     reopen_any_issue,
@@ -89,7 +90,7 @@ def _check_csrf(request: Request) -> None:
         raise HTTPException(status_code=403, detail="CSRF check failed")
 
 
-def _repo_ctx(bare: BareRepo, issues: list | None = None) -> dict[str, object]:
+def _repo_ctx(bare: BareRepo) -> dict[str, object]:
     """Repo-level context shared by every page that renders _repo_header.html.
 
     Currently the issue counts so the Issues tab badge stays the same across
@@ -97,14 +98,15 @@ def _repo_ctx(bare: BareRepo, issues: list | None = None) -> dict[str, object]:
     pages of the same repo. Spread into _render kwargs by every repo-page
     handler. Add more repo-wide facts here as they become widely useful.
 
-    Pages that already loaded the issues list can pass it in to avoid a
-    second list_all_issues() walk.
+    Counts come from `issue_counts`, which walks ref names for the total
+    (no blob reads) and only opens each issue.json once for the open-state
+    tally — so chrome pages that don't materialise the issue list don't pay
+    the 3N GitPython object-load cost of `list_all_issues`.
     """
-    if issues is None:
-        issues = list_all_issues(bare)
+    total, open_count = issue_counts(bare)
     return {
-        "total_issue_count": len(issues),
-        "open_issue_count": sum(i.state is IssueState.OPEN for i in issues),
+        "total_issue_count": total,
+        "open_issue_count": open_count,
     }
 
 
@@ -500,6 +502,7 @@ def build_router(settings: Settings) -> APIRouter:
         all_issues = list_all_issues(bare)
         open_count = sum(i.state is IssueState.OPEN for i in all_issues)
         closed_count = len(all_issues) - open_count
+        total_count = len(all_issues)
         if state == "open":
             shown = [i for i in all_issues if i.state is IssueState.OPEN]
         elif state == "closed":
@@ -508,6 +511,8 @@ def build_router(settings: Settings) -> APIRouter:
             state = "all"
             shown = list(all_issues)
         shown.sort(key=lambda i: i.updated_at, reverse=True)
+        # The issues page already materialises the list, so feed the counts
+        # straight in rather than reissuing the work via `_repo_ctx`.
         return _render(
             request,
             settings,
@@ -518,8 +523,9 @@ def build_router(settings: Settings) -> APIRouter:
             state=state,
             open_count=open_count,
             closed_count=closed_count,
-            total_count=len(all_issues),
-            **_repo_ctx(bare, all_issues),
+            total_count=total_count,
+            total_issue_count=total_count,
+            open_issue_count=open_count,
         )
 
     def _render_issue(

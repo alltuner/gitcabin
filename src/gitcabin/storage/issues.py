@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 
 from gitcabin.storage._git_objects import (
     TreeEntry,
+    comment_authored_dates,
     comment_created_at,
     commit_tree,
     entries_of,
@@ -897,6 +898,41 @@ def list_all_issues(repo: BareRepo) -> list[Issue]:
     return list_synced_issues(repo) + list_issues(repo)
 
 
+def issue_counts(repo: BareRepo) -> tuple[int, int]:
+    """Return (total, open_count) across both issue namespaces.
+
+    Total is computed from ref names alone — no commit / tree / blob loads —
+    so the chrome that just renders an Issues-tab badge doesn't pay for
+    materializing every Issue. Open-state still requires reading each
+    issue.json blob.
+    """
+    prefix = f"{ISSUE_REF_PREFIX}/"
+    local_prefix = f"{LOCAL_ISSUE_REF_PREFIX}/"
+    total = 0
+    open_count = 0
+    for ref in repo.repo.refs:
+        path = ref.path
+        is_local = path.startswith(local_prefix)
+        # Synced issues live directly under refs/issues/<n>; refs/issues/local/<n>
+        # share the prefix but belong to the local namespace, handled separately.
+        is_synced = path.startswith(prefix) and not is_local
+        if not (is_local or is_synced):
+            continue
+        try:
+            int(path.rsplit("/", 1)[-1])
+        except ValueError:
+            continue
+        total += 1
+        try:
+            blob = ref.commit.tree["issue.json"]
+            doc = IssueDocument.model_validate_json(read_blob(blob))
+        except Exception:
+            continue
+        if doc.state is IssueState.OPEN:
+            open_count += 1
+    return total, open_count
+
+
 def get_any_issue(repo: BareRepo, number: int) -> Issue | None:
     """Return the issue with `number`, preferring the synced namespace.
 
@@ -931,13 +967,20 @@ def list_comments_at(repo: BareRepo, ref: str) -> list[Comment]:
     subtree = subtree_or_none(commit.tree, "comments")
     if subtree is None:
         return []
+    # Build the {filename: authored_at} map up front with one git-log walk so
+    # we don't fork a subprocess per comment.
+    dates = comment_authored_dates(repo, ref)
     comments: list[Comment] = []
     for entry in subtree:
         if entry.type != "blob" or not entry.name.endswith(".json"):
             continue
         n = _comment_number_from_name(entry.name)
         doc = CommentDocument.model_validate_json(read_blob(entry))
-        created_at = comment_created_at(repo, ref, entry.name) or ""
+        created_at = dates.get(entry.name)
+        if created_at is None:
+            # Fallback for the rare case the bulk walk missed an add — keep
+            # behaviour identical to the old per-comment lookup.
+            created_at = comment_created_at(repo, ref, entry.name) or ""
         comments.append(
             Comment(
                 number=n,
