@@ -174,17 +174,18 @@ def _cmd_pull(settings: Settings, local: str) -> int:
     prs = pull_prs(repo, client, config)
     comments = pull_comments(repo, client, config)
 
-    write_config(
-        repo,
-        config.model_copy(update={"last_synced_at": datetime.now(tz=UTC).isoformat()}),
-    )
+    _stamp_synced(repo, config)
 
     print(f"pulled {len(issues)} issues, {len(prs)} PRs, {len(comments)} comments")
     return 0
 
 
-def _cmd_push(settings: Settings, local: str) -> int:
-    """Push every refs/issues/local/<n> issue (and its comments) to GitHub."""
+def _cmd_push(settings: Settings, local: str, *, client: GhClient | None = None) -> int:
+    """Push every refs/issues/local/<n> issue (and its comments) to GitHub.
+
+    `client` is the injection seam for tests — the CLI default constructs a
+    real GhClient that shells out to `gh api`.
+    """
     repo = _open_local(settings, local)
     if repo is None:
         print(f"unknown local repo: {local}", file=sys.stderr)
@@ -194,7 +195,14 @@ def _cmd_push(settings: Settings, local: str) -> int:
         print(f"{local} is not linked. run `gitcabin sync link` first.", file=sys.stderr)
         return 1
 
-    pushed = push_local_issues(repo, GhClient(), config)
+    if client is None:
+        client = GhClient()
+
+    pushed = push_local_issues(repo, client, config)
+    # Re-read because push may have updated the config (e.g. renumbering local
+    # refs onto upstream slots, last-pushed bookkeeping).
+    config = read_config(repo) or config
+    _stamp_synced(repo, config)
     print(f"pushed {len(pushed)} issues")
     return 0
 
@@ -233,26 +241,34 @@ def _cmd_sync(
 
     if not pull_only:
         pushed = push_local_issues(repo, client, config)
+        # Re-read the config because push may have updated it (e.g. renumbering
+        # local refs onto upstream slots, last-pushed bookkeeping).
+        config = read_config(repo) or config
+        _stamp_synced(repo, config)
         print(f"pushed {len(pushed)} issues")
 
     if push_only:
         return 0
 
-    # Re-read the config because push may have updated it (e.g. renumbering
-    # local refs onto upstream slots, last-pushed bookkeeping).
-    config = read_config(repo) or config
     issues = pull_issues(repo, client, config)
     prs = pull_prs(repo, client, config)
     comments = pull_comments(repo, client, config)
-    write_config(
-        repo,
-        config.model_copy(update={"last_synced_at": datetime.now(tz=UTC).isoformat()}),
-    )
+    _stamp_synced(repo, config)
     print(f"pulled {len(issues)} issues, {len(prs)} PRs, {len(comments)} comments")
     return 0
 
 
 # ---- helpers ----------------------------------------------------------- #
+
+
+def _stamp_synced(repo: BareRepo, config: SyncConfig) -> None:
+    """Bump SyncConfig.last_synced_at to now and persist."""
+    write_config(
+        repo,
+        config.model_copy(
+            update={"last_synced_at": datetime.now(tz=UTC).isoformat()}
+        ),
+    )
 
 
 def _split_slash(s: str, flag: str) -> tuple[str | None, str | None]:
