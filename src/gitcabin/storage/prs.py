@@ -3,29 +3,28 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
 
 from git import Commit
-from git.exc import BadName
 from pydantic import BaseModel, ConfigDict
 
+from gitcabin.storage._git_objects import (
+    TreeEntry,
+    comment_created_at,
+    commit_tree,
+    entries_of,
+    load_commit,
+    read_blob,
+    subtree_or_none,
+    write_tree,
+)
 from gitcabin.storage.counter import Counter
 from gitcabin.storage.issues import (
     Comment,
     CommentDocument,
     Provenance,
-    _comment_created_at,
-    _entries_of,
-    _list_comments_at,
-    _load_commit,
-    _read_blob,
-    _subtree_or_none,
-    _TreeEntry,
-    _write_tree,
+    list_comments_at,
 )
 from gitcabin.storage.repo import BareRepo
 
@@ -124,20 +123,20 @@ def import_pr(
     blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
 
     ref = f"{PR_REF_PREFIX}/{number}"
-    parent = _load_commit(repo, ref)
+    parent = load_commit(repo, ref)
 
-    new_entry = _TreeEntry(mode="100644", type="blob", sha=blob_sha, name="pr.json")
+    new_entry = TreeEntry(mode="100644", type="blob", sha=blob_sha, name="pr.json")
     if parent is None:
-        new_entries: list[_TreeEntry] = [new_entry]
+        new_entries: list[TreeEntry] = [new_entry]
     else:
-        existing = _entries_of(parent.tree)
+        existing = entries_of(parent.tree)
         new_entries = [new_entry if e.name == "pr.json" else e for e in existing]
         if not any(e.name == "pr.json" for e in new_entries):
             new_entries.append(new_entry)
-    tree_sha = _write_tree(repo, new_entries)
+    tree_sha = write_tree(repo, new_entries)
 
     parents: tuple[str, ...] = (parent.hexsha,) if parent is not None else ()
-    commit_sha = _commit(
+    commit_sha = commit_tree(
         repo,
         tree_sha,
         message=f"sync pr: {title}",
@@ -152,7 +151,7 @@ def import_pr(
 
 def get_synced_pr(repo: BareRepo, number: int) -> Pr | None:
     """Return the synced PR at refs/prs/<n>, or None if absent."""
-    commit = _load_commit(repo, f"{PR_REF_PREFIX}/{number}")
+    commit = load_commit(repo, f"{PR_REF_PREFIX}/{number}")
     if commit is None:
         return None
     return _read_pr_at(commit, number, repo)
@@ -216,7 +215,7 @@ def create_local_pr(
     blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
     tree_sha = repo.run_git("mktree", input=f"100644 blob {blob_sha}\tpr.json\n").strip()
 
-    commit_sha = _commit(
+    commit_sha = commit_tree(
         repo,
         tree_sha,
         message=f"create pr: {title}",
@@ -267,7 +266,7 @@ def get_any_pr(repo: BareRepo, number: int) -> Pr | None:
     synced = get_synced_pr(repo, number)
     if synced is not None:
         return synced
-    commit = _load_commit(repo, f"{LOCAL_PR_REF_PREFIX}/{number}")
+    commit = load_commit(repo, f"{LOCAL_PR_REF_PREFIX}/{number}")
     if commit is None:
         return None
     return _read_pr_at(commit, number, repo)
@@ -291,7 +290,7 @@ def import_pr_comment(
     blob in place, mirroring the issue-comment behavior.
     """
     ref = f"{PR_REF_PREFIX}/{pr_number}"
-    parent = _load_commit(repo, ref)
+    parent = load_commit(repo, ref)
     if parent is None:
         return None
 
@@ -306,32 +305,32 @@ def import_pr_comment(
     blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
 
     name = f"{gh_comment_id}.json"
-    new_blob = _TreeEntry(mode="100644", type="blob", sha=blob_sha, name=name)
+    new_blob = TreeEntry(mode="100644", type="blob", sha=blob_sha, name=name)
 
-    existing_subtree = _entries_of(_subtree_or_none(parent.tree, "comments"))
+    existing_subtree = entries_of(subtree_or_none(parent.tree, "comments"))
     new_subtree_entries = [new_blob if e.name == name else e for e in existing_subtree]
     if not any(e.name == name for e in new_subtree_entries):
         new_subtree_entries.append(new_blob)
-    new_subtree_sha = _write_tree(repo, new_subtree_entries)
+    new_subtree_sha = write_tree(repo, new_subtree_entries)
 
-    top_entries = _entries_of(parent.tree)
-    new_top: list[_TreeEntry] = []
+    top_entries = entries_of(parent.tree)
+    new_top: list[TreeEntry] = []
     seen = False
     for entry in top_entries:
         if entry.name == "comments":
             new_top.append(
-                _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+                TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
             )
             seen = True
         else:
             new_top.append(entry)
     if not seen:
         new_top.append(
-            _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+            TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
         )
-    new_top_sha = _write_tree(repo, new_top)
+    new_top_sha = write_tree(repo, new_top)
 
-    commit_sha = _commit(
+    commit_sha = commit_tree(
         repo,
         new_top_sha,
         message=f"sync pr-comment by {author}",
@@ -342,7 +341,7 @@ def import_pr_comment(
     )
     repo.run_git("update-ref", ref, commit_sha)
 
-    created_at = _comment_created_at(repo, ref, name) or (authored_at or "")
+    created_at = comment_created_at(repo, ref, name) or (authored_at or "")
     return Comment(
         number=gh_comment_id,
         body=body,
@@ -356,14 +355,14 @@ def import_pr_comment(
 
 def list_synced_pr_comments(repo: BareRepo, pr_number: int) -> list[Comment]:
     """Return every comment on the synced PR at refs/prs/<n>, ordered by id."""
-    return _list_comments_at(repo, f"{PR_REF_PREFIX}/{pr_number}")
+    return list_comments_at(repo, f"{PR_REF_PREFIX}/{pr_number}")
 
 
 # ---- internals -------------------------------------------------------- #
 
 
 def _read_pr_at(commit: Commit, number: int, repo: BareRepo) -> Pr:
-    doc = PrDocument.model_validate_json(_read_blob(commit.tree["pr.json"]))
+    doc = PrDocument.model_validate_json(read_blob(commit.tree["pr.json"]))
     created_at, updated_at = _read_pr_timestamps(commit)
     _ = repo  # kept in the signature for future use (consistency with _read_issue_at)
     return Pr(
@@ -388,42 +387,3 @@ def _read_pr_timestamps(tip: Commit) -> tuple[str, str]:
     while root.parents:
         root = root.parents[0]
     return (root.authored_datetime.isoformat(), tip.authored_datetime.isoformat())
-
-
-def _commit(
-    repo: BareRepo,
-    tree_sha: str,
-    *,
-    message: str,
-    author_name: str,
-    author_email: str,
-    parents: tuple[str, ...] = (),
-    authored_at: str | None = None,
-) -> str:
-    """commit-tree wrapper with explicit identity, mirrors issues._commit_with_identity."""
-    args = [
-        "-c",
-        f"user.name={author_name}",
-        "-c",
-        f"user.email={author_email}",
-        "commit-tree",
-        tree_sha,
-    ]
-    for parent in parents:
-        args += ["-p", parent]
-    args += ["-m", message]
-    env: dict[str, str] | None = None
-    if authored_at is not None:
-        env = {**os.environ, "GIT_AUTHOR_DATE": authored_at, "GIT_COMMITTER_DATE": authored_at}
-    result = subprocess.run(
-        ["git", *args],
-        cwd=Path(repo.path),
-        capture_output=True,
-        text=True,
-        check=True,
-        env=env,
-    )
-    return result.stdout.strip()
-
-
-_ = (BadName,)  # re-export-friendly; keeps the import non-stale for future use

@@ -3,11 +3,10 @@
 
 from __future__ import annotations
 
-from git import Commit
-from git.exc import BadName
 from pydantic import BaseModel, ConfigDict
 
 from gitcabin.storage.repo import BareRepo
+from gitcabin.sync._meta_ref import read_meta_blob, write_meta_blob
 
 # A single ref carries the pending-push state. Each write appends a commit so
 # the history is auditable; the in-flight push owns this ref for the duration
@@ -82,36 +81,21 @@ class PendingState(BaseModel):
 
 def read_pending(repo: BareRepo) -> PendingState:
     """Return the current pending document, or an empty one if the ref is absent."""
-    commit = _maybe_commit(repo, PENDING_REF)
-    if commit is None:
+    raw = read_meta_blob(repo, PENDING_REF, "pending.json")
+    if raw is None:
         return PendingState()
-    blob = commit.tree["pending.json"]
-    raw = blob.data_stream.read().decode()
     return PendingState.model_validate_json(raw)
 
 
 def write_pending(repo: BareRepo, state: PendingState) -> None:
     """Persist the pending document, advancing refs/meta/sync-pending by one commit."""
-    payload = state.model_dump_json(indent=2)
-    blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
-    tree_sha = repo.run_git("mktree", input=f"100644 blob {blob_sha}\tpending.json\n").strip()
-
-    args: list[str] = [
-        "-c",
-        "user.name=gitcabin-sync",
-        "-c",
-        "user.email=sync@gitcabin.local",
-        "commit-tree",
-        tree_sha,
-        "-m",
-        "sync-pending: update",
-    ]
-    parent = _maybe_commit(repo, PENDING_REF)
-    if parent is not None:
-        args += ["-p", parent.hexsha]
-
-    commit_sha = repo.run_git(*args).strip()
-    repo.run_git("update-ref", PENDING_REF, commit_sha)
+    write_meta_blob(
+        repo,
+        PENDING_REF,
+        "pending.json",
+        state.model_dump_json(indent=2),
+        message="sync-pending: update",
+    )
 
 
 def clear_issue(repo: BareRepo, local_ref: str) -> None:
@@ -181,10 +165,3 @@ def record_comment_pushed(
         PushedComment(local_index=local_index, gh_id=gh_id, authored_at=authored_at)
     )
     write_pending(repo, state)
-
-
-def _maybe_commit(repo: BareRepo, ref: str) -> Commit | None:
-    try:
-        return repo.repo.commit(ref)
-    except (BadName, ValueError):
-        return None

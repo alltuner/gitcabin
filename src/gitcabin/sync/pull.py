@@ -5,12 +5,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from gitcabin.storage._git_objects import load_commit
 from gitcabin.storage.issues import (
     ISSUE_REF_PREFIX,
     Comment,
     Issue,
     IssueState,
-    _load_commit,
     import_comment,
     import_issue,
 )
@@ -153,7 +153,7 @@ def _import_one_comment(
     gh_comment_id = int(gh_comment["id"])
     authored_at = gh_comment.get("created_at")
 
-    if _load_commit(repo, f"{PR_REF_PREFIX}/{number}") is not None:
+    if load_commit(repo, f"{PR_REF_PREFIX}/{number}") is not None:
         return import_pr_comment(
             repo,
             pr_number=number,
@@ -163,7 +163,7 @@ def _import_one_comment(
             gh_author_id=gh_author_id,
             authored_at=authored_at,
         )
-    if _load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
+    if load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
         return import_comment(
             repo,
             issue_number=number,

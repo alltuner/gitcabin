@@ -5,11 +5,10 @@ from __future__ import annotations
 
 import re
 
-from git import Commit
-from git.exc import BadName
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from gitcabin.storage.repo import BareRepo
+from gitcabin.sync._meta_ref import read_meta_blob, write_meta_blob
 
 # A single ref carries the sync config; each write appends a commit so the
 # history is auditable. Bare gitcabin repos that have never been linked to a
@@ -51,40 +50,18 @@ class SyncConfig(BaseModel):
 
 def read_config(repo: BareRepo) -> SyncConfig | None:
     """Return the linked GitHub repo's sync config, or None if not yet linked."""
-    commit = _maybe_commit(repo, SYNC_REF)
-    if commit is None:
+    raw = read_meta_blob(repo, SYNC_REF, "config.json")
+    if raw is None:
         return None
-    blob = commit.tree["config.json"]
-    raw = blob.data_stream.read().decode()
     return SyncConfig.model_validate_json(raw)
 
 
 def write_config(repo: BareRepo, config: SyncConfig) -> None:
     """Persist the sync config, advancing refs/meta/sync by one commit."""
-    payload = config.model_dump_json(indent=2)
-    blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
-    tree_sha = repo.run_git("mktree", input=f"100644 blob {blob_sha}\tconfig.json\n").strip()
-
-    args: list[str] = [
-        "-c",
-        "user.name=gitcabin-sync",
-        "-c",
-        "user.email=sync@gitcabin.local",
-        "commit-tree",
-        tree_sha,
-        "-m",
-        f"sync config: {config.gh_owner}/{config.gh_name}",
-    ]
-    parent = _maybe_commit(repo, SYNC_REF)
-    if parent is not None:
-        args += ["-p", parent.hexsha]
-
-    commit_sha = repo.run_git(*args).strip()
-    repo.run_git("update-ref", SYNC_REF, commit_sha)
-
-
-def _maybe_commit(repo: BareRepo, ref: str) -> Commit | None:
-    try:
-        return repo.repo.commit(ref)
-    except (BadName, ValueError):
-        return None
+    write_meta_blob(
+        repo,
+        SYNC_REF,
+        "config.json",
+        config.model_dump_json(indent=2),
+        message=f"sync config: {config.gh_owner}/{config.gh_name}",
+    )

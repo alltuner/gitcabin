@@ -3,15 +3,22 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
 
-from git import Blob, Commit, Tree
-from git.exc import BadName
+from git import Commit
 from pydantic import BaseModel, ConfigDict
 
+from gitcabin.storage._git_objects import (
+    TreeEntry,
+    comment_created_at,
+    commit_tree,
+    entries_of,
+    load_commit,
+    read_blob,
+    subtree_or_none,
+    write_tree,
+)
 from gitcabin.storage.counter import Counter
 from gitcabin.storage.repo import BareRepo
 
@@ -161,7 +168,7 @@ def create_issue(repo: BareRepo, *, title: str, body: str, author: str) -> Issue
     #    `git log refs/issues/local/<n>` reads as a real audit trail.
     #    No parent — this is the first event in the log; subsequent events
     #    will pass -p <previous_event>.
-    commit_sha = _commit_with_identity(
+    commit_sha = commit_tree(
         repo,
         tree_sha,
         message=f"create: {title}",
@@ -207,7 +214,7 @@ def list_issues(repo: BareRepo) -> list[Issue]:
 
 def get_issue(repo: BareRepo, number: int) -> Issue | None:
     """Return the issue at refs/issues/local/<number>, or None if absent."""
-    commit = _load_commit(repo, _ref_for(number))
+    commit = load_commit(repo, _ref_for(number))
     if commit is None:
         return None
     return _read_issue_at(commit, number)
@@ -243,7 +250,7 @@ def close_any_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
     state flip lands locally only — pushing the closed state back to GitHub
     is a sync operation handled separately.
     """
-    if _load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
+    if load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
         return _set_issue_state(
             repo,
             f"{ISSUE_REF_PREFIX}/{number}",
@@ -257,7 +264,7 @@ def close_any_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
 
 def reopen_any_issue(repo: BareRepo, *, number: int, actor: str) -> Issue | None:
     """Reopen an issue in either namespace, preferring the synced ref if both exist."""
-    if _load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
+    if load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
         return _set_issue_state(
             repo,
             f"{ISSUE_REF_PREFIX}/{number}",
@@ -279,17 +286,17 @@ def update_any_issue(
     """
     synced_ref = f"{ISSUE_REF_PREFIX}/{number}"
     local_ref = _ref_for(number)
-    if _load_commit(repo, synced_ref) is not None:
+    if load_commit(repo, synced_ref) is not None:
         ref = synced_ref
-    elif _load_commit(repo, local_ref) is not None:
+    elif load_commit(repo, local_ref) is not None:
         ref = local_ref
     else:
         return None
 
-    current = _load_commit(repo, ref)
+    current = load_commit(repo, ref)
     if current is None:
         return None
-    doc = IssueDocument.model_validate_json(_read_blob(current.tree["issue.json"]))
+    doc = IssueDocument.model_validate_json(read_blob(current.tree["issue.json"]))
     if doc.title == title and doc.body == body:
         return _read_issue_at(current, number)
 
@@ -298,13 +305,13 @@ def update_any_issue(
     new_blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=new_payload + "\n").strip()
 
     new_entries = [
-        _TreeEntry(mode="100644", type="blob", sha=new_blob_sha, name="issue.json")
+        TreeEntry(mode="100644", type="blob", sha=new_blob_sha, name="issue.json")
         if e.name == "issue.json"
         else e
-        for e in _entries_of(current.tree)
+        for e in entries_of(current.tree)
     ]
-    new_tree_sha = _write_tree(repo, new_entries)
-    commit_sha = _commit_with_identity(
+    new_tree_sha = write_tree(repo, new_entries)
+    commit_sha = commit_tree(
         repo,
         new_tree_sha,
         message=f"edit: {title}",
@@ -335,10 +342,10 @@ def update_any_comment(
     ref = _resolve_issue_ref(repo, issue_number)
     if ref is None:
         return None
-    current = _load_commit(repo, ref)
+    current = load_commit(repo, ref)
     if current is None:
         return None
-    subtree = _subtree_or_none(current.tree, "comments")
+    subtree = subtree_or_none(current.tree, "comments")
     if subtree is None:
         return None
 
@@ -347,7 +354,7 @@ def update_any_comment(
         return None
     name = target.name
 
-    doc = CommentDocument.model_validate_json(_read_blob(target))
+    doc = CommentDocument.model_validate_json(read_blob(target))
     if doc.body == body:
         # No change; surface the current state without a no-op commit.
         return _comment_from_entry(repo, ref, name, doc)
@@ -357,16 +364,16 @@ def update_any_comment(
     new_blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=new_payload + "\n").strip()
 
     new_subtree_entries = [
-        _TreeEntry(mode="100644", type="blob", sha=new_blob_sha, name=name)
+        TreeEntry(mode="100644", type="blob", sha=new_blob_sha, name=name)
         if e.name == name
-        else _TreeEntry(mode=f"{e.mode:06o}", type=e.type, sha=e.hexsha, name=e.name)
+        else TreeEntry(mode=f"{e.mode:06o}", type=e.type, sha=e.hexsha, name=e.name)
         for e in subtree
     ]
-    new_subtree_sha = _write_tree(repo, new_subtree_entries)
-    new_top = _splice_comments_into_top(_entries_of(current.tree), new_subtree_sha)
-    new_top_sha = _write_tree(repo, new_top)
+    new_subtree_sha = write_tree(repo, new_subtree_entries)
+    new_top = _splice_comments_into_top(entries_of(current.tree), new_subtree_sha)
+    new_top_sha = write_tree(repo, new_top)
 
-    commit_sha = _commit_with_identity(
+    commit_sha = commit_tree(
         repo,
         new_top_sha,
         message=f"edit comment by {actor}",
@@ -390,10 +397,10 @@ def delete_any_comment(
     ref = _resolve_issue_ref(repo, issue_number)
     if ref is None:
         return False
-    current = _load_commit(repo, ref)
+    current = load_commit(repo, ref)
     if current is None:
         return False
-    subtree = _subtree_or_none(current.tree, "comments")
+    subtree = subtree_or_none(current.tree, "comments")
     if subtree is None:
         return False
 
@@ -403,20 +410,20 @@ def delete_any_comment(
     name = target.name
 
     new_subtree_entries = [
-        _TreeEntry(mode=f"{e.mode:06o}", type=e.type, sha=e.hexsha, name=e.name)
+        TreeEntry(mode=f"{e.mode:06o}", type=e.type, sha=e.hexsha, name=e.name)
         for e in subtree
         if e.name != name
     ]
     if new_subtree_entries:
-        new_subtree_sha = _write_tree(repo, new_subtree_entries)
-        new_top = _splice_comments_into_top(_entries_of(current.tree), new_subtree_sha)
+        new_subtree_sha = write_tree(repo, new_subtree_entries)
+        new_top = _splice_comments_into_top(entries_of(current.tree), new_subtree_sha)
     else:
         # Subtree empties out — drop the comments/ entry entirely so the tree
         # doesn't carry an empty directory.
-        new_top = [e for e in _entries_of(current.tree) if e.name != "comments"]
-    new_top_sha = _write_tree(repo, new_top)
+        new_top = [e for e in entries_of(current.tree) if e.name != "comments"]
+    new_top_sha = write_tree(repo, new_top)
 
-    commit_sha = _commit_with_identity(
+    commit_sha = commit_tree(
         repo,
         new_top_sha,
         message=f"delete comment by {actor}",
@@ -431,10 +438,10 @@ def delete_any_comment(
 def _resolve_issue_ref(repo: BareRepo, number: int) -> str | None:
     """Return the ref name for `number`, preferring synced over local."""
     synced = f"{ISSUE_REF_PREFIX}/{number}"
-    if _load_commit(repo, synced) is not None:
+    if load_commit(repo, synced) is not None:
         return synced
     local = _ref_for(number)
-    if _load_commit(repo, local) is not None:
+    if load_commit(repo, local) is not None:
         return local
     return None
 
@@ -460,22 +467,22 @@ def _find_comment_entry(subtree: object, comment_number: int):
 
 
 def _splice_comments_into_top(
-    entries: list[_TreeEntry], new_subtree_sha: str
-) -> list[_TreeEntry]:
+    entries: list[TreeEntry], new_subtree_sha: str
+) -> list[TreeEntry]:
     """Replace the comments/ entry in a top-level tree, preserving order."""
-    out: list[_TreeEntry] = []
+    out: list[TreeEntry] = []
     seen = False
     for entry in entries:
         if entry.name == "comments":
             out.append(
-                _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+                TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
             )
             seen = True
         else:
             out.append(entry)
     if not seen:
         out.append(
-            _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+            TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
         )
     return out
 
@@ -485,7 +492,7 @@ def _comment_from_entry(repo: BareRepo, ref: str, name: str, doc: CommentDocumen
         number=_comment_number_from_name(name),
         body=doc.body,
         author=doc.author,
-        created_at=_comment_created_at(repo, ref, name) or "",
+        created_at=comment_created_at(repo, ref, name) or "",
         provenance=doc.provenance,
         gh_comment_id=doc.gh_comment_id,
         gh_author_id=doc.gh_author_id,
@@ -504,11 +511,11 @@ def _set_issue_state(
     """Shared body for close/reopen — append a state-flip commit if the
     current state differs, otherwise no-op.
     """
-    current = _load_commit(repo, ref)
+    current = load_commit(repo, ref)
     if current is None:
         return None
 
-    doc = IssueDocument.model_validate_json(_read_blob(current.tree["issue.json"]))
+    doc = IssueDocument.model_validate_json(read_blob(current.tree["issue.json"]))
     if doc.state is new_state:
         return _read_issue_at(current, number)
 
@@ -519,14 +526,14 @@ def _set_issue_state(
     # Replace just issue.json; preserve any other top-level entries (e.g.
     # the comments/ subtree) so closing an issue with comments doesn't drop them.
     new_entries = [
-        _TreeEntry(mode="100644", type="blob", sha=new_blob_sha, name=e.name)
+        TreeEntry(mode="100644", type="blob", sha=new_blob_sha, name=e.name)
         if e.name == "issue.json"
         else e
-        for e in _entries_of(current.tree)
+        for e in entries_of(current.tree)
     ]
-    new_tree_sha = _write_tree(repo, new_entries)
+    new_tree_sha = write_tree(repo, new_entries)
 
-    commit_sha = _commit_with_identity(
+    commit_sha = commit_tree(
         repo,
         new_tree_sha,
         message=f"{verb}: {doc.title}",
@@ -562,7 +569,7 @@ def add_any_comment(
     refs/issues/local/<n>:comments/<NNNN>.json depending on which ref
     holds the issue. Returns None only if neither ref exists.
     """
-    if _load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
+    if load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}") is not None:
         return _add_comment_at(repo, f"{ISSUE_REF_PREFIX}/{number}", body, author)
     return add_comment(repo, number=number, body=body, author=author)
 
@@ -571,11 +578,11 @@ def _add_comment_at(
     repo: BareRepo, ref: str, body: str, author: str
 ) -> Comment | None:
     """Shared body for add_comment / add_any_comment — append to a specific ref."""
-    current = _load_commit(repo, ref)
+    current = load_commit(repo, ref)
     if current is None:
         return None
 
-    existing_subtree = _entries_of(_subtree_or_none(current.tree, "comments"))
+    existing_subtree = entries_of(subtree_or_none(current.tree, "comments"))
     existing_numbers = sorted(_comment_number_from_name(e.name) for e in existing_subtree)
     next_number = (existing_numbers[-1] + 1) if existing_numbers else 1
 
@@ -586,30 +593,30 @@ def _add_comment_at(
     comment_name = f"{next_number:04d}.json"
     new_subtree_entries = [
         *existing_subtree,
-        _TreeEntry(mode="100644", type="blob", sha=blob_sha, name=comment_name),
+        TreeEntry(mode="100644", type="blob", sha=blob_sha, name=comment_name),
     ]
-    new_subtree_sha = _write_tree(repo, new_subtree_entries)
+    new_subtree_sha = write_tree(repo, new_subtree_entries)
 
     # Splice the new comments/ subtree into the top-level tree, preserving
     # the existing issue.json entry. If comments/ didn't exist before, append it.
-    top_entries = _entries_of(current.tree)
-    new_top_entries: list[_TreeEntry] = []
+    top_entries = entries_of(current.tree)
+    new_top_entries: list[TreeEntry] = []
     seen_comments = False
     for entry in top_entries:
         if entry.name == "comments":
             new_top_entries.append(
-                _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+                TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
             )
             seen_comments = True
         else:
             new_top_entries.append(entry)
     if not seen_comments:
         new_top_entries.append(
-            _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+            TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
         )
-    new_top_sha = _write_tree(repo, new_top_entries)
+    new_top_sha = write_tree(repo, new_top_entries)
 
-    commit_sha = _commit_with_identity(
+    commit_sha = commit_tree(
         repo,
         new_top_sha,
         message=f"comment: by {author}",
@@ -619,7 +626,7 @@ def _add_comment_at(
     )
     repo.run_git("update-ref", ref, commit_sha, current.hexsha)
 
-    created_at = _comment_created_at(repo, ref, comment_name) or ""
+    created_at = comment_created_at(repo, ref, comment_name) or ""
     return Comment(
         number=next_number,
         body=body,
@@ -636,58 +643,19 @@ def list_comments(repo: BareRepo, number: int) -> list[Comment]:
 
     Empty list if the issue doesn't exist or has no comments yet.
     """
-    return _list_comments_at(repo, _ref_for(number))
+    return list_comments_at(repo, _ref_for(number))
 
 
-# ---- read helpers (object graph) --------------------------------------- #
+# ---- read helpers ----------------------------------------------------- #
 
 
 def _ref_for(number: int) -> str:
     return f"{LOCAL_ISSUE_REF_PREFIX}/{number}"
 
 
-def _load_commit(repo: BareRepo, ref: str) -> Commit | None:
-    """Resolve `ref` to a Commit, or None if the ref doesn't exist."""
-    try:
-        return repo.repo.commit(ref)
-    except (BadName, ValueError):
-        return None
-
-
-def _read_blob(blob: Blob) -> str:
-    """Decode a GitPython blob's contents as UTF-8 text."""
-    return blob.data_stream.read().decode()
-
-
-def _subtree_or_none(tree: Tree, name: str) -> Tree | None:
-    """Return the named subtree under `tree`, or None if absent."""
-    try:
-        return tree[name]
-    except KeyError:
-        return None
-
-
-def _entries_of(tree: Tree | None) -> list[_TreeEntry]:
-    """Materialize a tree's direct entries into mktree-friendly tuples.
-
-    `tree=None` is treated as an empty tree — convenient for the "subtree
-    didn't exist yet" case in add_comment.
-    """
-    if tree is None:
-        return []
-    out: list[_TreeEntry] = []
-    for entry in tree:
-        # GitPython yields entry.mode as an int; mktree wants the 6-digit
-        # octal form ("100644", "040000").
-        out.append(
-            _TreeEntry(mode=f"{entry.mode:06o}", type=entry.type, sha=entry.hexsha, name=entry.name)
-        )
-    return out
-
-
 def _read_issue_at(commit: Commit, number: int) -> Issue:
     """Build an Issue from a commit pointing at an issue ref tip."""
-    doc = IssueDocument.model_validate_json(_read_blob(commit.tree["issue.json"]))
+    doc = IssueDocument.model_validate_json(read_blob(commit.tree["issue.json"]))
     created_at, updated_at = _read_timestamps(commit)
     # `number` comes from the ref name (the authoritative source), not from
     # the payload — older files may carry it but newer ones don't.
@@ -723,87 +691,6 @@ def _read_timestamps(tip: Commit) -> tuple[str, str]:
 def _comment_number_from_name(name: str) -> int:
     """`0001.json` -> 1. Caller should have already filtered to *.json entries."""
     return int(name.removesuffix(".json"))
-
-
-def _comment_created_at(repo: BareRepo, ref: str, name: str) -> str | None:
-    """Return the ISO-8601 author date of the commit that first added `comments/<name>`.
-
-    Comments are append-only so there's exactly one commit that added each
-    comment file; --diff-filter=A picks it out without scanning history beyond
-    the first match. GitPython's iter_commits supports `paths=` but doesn't
-    expose --diff-filter, so we keep this as a shell-out.
-    """
-    out = repo.run_git(
-        "log",
-        "--diff-filter=A",
-        "--reverse",
-        "--format=%aI",
-        ref,
-        "--",
-        f"comments/{name}",
-    ).splitlines()
-    return out[0] if out else None
-
-
-# ---- write helpers (plumbing shell-outs) ------------------------------ #
-
-
-@dataclass(frozen=True, slots=True)
-class _TreeEntry:
-    mode: str
-    type: str
-    sha: str
-    name: str
-
-
-def _write_tree(repo: BareRepo, entries: list[_TreeEntry]) -> str:
-    """Materialize a tree object from `entries` via `git mktree`."""
-    body = "".join(f"{e.mode} {e.type} {e.sha}\t{e.name}\n" for e in entries)
-    return repo.run_git("mktree", input=body).strip()
-
-
-def _commit_with_identity(
-    repo: BareRepo,
-    tree_sha: str,
-    *,
-    message: str,
-    author_name: str,
-    author_email: str,
-    parents: tuple[str, ...] = (),
-    authored_at: str | None = None,
-) -> str:
-    """commit-tree with an explicit author/committer identity.
-
-    Setting identity via -c overrides any process-level git config and works
-    in containers where no git config is provisioned. `parents` chains this
-    commit onto prior events on the same ref — empty for a create, one parent
-    for every later append. `authored_at` (ISO-8601 / RFC-3339) sets the
-    commit's author and committer dates so synced items can carry the
-    upstream timeline; default None lets git stamp the current time.
-    """
-    args = [
-        "-c",
-        f"user.name={author_name}",
-        "-c",
-        f"user.email={author_email}",
-        "commit-tree",
-        tree_sha,
-    ]
-    for parent in parents:
-        args += ["-p", parent]
-    args += ["-m", message]
-    env: dict[str, str] | None = None
-    if authored_at is not None:
-        env = {**os.environ, "GIT_AUTHOR_DATE": authored_at, "GIT_COMMITTER_DATE": authored_at}
-    result = subprocess.run(
-        ["git", *args],
-        cwd=repo.path,
-        capture_output=True,
-        text=True,
-        check=True,
-        env=env,
-    )
-    return result.stdout.strip()
 
 
 # ---- sync inbound (import) --------------------------------------------- #
@@ -850,21 +737,21 @@ def import_issue(
     blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
 
     ref = f"{ISSUE_REF_PREFIX}/{number}"
-    parent = _load_commit(repo, ref)
+    parent = load_commit(repo, ref)
 
-    new_entry = _TreeEntry(mode="100644", type="blob", sha=blob_sha, name="issue.json")
+    new_entry = TreeEntry(mode="100644", type="blob", sha=blob_sha, name="issue.json")
     if parent is None:
-        new_entries: list[_TreeEntry] = [new_entry]
+        new_entries: list[TreeEntry] = [new_entry]
     else:
         # Re-import: replace issue.json, keep everything else (e.g. comments/).
-        existing = _entries_of(parent.tree)
+        existing = entries_of(parent.tree)
         new_entries = [new_entry if e.name == "issue.json" else e for e in existing]
         if not any(e.name == "issue.json" for e in new_entries):
             new_entries.append(new_entry)
-    tree_sha = _write_tree(repo, new_entries)
+    tree_sha = write_tree(repo, new_entries)
 
     parents: tuple[str, ...] = (parent.hexsha,) if parent is not None else ()
-    commit_sha = _commit_with_identity(
+    commit_sha = commit_tree(
         repo,
         tree_sha,
         message=f"sync: {title}",
@@ -879,7 +766,7 @@ def import_issue(
 
 def get_synced_issue(repo: BareRepo, number: int) -> Issue | None:
     """Return the synced issue at refs/issues/<number>, or None if absent."""
-    commit = _load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}")
+    commit = load_commit(repo, f"{ISSUE_REF_PREFIX}/{number}")
     if commit is None:
         return None
     return _read_issue_at(commit, number)
@@ -908,7 +795,7 @@ def import_comment(
     in-place update work without filename ambiguity.
     """
     ref = f"{ISSUE_REF_PREFIX}/{issue_number}"
-    parent = _load_commit(repo, ref)
+    parent = load_commit(repo, ref)
     if parent is None:
         return None
 
@@ -923,32 +810,32 @@ def import_comment(
     blob_sha = repo.run_git("hash-object", "-w", "--stdin", input=payload + "\n").strip()
 
     name = f"{gh_comment_id}.json"
-    new_blob = _TreeEntry(mode="100644", type="blob", sha=blob_sha, name=name)
+    new_blob = TreeEntry(mode="100644", type="blob", sha=blob_sha, name=name)
 
-    existing_subtree = _entries_of(_subtree_or_none(parent.tree, "comments"))
+    existing_subtree = entries_of(subtree_or_none(parent.tree, "comments"))
     new_subtree_entries = [new_blob if e.name == name else e for e in existing_subtree]
     if not any(e.name == name for e in new_subtree_entries):
         new_subtree_entries.append(new_blob)
-    new_subtree_sha = _write_tree(repo, new_subtree_entries)
+    new_subtree_sha = write_tree(repo, new_subtree_entries)
 
-    top_entries = _entries_of(parent.tree)
-    new_top: list[_TreeEntry] = []
+    top_entries = entries_of(parent.tree)
+    new_top: list[TreeEntry] = []
     seen_comments = False
     for entry in top_entries:
         if entry.name == "comments":
             new_top.append(
-                _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+                TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
             )
             seen_comments = True
         else:
             new_top.append(entry)
     if not seen_comments:
         new_top.append(
-            _TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
+            TreeEntry(mode="040000", type="tree", sha=new_subtree_sha, name="comments")
         )
-    new_top_sha = _write_tree(repo, new_top)
+    new_top_sha = write_tree(repo, new_top)
 
-    commit_sha = _commit_with_identity(
+    commit_sha = commit_tree(
         repo,
         new_top_sha,
         message=f"sync comment by {author}",
@@ -959,7 +846,7 @@ def import_comment(
     )
     repo.run_git("update-ref", ref, commit_sha)
 
-    created_at = _comment_created_at(repo, ref, name) or (authored_at or "")
+    created_at = comment_created_at(repo, ref, name) or (authored_at or "")
     return Comment(
         number=gh_comment_id,
         body=body,
@@ -973,7 +860,7 @@ def import_comment(
 
 def list_synced_comments(repo: BareRepo, issue_number: int) -> list[Comment]:
     """Return every comment on the synced issue at refs/issues/<n>, ordered by id."""
-    return _list_comments_at(repo, f"{ISSUE_REF_PREFIX}/{issue_number}")
+    return list_comments_at(repo, f"{ISSUE_REF_PREFIX}/{issue_number}")
 
 
 def list_synced_issues(repo: BareRepo) -> list[Issue]:
@@ -1031,17 +918,17 @@ def list_any_comments(repo: BareRepo, issue_number: int) -> list[Comment]:
     to local. Callers that already know which namespace to use should call
     list_comments or list_synced_comments directly.
     """
-    if _load_commit(repo, f"{ISSUE_REF_PREFIX}/{issue_number}") is not None:
+    if load_commit(repo, f"{ISSUE_REF_PREFIX}/{issue_number}") is not None:
         return list_synced_comments(repo, issue_number)
     return list_comments(repo, issue_number)
 
 
-def _list_comments_at(repo: BareRepo, ref: str) -> list[Comment]:
+def list_comments_at(repo: BareRepo, ref: str) -> list[Comment]:
     """Walk the comments/ subtree at `ref` and materialize each blob as a Comment."""
-    commit = _load_commit(repo, ref)
+    commit = load_commit(repo, ref)
     if commit is None:
         return []
-    subtree = _subtree_or_none(commit.tree, "comments")
+    subtree = subtree_or_none(commit.tree, "comments")
     if subtree is None:
         return []
     comments: list[Comment] = []
@@ -1049,8 +936,8 @@ def _list_comments_at(repo: BareRepo, ref: str) -> list[Comment]:
         if entry.type != "blob" or not entry.name.endswith(".json"):
             continue
         n = _comment_number_from_name(entry.name)
-        doc = CommentDocument.model_validate_json(_read_blob(entry))
-        created_at = _comment_created_at(repo, ref, entry.name) or ""
+        doc = CommentDocument.model_validate_json(read_blob(entry))
+        created_at = comment_created_at(repo, ref, entry.name) or ""
         comments.append(
             Comment(
                 number=n,
