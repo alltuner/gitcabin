@@ -1,6 +1,6 @@
 [project]
 name = "gitcabin"
-version = "0.1.0"
+version = "0.1.1"
 description = "A tiny self-hosted GitHub clone driven by the official gh CLI, with all metadata stored in git itself."
 readme = "README.md"
 license = { file = "LICENSE" }
