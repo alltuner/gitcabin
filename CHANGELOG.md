@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/alltuner/gitcabin/compare/v0.1.1...v0.1.2) (2026-10-06)
+
+
+### Build System
+
+* pin uv image version ([#58](https://github.com/alltuner/gitcabin/issues/58)) ([964beb6](https://github.com/alltuner/gitcabin/commit/964beb63a00fe7cf30c4816d83998d13060cd5b2))
+
 ## [0.1.1](https://github.com/alltuner/gitcabin/compare/v0.1.0...v0.1.1) (2026-10-06)
 
 
