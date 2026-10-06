@@ -132,10 +132,11 @@ def _repo_ctx(bare: BareRepo) -> dict[str, object]:
 def _render(request: Request, settings: Settings, template: str, **ctx: object) -> HTMLResponse:
     """Render a template with the always-needed context (request, viewer).
 
-    `Cache-Control: private, max-age=10` lets htmx-ext-preload's prefetched
-    response actually be reused on the subsequent click — without any
-    Cache-Control header the browser won't keep the prefetched body in cache,
-    and the click triggers a fresh network round-trip. 10 seconds is long
+    `Cache-Control: private, max-age=10` lets the hover-prefetched response
+    (main.ts adds a <link rel="prefetch">) actually be reused on the
+    subsequent click — without any Cache-Control header the browser won't
+    keep the prefetched body in cache, and the click triggers a fresh
+    network round-trip. 10 seconds is long
     enough to bridge a hover → click and short enough that mutations the user
     just made (close issue, post comment) don't render as stale on the next
     page view. `private` keeps shared caches (proxies) from holding the
@@ -684,32 +685,15 @@ def build_router(settings: Settings) -> APIRouter:
     def _post_action_response(
         request: Request, project: str, name: str, number: int
     ) -> Response:
-        """Return the post-mutation view of an issue.
+        """Redirect (303) to the canonical issue page after a mutation.
 
-        For htmx-driven submits (`HX-Request: true`) re-render the issue
-        page directly so the client can swap `<main>` without a redirect
-        round-trip — the GET that a 303 would trigger can hit the browser
-        cache (`_render` sets `private, max-age=10`) and serve a stale
-        pre-mutation page, which is what made the close/reopen state appear
-        to require a manual refresh.
-
-        `HX-Push-Url` rewrites the address bar back to the canonical
-        `/.../issues/{number}` so the URL stays clean even though the
-        request went to `/close`, `/reopen`, or `/comments`.
-
-        Non-htmx submits (curl, JS off) still get the 303 to the issue
-        page — the browser-cache staleness is acceptable there since the
-        round-trip already drops them on a fresh URL.
+        The forms post to `/close`, `/reopen`, or `/comments`; the 303
+        lands the browser back on `/.../issues/{number}` with a GET, so a
+        reload never re-submits the action.
         """
         url = request.url_for(
             "issue", owner=project, name=name, number=number
         ).path
-        if request.headers.get("HX-Request") == "true":
-            response = _render_issue(
-                request, project=project, name=name, number=number
-            )
-            response.headers["HX-Push-Url"] = url
-            return response
         return RedirectResponse(url=url, status_code=303)
 
     def _do_add_comment(

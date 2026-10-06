@@ -6,18 +6,18 @@ The dashboard's CSS and JS are bundled by [bun](https://bun.sh) from sources in 
 
 ```
 web-src/                          tracked input
-├── package.json                  bun deps (htmx, tailwindcss, all dev-only)
+├── package.json                  bun deps (tailwindcss, daisyui, all dev-only)
 ├── bun.lock                      pinned versions
 ├── build.ts                      bundler entrypoint
 └── src/
-    ├── main.ts                   imports htmx + htmx-ext-preload
+    ├── main.ts                   link prefetch + theme persistence
     ├── styles.css                @import "tailwindcss" + custom rules
     └── highlight.css             generated — pygments tokens, gitignored
 
 src/gitcabin/web/static/dist/     gitignored output
 ├── manifest.json                 logical name → hashed filename
 ├── main.<sha256>.css             Tailwind 4 + pygments + custom rules, minified
-└── main.<bunhash>.js             htmx + extension, minified
+└── main.<bunhash>.js             main.ts, minified
 ```
 
 ## How it gets to the user
@@ -27,22 +27,16 @@ src/gitcabin/web/static/dist/     gitignored output
 3. Templates write `{{ asset('main.css') }}` (Jinja2 global, registered in `routes.py`). The `AssetResolver` in `gitcabin.web.assets` reads `manifest.json` per render and returns `/static/dist/main.<hash>.css`.
 4. Browsers cache aggressively because the URL changes whenever the content does — perfect cache hit rate without staleness.
 
-## htmx + preload
+## Link prefetch
 
-`main.ts` imports two things and exits:
-
-```ts
-import "htmx.org";
-import "htmx-ext-preload";
-```
-
-The base template opts the whole document into the extension and sets the preload trigger:
+The dashboard has no client-side framework: pages are server rendered and navigation is plain browser navigation. `main.ts` adds hover prefetch on top. The base template marks the regions whose links should be prefetched:
 
 ```html
-<body hx-ext="preload" preload="mouseover">
+<div id="header-breadcrumb" data-prefetch>…</div>
+<main data-prefetch>…</main>
 ```
 
-`htmx-ext-preload` uses `getClosestAttribute` when initialising candidate elements (anything with `[href]`, `[hx-get]`, `[data-hx-get]`), so the `preload="mouseover"` on body inherits down to every link in the tree without per-link annotation. Hovering a link for ~100 ms triggers a prefetch; the next click renders from cache.
+One document-level listener handles `mouseover`, `focusin` and `touchstart`. When the event lands on a same-origin `<a href>` inside a `data-prefetch` container, it appends a `<link rel="prefetch">` for that URL to `<head>`, once per URL. Links with `download`, a `target` other than `_self`, or a hash-only href are skipped, as is everything when the browser reports `navigator.connection.saveData`. `_render` sets `Cache-Control: private, max-age=10`, so the click that follows is a normal navigation served from cache. Safari ignores `rel=prefetch`, so it gets no hover prefetch and navigates normally. That matches its effective behaviour under the htmx 2 XHR preload, whose responses Safari (checked in Technology Preview 27) never reused for the click.
 
 ## Building
 
@@ -87,6 +81,6 @@ If you need to invalidate everything, change the underlying content and rebuild 
 - **One binary, zero runtime config.** `bun install` + `bun run build` is the entire pipeline; no `webpack.config.js`, no plugin trees.
 - **Native CSS handling via Tailwind 4 CLI.** No PostCSS plugin chains.
 - **Fast.** Sub-second cold builds; sub-100 ms incremental on watch.
-- **No JS runtime cost.** The bundle ships htmx + extension, ~50 KB minified. Bun's runtime isn't shipped — only its bundler runs.
+- **No JS runtime cost.** The bundle ships only `main.ts`, about 1 KB minified. Bun's runtime isn't shipped — only its bundler runs.
 
 If we ever need a richer build (TypeScript type checks, image processing, etc.), we revisit. For now the pipeline is small enough that anyone reading `web-src/build.ts` understands the whole thing.
