@@ -5,7 +5,7 @@
 
 # ---- builder ------------------------------------------------------------- #
 # Static Go build so the final image doesn't need libc gymnastics.
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 WORKDIR /src
 
 # Cache module downloads in a separate layer. go-git pulls in a few
