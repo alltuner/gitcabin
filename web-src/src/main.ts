@@ -10,8 +10,11 @@
 // adds a <link rel="prefetch"> for its URL, so the click that follows is a
 // normal navigation served from the browser cache. `_render` sets
 // `Cache-Control: private, max-age=10` so the prefetched page is reusable.
+// Browsers without rel=prefetch (Safari) get a plain fetch instead, which
+// warms the HTTP cache wherever the browser reuses it for navigation.
 
 const prefetched = new Set<string>();
+const supportsPrefetchHint = document.createElement("link").relList.supports("prefetch");
 
 function prefetchLink(event: Event): void {
   if (!(event.target instanceof Element)) return;
@@ -29,6 +32,10 @@ function prefetchLink(event: Event): void {
   if (prefetched.has(target)) return;
   prefetched.add(target);
 
+  if (!supportsPrefetchHint) {
+    fetch(target, { credentials: "same-origin" }).catch(() => prefetched.delete(target));
+    return;
+  }
   const hint = document.createElement("link");
   hint.rel = "prefetch";
   hint.href = target;

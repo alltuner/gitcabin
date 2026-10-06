@@ -36,7 +36,7 @@ The dashboard has no client-side framework: pages are server rendered and naviga
 <main data-prefetch>…</main>
 ```
 
-One document-level listener handles `mouseover`, `focusin` and `touchstart`. When the event lands on a same-origin `<a href>` inside a `data-prefetch` container, it appends a `<link rel="prefetch">` for that URL to `<head>`, once per URL. Links with `download`, a `target` other than `_self`, or a hash-only href are skipped, as is everything when the browser reports `navigator.connection.saveData`. `_render` sets `Cache-Control: private, max-age=10`, so the click that follows is a normal navigation served from cache. Browsers without `rel=prefetch` support (such as Safari) ignore the hint and navigate normally.
+One document-level listener handles `mouseover`, `focusin` and `touchstart`. When the event lands on a same-origin `<a href>` inside a `data-prefetch` container, it appends a `<link rel="prefetch">` for that URL to `<head>`, once per URL. Links with `download`, a `target` other than `_self`, or a hash-only href are skipped, as is everything when the browser reports `navigator.connection.saveData`. `_render` sets `Cache-Control: private, max-age=10`, so the click that follows is a normal navigation served from cache. Browsers without `rel=prefetch` support (such as Safari) get a plain same-origin `fetch()` instead. Safari (checked in Technology Preview 27) still refetches the page on click, so there it costs one extra request without a cache hit; the htmx 2 XHR preload behaved the same way.
 
 ## Building
 
