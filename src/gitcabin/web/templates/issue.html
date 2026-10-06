@@ -79,11 +79,11 @@
   ></textarea>
 </form>
 
-{# Close/reopen lives in its own form so the htmx swap fires once per
-   click. Mixing hx-post on a submit-button inside the comment form
-   double-fires (htmx ajax + the form's own submit), which causes a CAS
-   collision on the issue ref. The Comment button uses `form=` to stay
-   visually grouped here while still submitting #comment-form. #}
+{# Close/reopen lives in its own form so each button posts exactly one
+   action: closing never submits (or is blocked by) the required comment
+   body, and commenting never changes state. The Comment button uses
+   `form=` to stay visually grouped here while still submitting
+   #comment-form. #}
 <div class="mt-3 flex items-center justify-end gap-2">
   {% if viewer_can_close_or_reopen %}
     {% if issue.state.value == "OPEN" %}

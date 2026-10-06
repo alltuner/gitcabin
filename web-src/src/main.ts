@@ -1,16 +1,43 @@
-// ABOUTME: Entry point for the bundled JS — boots htmx + the preload extension and persists the theme choice.
+// ABOUTME: Entry point for the bundled JS — prefetches hovered links and persists the theme choice.
 // ABOUTME: bun-bundled into ../../src/gitcabin/web/static/dist/main.<hash>.js.
 
-// htmx is the only client-side framework gitcabin's dashboard runs. The
-// preload extension fetches links on hover/focus so the next-page click
-// feels instant. Both ship in the same bundle; the runtime container needs
-// no Node, no network fetch, nothing beyond what `bun run build` produced.
-//
-// Per-element configuration is done in HTML, not JS:
-//   <body hx-ext="preload" preload="mouseover">
+// gitcabin's dashboard has no client-side framework: pages are server
+// rendered and navigation is plain browser navigation. This file only
+// adds the two things HTML and CSS can't do on their own.
 
-import "htmx.org";
-import "htmx-ext-preload";
+// ---- link prefetch ---------------------------------------------------- //
+// Hovering, focusing or touching a link inside a `data-prefetch` container
+// adds a <link rel="prefetch"> for its URL, so the click that follows is a
+// normal navigation served from the browser cache. `_render` sets
+// `Cache-Control: private, max-age=10` so the prefetched page is reusable.
+
+const prefetched = new Set<string>();
+
+function prefetchLink(event: Event): void {
+  if (!(event.target instanceof Element)) return;
+  const link = event.target.closest<HTMLAnchorElement>("[data-prefetch] a[href]");
+  if (!link || link.hasAttribute("download")) return;
+  if (link.target && link.target !== "_self") return;
+  const connection = (navigator as { connection?: { saveData?: boolean } }).connection;
+  if (connection?.saveData) return;
+
+  const url = new URL(link.href);
+  if (url.origin !== location.origin) return;
+  // Hash-only links point at the page already loaded.
+  if (url.pathname === location.pathname && url.search === location.search) return;
+  const target = url.pathname + url.search;
+  if (prefetched.has(target)) return;
+  prefetched.add(target);
+
+  const hint = document.createElement("link");
+  hint.rel = "prefetch";
+  hint.href = target;
+  document.head.append(hint);
+}
+
+for (const type of ["mouseover", "focusin", "touchstart"]) {
+  document.addEventListener(type, prefetchLink, { passive: true });
+}
 
 // ---- theme persistence ------------------------------------------------ //
 // The theme switcher itself is browser-native: DaisyUI's theme-controller
@@ -18,7 +45,7 @@ import "htmx-ext-preload";
 // variables when a radio is ticked, and the matching `dark:` Tailwind
 // variant in styles.css mirrors the same trigger. JS only handles what
 // CSS can't: reading + writing localStorage, and keeping the data-theme
-// attribute on <html> in sync so the variant works after htmx swaps.
+// attribute on <html> in sync so the variant follows the stored choice.
 
 const STORAGE_KEY = "theme";
 

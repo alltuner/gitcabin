@@ -18,8 +18,9 @@
     <span>{{ rendered.size }} bytes</span>
     <div class="flex items-center gap-3">
       <a href="{{ url_for('blame', owner=owner, name=name, rest=_rest).path }}" class="text-blue-600 hover:underline dark:text-blue-400">Blame</a>
-      {# Raw + download return non-HTML responses (file bytes) — plain
-         anchors are fine, no htmx in play. #}
+      {# Raw + download return non-HTML responses (file bytes), so
+         main.ts never prefetches them: raw opens in a new tab and download
+         carries `download`, and both are skipped. #}
       <a
         href="{{ _raw_url }}"
         target="_blank"

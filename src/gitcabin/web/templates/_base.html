@@ -1,4 +1,4 @@
-{# ABOUTME: Base layout — bundled Tailwind + htmx, no CDN, content-hashed assets. #}
+{# ABOUTME: Base layout — bundled Tailwind + JS, no CDN, content-hashed assets. #}
 <!doctype html>
 <html lang="en">
 <head>
@@ -11,7 +11,7 @@
    want DaisyUI's --prefersdark modifier to drive that, which only fires
    when no theme-controller / data-theme is in play. The radio click
    handler in main.ts re-syncs this attribute mid-session so the `dark:`
-   Tailwind variant stays correct after htmx swaps. #}
+   Tailwind variant follows the stored choice. #}
 <script>
 (function() {
   var pref = localStorage.getItem('theme');
@@ -24,31 +24,23 @@
 {# Bundled CSS: Tailwind 4 + custom rules, content-hashed for immutable cache #}
 <link rel="stylesheet" href="{{ asset('main.css') }}">
 
-{# Bundled JS: htmx + htmx-ext-preload + theme switcher. defer so the body
-   parses first; the htmx:load handler in main.ts wires preload="mouseover"
-   onto every internal anchor as soon as DOM is ready. #}
+{# Bundled JS: link prefetch + theme persistence. defer so the body parses
+   first; main.ts listens on the document, so links rendered anywhere under
+   a `data-prefetch` container are covered without per-link setup. #}
 <script src="{{ asset('main.js') }}" defer></script>
 
 {% block head_extra %}{% endblock %}
 </head>
-{# We lean on browser-native navigation rather than htmx hx-boost:
-   the preload extension fires an XHR on hover (~100 ms in), the
-   response lands in the browser's HTTP cache, and the click ~200 ms
-   later is just a normal navigation served from cache. That keeps the
-   "instant" feel without inheriting hx-boost's history pitfalls — back
-   navigation under hx-boost would intermittently lose the page chrome
-   because htmx's history-restore path replaced the body inconsistently
-   with our partial-swap setup.
-
-   `preload="mouseover"` is set on each swap target (main +
-   #header-breadcrumb) so htmx-ext-preload's `htmx:afterProcessNode`
-   handler can find the anchors to instrument on initial load. Cache-
-   Control: private, max-age=10 on _render lets the prefetched response
-   be reused.
+{# Navigation is plain browser navigation. Hovering, focusing or touching
+   a link inside a `data-prefetch` container (main + #header-breadcrumb)
+   makes main.ts add a <link rel="prefetch"> for it, so the click that
+   follows is a normal navigation served from cache. Back/forward stay the
+   browser's own, so the page chrome is always the server-rendered page.
+   Cache-Control: private, max-age=10 on _render lets the prefetched
+   response be reused.
 #}
 <body
-  class="flex min-h-screen flex-col bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100 font-sans"
-  hx-ext="preload">
+  class="flex min-h-screen flex-col bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100 font-sans">
 <header class="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
   <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
     {# Logo + page breadcrumb sit on a shared row so the wordmark slot
@@ -65,7 +57,7 @@
            variant is reserved for marketing / docs surfaces. #}
         {% include "icons/cabin.html" %}
       </a>
-      <div id="header-breadcrumb" preload="mouseover" class="min-w-0 text-xl font-semibold tracking-tight">{% block header_breadcrumb %}{% endblock %}</div>
+      <div id="header-breadcrumb" data-prefetch class="min-w-0 text-xl font-semibold tracking-tight">{% block header_breadcrumb %}{% endblock %}</div>
     </div>
 
     {# Theme switcher: three radios sharing name="theme". The light + dark
@@ -107,7 +99,7 @@
     </div>
   </div>
 </header>
-<main preload="mouseover" class="mx-auto w-full max-w-6xl px-4 py-6">
+<main data-prefetch class="mx-auto w-full max-w-6xl px-4 py-6">
 {% block content %}{% endblock %}
 </main>
 {% include "_footer.html" %}

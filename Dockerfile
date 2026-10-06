@@ -1,5 +1,5 @@
 # Multi-stage:
-#   stage 1 (assets) — bun bundles htmx + tailwind into hashed JS/CSS.
+#   stage 1 (assets) — bun bundles main.ts + tailwind into hashed JS/CSS.
 #   stage 2 (runtime) — python:3.14-slim with the bundled assets and the app.
 #
 # `docker compose up --watch` reuses the runtime stage and syncs ./src on top

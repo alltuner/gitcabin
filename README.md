@@ -232,10 +232,13 @@ The design discussion behind this single-mode decision — including options rul
 ## Running natively (no Docker, no gh)
 
 ```sh
-uv run gitcabin
+(cd web-src && bun install && bun run build)   # dashboard CSS + JS bundle
+uv run python scripts/seed_demo.py             # optional: demo repos under ./data
+GITCABIN_DATA_DIR=./data uv run granian --interface asgi --factory \
+  --host 127.0.0.1 --port 8000 gitcabin.combined:create_app
 ```
 
-Listens on `127.0.0.1:8000`. Useful for direct probing with curl / httpie, but `gh` won't reach it — `gh` dials port 80 (`github.localhost`) or 443 (anything else), never 8000.
+Runs the same Host-dispatched app as the container on `127.0.0.1:8000`: open `http://127.0.0.1:8000/` for the dashboard, while requests with `Host: api.…` reach the REST/GraphQL API. (`uv run gitcabin` starts only the API app, with autoreload, and has no dashboard routes.) Useful for browsing and for direct probing with curl / httpie, but `gh` won't reach it — `gh` dials port 80 (`github.localhost`) or 443 (anything else), never 8000.
 
 ## Development
 
