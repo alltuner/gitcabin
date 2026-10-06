@@ -57,8 +57,8 @@ Maintainers — don't tag releases manually; let Release Please drive it.
 
 ## Security issues
 
-Please don't open public issues for security vulnerabilities. See [SECURITY.md](SECURITY.md) for the disclosure process.
+Please don't open public issues for security vulnerabilities. See the [security policy](https://github.com/alltuner/gitcabin/security/policy) for the disclosure process.
 
 ## Code of Conduct
 
-By contributing you agree to abide by the [Code of Conduct](CODE_OF_CONDUCT.md).
+By contributing you agree to abide by the [Code of Conduct](https://github.com/alltuner/.github/blob/main/CODE_OF_CONDUCT.md).
