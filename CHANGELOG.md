@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/alltuner/gitcabin/compare/v0.1.2...v0.1.3) (2026-10-22)
+
+
+### Documentation Updates
+
+* link the sponsor page by its trailing-slash URL ([#63](https://github.com/alltuner/gitcabin/issues/63)) ([6de4b23](https://github.com/alltuner/gitcabin/commit/6de4b23c4a536f81a1399fd1249f784e926e6efe))
+
 ## [0.1.2](https://github.com/alltuner/gitcabin/compare/v0.1.1...v0.1.2) (2026-10-06)
 
 
