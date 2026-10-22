@@ -256,7 +256,7 @@ uv run ruff check . && uv run ruff format --check .
 
 gitcabin is an open source project built by [David Poblador i Garcia](https://davidpoblador.com/) through [All Tuner Labs](https://www.alltuner.com/).
 
-If this project was useful to you, [consider supporting its development](https://alltuner.com/sponsor).
+If this project was useful to you, [consider supporting its development](https://alltuner.com/sponsor/).
 
 ---
 
