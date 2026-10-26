@@ -1,0 +1,12 @@
+{
+  "name": "www-gitcabin-com",
+  "compatibility_date": "2026-10-26",
+  "assets": {
+    "directory": "./site",
+    "not_found_handling": "404-page"
+  },
+  "routes": [{ "pattern": "www.gitcabin.com", "custom_domain": true }],
+  "workers_dev": true,
+  "preview_urls": true,
+  "previews": {}
+}
