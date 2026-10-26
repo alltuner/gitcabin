@@ -47,7 +47,7 @@ RUN mkdir -p ./src/gitcabin/web/static && cd web-src && bun run build
 
 # ---- stage 2: runtime --------------------------------------------------- #
 
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 # git is required at runtime: the storage layer shells out to git plumbing
 # (hash-object, mktree, commit-tree, update-ref) for every metadata write.
