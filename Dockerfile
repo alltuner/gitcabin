@@ -22,7 +22,7 @@ WORKDIR /work
 # so the bun stage needs uv on PATH. Pull it from the official image —
 # fastest way, no compile step. The uv binary is self-contained; it brings
 # its own python at first use.
-COPY --from=ghcr.io/astral-sh/uv:0.12.23@sha256:61d393e44e249f2e4b526b6c7ddcecce245946826e608e11c93ad4f5bba55b21 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.10@sha256:a3ea1357342c1a4bf9a0c53a3deb1b55379aefa037338d8113d5771efa01774f /uv /usr/local/bin/uv
 
 # Cache deps in a separate layer. bun.lock pins everything we install.
 COPY web-src/package.json web-src/bun.lock ./web-src/
@@ -70,7 +70,7 @@ RUN apt-get update && \
 
 # Pull uv from its official image — fastest way to get the binary, no compile
 # step, version pinned by the tag we choose.
-COPY --from=ghcr.io/astral-sh/uv:0.12.23@sha256:61d393e44e249f2e4b526b6c7ddcecce245946826e608e11c93ad4f5bba55b21 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.10@sha256:a3ea1357342c1a4bf9a0c53a3deb1b55379aefa037338d8113d5771efa01774f /uv /usr/local/bin/uv
 
 # Non-root user. uid 1000 matches the typical first-user uid on Linux hosts
 # so bind-mounted files keep sane ownership both ways. macOS hosts don't care
